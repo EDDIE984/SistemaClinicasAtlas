@@ -70,14 +70,7 @@ export interface CitaCompleta extends Cita {
 
 export function canModificarCita(cita: CitaCompleta): boolean {
   if (!cita || cita.estado_cita === 'cancelada' || cita.consulta_realizada) return false;
-  if (!cita.fecha_cita || !cita.hora_inicio) return false;
-
-  const fechaHoraCita = new Date(`${cita.fecha_cita}T${cita.hora_inicio.substring(0, 5)}:00`);
-  const ahora = new Date();
-  const diferenciaMs = fechaHoraCita.getTime() - ahora.getTime();
-
-  // Solo si la cita es estrictamente futura y con al menos 1 hora de anticipación
-  return diferenciaMs > 60 * 60 * 1000;
+  return true;
 }
 
 export function canCancelarCita(cita: CitaCompleta): boolean {

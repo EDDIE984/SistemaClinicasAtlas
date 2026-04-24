@@ -259,6 +259,21 @@ Las llamadas a APIs externas deben pasar por una serverless function en `api/`. 
 - Servicio: funciones `*PrecioBase` y `*PrecioUsuario` en `src/lib/configuracionesService.ts`
 - Tablas BD: `precio_base_especialidad` y `precio_usuario_sucursal`
 
+### Editar una cita desde la ficha del paciente
+
+Los roles **secretaria** y **administrador** pueden editar una cita directamente desde el historial de citas del paciente en `PacientesViewSupabase.tsx`. El botón "Editar cita" aparece en cada cita que cumpla:
+
+- Estado distinto de `cancelada` y `no_asistio`
+- Sin consulta realizada (`consulta_realizada === false`)
+
+Al hacer clic se abre `AgendarCitaModalSupabase` en modo edición (`citaEditar` prop), pre-llenado con los datos actuales. Al guardar se recargan las citas del paciente con `getCitasByPaciente`.
+
+**Archivos involucrados:**
+- `src/components/PacientesViewSupabase.tsx` — botón, estados `citaParaEditar` / `isEditCitaModalOpen`, instancia del modal
+- `src/components/AgendarCitaModalSupabase.tsx` — modo edición vía prop `citaEditar`; el `updates` incluye `id_usuario_sucursal` para permitir cambio de médico/sucursal
+
+**Restricción de modificación (`canModificarCita` en `citasService.ts`):** bloquea únicamente si la cita está `cancelada` o tiene `consulta_realizada = true`. No hay restricción de tiempo (la restricción de "1 hora de anticipación" fue eliminada).
+
 ---
 
 ## Módulo de Precios

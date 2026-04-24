@@ -672,7 +672,8 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
           tipo_cita: tipoCita,
           motivo_consulta: motivoConsulta,
           id_aseguradora: parseInt(idAseguradora),
-          referencia: referencia
+          referencia: referencia,
+          id_usuario_sucursal: parseInt(selectedAsignacion)
         };
 
         const resultado = await updateCita(citaEditar.id_cita, updates);

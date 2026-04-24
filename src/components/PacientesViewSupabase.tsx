@@ -82,6 +82,7 @@ import { ArchivosMedicosSection } from './ArchivosMedicosSection';
 import { SupabaseIndicator } from './SupabaseIndicator';
 import { CancelarCitaModalSupabase } from './CancelarCitaModalSupabase';
 import { DetalleCitaDialog } from './DetalleCitaDialog';
+import { AgendarCitaModalSupabase } from './AgendarCitaModalSupabase';
 import {
   Command,
   CommandEmpty,
@@ -104,6 +105,30 @@ const formatDateLocal = (date: Date): string => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const ECUADOR_TIMEZONE = 'America/Guayaquil';
+
+const formatDateInEcuador = (date: Date, options: Intl.DateTimeFormatOptions): string => {
+  return new Intl.DateTimeFormat('es-EC', {
+    timeZone: ECUADOR_TIMEZONE,
+    ...options,
+  }).format(date);
+};
+
+const getDateKeyInEcuador = (date: Date): string => {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: ECUADOR_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+};
+
+const formatCalendarDateFromIsoInEcuador = (fechaIso: string, options: Intl.DateTimeFormatOptions): string => {
+  const [year, month, day] = fechaIso.split('-').map(Number);
+  const utcEquivalent = new Date(Date.UTC(year, month - 1, day, 5, 0, 0));
+  return formatDateInEcuador(utcEquivalent, options);
 };
 
 // Helper para formatear el sexo
@@ -536,6 +561,10 @@ export function PacientesViewSupabase({
   const [citaParaNoAsistio, setCitaParaNoAsistio] = useState<number | null>(null);
   const [isNoAsistioConfirmOpen, setIsNoAsistioConfirmOpen] = useState(false);
 
+  // Estado para edición de cita (secretaria / administrador)
+  const [citaParaEditar, setCitaParaEditar] = useState<CitaCompleta | null>(null);
+  const [isEditCitaModalOpen, setIsEditCitaModalOpen] = useState(false);
+
   // Estado para controlar el índice de signos vitales visible para cada paciente
   const [signosVitalesIndex, setSignosVitalesIndex] = useState<Record<number, number>>({});
 
@@ -576,6 +605,47 @@ export function PacientesViewSupabase({
   const [citaDetalleAgenda, setCitaDetalleAgenda] = useState<CitaCompleta | null>(null);
   const [citaAgendaSeleccionada, setCitaAgendaSeleccionada] = useState<CitaCompleta | null>(null);
   const [isCancelarAgendaModalOpen, setIsCancelarAgendaModalOpen] = useState(false);
+
+
+  // Devuelve un objeto Date en la zona horaria de Ecuador (America/Guayaquil)
+  const parseEcuadorDateTimeLocal = (fecha: string, hora: string): Date => {
+    // fecha: 'YYYY-MM-DD', hora: 'HH:mm' o 'HH:mm:ss'
+    const [year, month, day] = fecha.split('-').map(Number);
+    const [hours, minutes, seconds = 0] = hora.split(':').map(Number);
+    // Crear string ISO local en Ecuador
+    const isoString = `${year.toString().padStart(4, '0')}-${month
+      .toString()
+      .padStart(2, '0')}-${day.toString().padStart(2, '0')}T${hours
+      .toString()
+      .padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds
+      .toString()
+      .padStart(2, '0')}`;
+    // Parsear como si fuera local de Ecuador
+    return new Date(isoString + '-05:00');
+  };
+
+  const citaPendientePacienteAgenda = agendaFilterPaciente
+    ? agendaFiltrada
+        .filter((cita) => {
+          const mismoPaciente = Number(cita.paciente.id_paciente) === Number(agendaFilterPaciente.id);
+          if (!mismoPaciente) return false;
+
+          const estado = (cita.estado_cita || '').toLowerCase();
+          const estadoPendiente = ['pendiente', 'agendada', 'confirmada', 'en_atencion'].includes(estado);
+          if (!estadoPendiente || cita.consulta_realizada) return false;
+
+          // Solo habilitar si la cita es para el día de hoy
+          const hoy = formatDateLocal(new Date());
+          if (cita.fecha_cita !== hoy) return false;
+
+          return true;
+        })
+        .sort((a, b) => {
+          const inicioA = parseEcuadorDateTimeLocal(a.fecha_cita, a.hora_inicio).getTime();
+          const inicioB = parseEcuadorDateTimeLocal(b.fecha_cita, b.hora_inicio).getTime();
+          return inicioB - inicioA;
+        })[0] || null
+    : null;
   // ──────────────────────────────────────────────────────────────────────────
 
   // Hook para signos vitales del paciente seleccionado
@@ -3026,7 +3096,7 @@ Si el código no existe, responde exactamente:
                                   <div className="flex items-center gap-2 mb-1">
                                     <Calendar className="size-4 text-gray-500" />
                                     <span className="text-sm">
-                                      {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-ES', {
+                                        {formatCalendarDateFromIsoInEcuador(cita.fecha_cita, {
                                         weekday: 'short',
                                         day: '2-digit',
                                         month: 'short',
@@ -3134,6 +3204,25 @@ Si el código no existe, responde exactamente:
 
                               {/* Botones de acción */}
                               <div className="pt-3 border-t space-y-2">
+                                {/* Botón Editar Cita — solo secretaria y administrador */}
+                                {(currentUser?.tipo_usuario === 'secretaria' || currentUser?.tipo_usuario === 'administrador') &&
+                                  cita.estado_cita !== 'cancelada' &&
+                                  cita.estado_cita !== 'no_asistio' &&
+                                  !cita.consulta_realizada && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full border-blue-300 text-blue-700 hover:bg-blue-50"
+                                    onClick={() => {
+                                      setCitaParaEditar(cita);
+                                      setIsEditCitaModalOpen(true);
+                                    }}
+                                  >
+                                    <Pencil className="size-3 mr-2" />
+                                    Editar cita
+                                  </Button>
+                                )}
+
                                 {/* Botón Iniciar Consulta para citas pendientes */}
                                 {!cita.consulta_realizada && cita.estado_cita !== 'cancelada' && cita.estado_cita !== 'no_asistio' && (
                                   <Button
@@ -3242,7 +3331,7 @@ Si el código no existe, responde exactamente:
                 <span className="text-lg font-bold text-gray-800 tracking-tight">
                   {(() => {
                     const days = getWeekDaysAgenda();
-                    return days[0].toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
+                      return formatDateInEcuador(days[0], { month: 'long', year: 'numeric' }).toUpperCase();
                   })()}
                 </span>
               </div>
@@ -3328,16 +3417,15 @@ Si el código no existe, responde exactamente:
                   <div className="grid grid-cols-7 gap-2">
                     {getWeekDaysAgenda().map((day, dayIdx) => {
                       const citasDelDia = getCitasPorDiaAgenda(day);
-                      const isToday = day.toDateString() === new Date().toDateString();
-                      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+                      const isToday = getDateKeyInEcuador(day) === getDateKeyInEcuador(new Date());
                       return (
                         <div key={dayIdx} className={`min-h-[400px] ${isToday ? 'bg-blue-50' : 'bg-white'} rounded-lg border p-2`}>
                           <div className={`text-center mb-2 pb-2 border-b ${isToday ? 'border-blue-300' : ''}`}>
                             <div className={`text-xs ${isToday ? 'text-blue-600 font-semibold' : 'text-gray-500'}`}>
-                              {dayNames[day.getDay()]}
+                              {formatDateInEcuador(day, { weekday: 'short' })}
                             </div>
                             <div className={`text-lg ${isToday ? 'bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center mx-auto' : ''}`}>
-                              {day.getDate()}
+                              {formatDateInEcuador(day, { day: 'numeric' })}
                             </div>
                           </div>
                           <div className="space-y-1">
@@ -3422,7 +3510,7 @@ Si el código no existe, responde exactamente:
                                     <div className="flex items-center gap-2 mb-1">
                                       <Clock className="size-4 text-gray-500" />
                                       <span className="font-semibold">
-                                        {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-ES')} — {cita.hora_inicio.substring(0, 5)}
+                                        {formatCalendarDateFromIsoInEcuador(cita.fecha_cita, { day: '2-digit', month: '2-digit', year: 'numeric' })} — {cita.hora_inicio.substring(0, 5)}
                                       </span>
                                     </div>
                                     <div className="text-xs text-gray-600">{cita.motivo_consulta}</div>
@@ -5022,6 +5110,28 @@ Si el código no existe, responde exactamente:
         }}
         onCancelar={handleCancelarCitaDesdeAgenda}
       />
+
+      {/* Modal de edición de cita — solo secretaria y administrador */}
+      {isEditCitaModalOpen && citaParaEditar && (
+        <AgendarCitaModalSupabase
+          isOpen={isEditCitaModalOpen}
+          onClose={() => {
+            setIsEditCitaModalOpen(false);
+            setCitaParaEditar(null);
+          }}
+          onCitaAgendada={async () => {
+            setIsEditCitaModalOpen(false);
+            setCitaParaEditar(null);
+            if (selectedPatientId) {
+              const citas = await getCitasByPaciente(selectedPatientId);
+              setCitasPaciente(citas);
+            }
+          }}
+          idUsuarioActual={idUsuarioActual}
+          citaEditar={citaParaEditar}
+          tipoUsuario={currentUser?.tipo_usuario}
+        />
+      )}
 
       {/* Dialog: Confirmación No Asistió */}
       <Dialog open={isNoAsistioConfirmOpen} onOpenChange={setIsNoAsistioConfirmOpen}>
