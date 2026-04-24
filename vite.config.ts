@@ -54,21 +54,6 @@
     build: {
       target: 'esnext',
       outDir: 'dist',
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (!id.includes('node_modules')) return;
-            if (id.includes('react-dom') || id.includes('/react/')) return 'vendor-react';
-            if (id.includes('@supabase') || id.includes('@jsr/supabase')) return 'vendor-supabase';
-            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts';
-            if (id.includes('@radix-ui') || id.includes('cmdk') || id.includes('vaul') || id.includes('embla-carousel')) return 'vendor-ui';
-            if (id.includes('lucide-react')) return 'vendor-icons';
-            if (id.includes('pdf-lib') || id.includes('pdfkit')) return 'vendor-pdf';
-            if (id.includes('xlsx') || id.includes('ssf') || id.includes('fflate')) return 'vendor-xlsx';
-            return 'vendor-misc';
-          },
-        },
-      },
     },
     server: {
       port: 3000,
