@@ -16,11 +16,13 @@ import {
   User,
   MessageSquare,
   BarChart3,
-  CalendarDays
+  CalendarDays,
+  ArrowLeftRight
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ChatBotView } from './ChatBotView';
 import { ChatBotViewSupabase } from './ChatBotViewSupabase';
+import { InterconsultasView } from './InterconsultasView';
 import { ConfiguracionesViewSupabase } from './ConfiguracionesViewSupabase';
 import { AgendaViewSupabase } from './AgendaViewSupabase';
 import { PacientesViewSupabase } from './PacientesViewSupabase';
@@ -44,10 +46,10 @@ interface DashboardProps {
   } | null;
 }
 
-type MenuItem = 'pacientes' | 'agenda' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'configuraciones' | 'planificacion';
+type MenuItem = 'pacientes' | 'agenda' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'configuraciones' | 'planificacion' | 'interconsultas';
 
 export function Dashboard({ onLogout, currentUser }: DashboardProps) {
-  const [activeItem, setActiveItem] = useState<MenuItem>('agenda');
+  const [activeItem, setActiveItem] = useState<MenuItem>(currentUser?.tipo_usuario === 'medico' ? 'pacientes' : 'agenda');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true); // Collapsed por defecto
@@ -64,23 +66,28 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
     { id: 'cargos' as MenuItem, label: 'Cobros', icon: Briefcase },
     { id: 'reportes' as MenuItem, label: 'Reportes', icon: FileText },
     { id: 'planificacion' as MenuItem, label: 'Planificación', icon: CalendarDays },
+    { id: 'interconsultas' as MenuItem, label: 'Interconsultas', icon: ArrowLeftRight },
     { id: 'chatbot' as MenuItem, label: 'Chatbot', icon: Bot },
     { id: 'configuraciones' as MenuItem, label: 'Configuraciones', icon: Settings },
   ];
 
   // Filtrar items del menú según el tipo de usuario
   const menuItems = allMenuItems.filter(item => {
-    // Si es secretaria: Agenda, Pacientes, Citas y Planificación
+    // Si es secretaria: Agenda, Pacientes, Citas, Planificación e Interconsultas
     if (currentUser?.tipo_usuario === 'secretaria') {
-      return item.id === 'agenda' || item.id === 'pacientes' || item.id === 'citas' || item.id === 'planificacion';
+      return item.id === 'agenda' || item.id === 'pacientes' || item.id === 'citas' || item.id === 'planificacion' || item.id === 'interconsultas';
     }
     // Si es administrativo, puede ver todo
     if (currentUser?.tipo_usuario === 'administrativo') {
       return true;
     }
-    // Si es médico o enfermera: solo Agenda, Pacientes y Citas
-    if (currentUser?.tipo_usuario === 'medico' || currentUser?.tipo_usuario === 'enfermera') {
-      return item.id === 'agenda' || item.id === 'pacientes' || item.id === 'citas';
+    // Si es médico: Pacientes e Interconsultas
+    if (currentUser?.tipo_usuario === 'medico') {
+      return item.id === 'pacientes' || item.id === 'interconsultas';
+    }
+    // Si es enfermera: Agenda, Pacientes, Citas e Interconsultas
+    if (currentUser?.tipo_usuario === 'enfermera') {
+      return item.id === 'agenda' || item.id === 'pacientes' || item.id === 'citas' || item.id === 'interconsultas';
     }
     // Los demás usuarios (médicos, enfermeras) no pueden ver Configuraciones ni ChatBot
     return item.id !== 'configuraciones' && item.id !== 'chatbot' && item.id !== 'planificacion';
@@ -128,6 +135,8 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
         return <ChatBotViewSupabase currentUser={currentUser} />;
       case 'planificacion':
         return <PlanificacionHorarioView />;
+      case 'interconsultas':
+        return <InterconsultasView currentUser={currentUser} />;
       case 'configuraciones':
         return <ConfiguracionesViewSupabase />;
       default:
@@ -318,15 +327,7 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
         <ChatAI onClose={() => setIsChatOpen(false)} />
       )}
 
-      {/* Floating Chat Button */}
-      {!isChatOpen && (
-        <Button
-          onClick={() => setIsChatOpen(true)}
-          className="fixed bottom-6 right-6 size-14 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 z-40"
-        >
-          <MessageSquare className="size-6" />
-        </Button>
-      )}
+
     </div>
   );
 }

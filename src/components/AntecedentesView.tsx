@@ -71,119 +71,101 @@ const vaccinationSchedule: VaccinationGroup[] = [
 
 type SiNoValue = 'si' | 'no' | '';
 
-interface AntecedentesPatologicosPersonales {
-  clinicos: {
-    diabetes: SiNoValue;
-    tiroideas: SiNoValue;
-    hipertension: SiNoValue;
-    cardiopatias: SiNoValue;
-    cancer: SiNoValue;
-    tuberculosis: SiNoValue;
-    respiratorias: SiNoValue;
-    gastrointestinales: SiNoValue;
-    ets: SiNoValue;
-    renalCronica: SiNoValue;
-  };
-  quirurgicos: {
-    hospitalizacion: SiNoValue;
-    cirugias: SiNoValue;
-    traumatismos: SiNoValue;
-    transfusiones: SiNoValue;
-  };
-  notaLibreDoctor: string;
+interface AntecedenteSiNoNotas {
+  respuesta: SiNoValue;
+  notas: string;
 }
 
-interface AntecedentesPatologicosFamiliares {
-  items: string[];
-}
+type AntecedentePpfKey =
+  | 'clinicos'
+  | 'traumatologicos'
+  | 'pediatricos'
+  | 'quirurgicos'
+  | 'familiares'
+  | 'otros';
 
-const getDefaultAntecedentesPatologicos = (): AntecedentesPatologicosPersonales => ({
-  clinicos: {
-    diabetes: '',
-    tiroideas: '',
-    hipertension: '',
-    cardiopatias: '',
-    cancer: '',
-    tuberculosis: '',
-    respiratorias: '',
-    gastrointestinales: '',
-    ets: '',
-    renalCronica: '',
-  },
-  quirurgicos: {
-    hospitalizacion: '',
-    cirugias: '',
-    traumatismos: '',
-    transfusiones: '',
-  },
-  notaLibreDoctor: '',
+type AntecedentesPatologicosPersonalesFamiliares = Record<AntecedentePpfKey, AntecedenteSiNoNotas>;
+
+const ANTECEDENTES_PPF_ITEMS: Array<{ key: AntecedentePpfKey; numero: string; label: string }> = [
+  { key: 'clinicos', numero: '1', label: 'Clínicos' },
+  { key: 'traumatologicos', numero: '2', label: 'Traumatológicos' },
+  { key: 'pediatricos', numero: '3', label: 'Pediátricos' },
+  { key: 'quirurgicos', numero: '4', label: 'Quirúrgicos' },
+  { key: 'familiares', numero: '5', label: 'Familiares' },
+  { key: 'otros', numero: '6', label: 'Otros' },
+];
+
+const createDefaultSiNoNotas = (): AntecedenteSiNoNotas => ({
+  respuesta: '',
+  notas: '',
 });
 
-const normalizarAntecedentesPatologicos = (raw: any): AntecedentesPatologicosPersonales => {
-  const defaults = getDefaultAntecedentesPatologicos();
-  if (!raw || typeof raw !== 'object') return defaults;
+const getDefaultAntecedentesPatologicosPersonalesFamiliares = (): AntecedentesPatologicosPersonalesFamiliares => ({
+  clinicos: createDefaultSiNoNotas(),
+  traumatologicos: createDefaultSiNoNotas(),
+  pediatricos: createDefaultSiNoNotas(),
+  quirurgicos: createDefaultSiNoNotas(),
+  familiares: createDefaultSiNoNotas(),
+  otros: createDefaultSiNoNotas(),
+});
 
-  if (raw.clinicos && raw.quirurgicos) {
-    return {
-      clinicos: {
-        ...defaults.clinicos,
-        ...raw.clinicos,
-      },
-      quirurgicos: {
-        ...defaults.quirurgicos,
-        ...raw.quirurgicos,
-      },
-      notaLibreDoctor: typeof raw.notaLibreDoctor === 'string' ? raw.notaLibreDoctor : '',
-    };
-  }
+const normalizarSiNoNotas = (raw: any): AntecedenteSiNoNotas => ({
+  respuesta: raw?.respuesta === 'si' || raw?.respuesta === 'no' ? raw.respuesta : '',
+  notas: typeof raw?.notas === 'string' ? raw.notas : '',
+});
 
-  // Compatibilidad con forma previa en caso de datos existentes.
-  return {
-    clinicos: {
-      diabetes: raw.diabetes || '',
-      tiroideas: raw.tiroideas || '',
-      hipertension: raw.hipertension || '',
-      cardiopatias: raw.cardiopatias || '',
-      cancer: raw.cancer || '',
-      tuberculosis: raw.tuberculosis || '',
-      respiratorias: raw.respiratorias || '',
-      gastrointestinales: raw.gastrointestinales || '',
-      ets: raw.ets || '',
-      renalCronica: raw.renalCronica || '',
-    },
-    quirurgicos: {
-      hospitalizacion: raw.hospitalizacion || '',
-      cirugias: raw.cirugias || '',
-      traumatismos: raw.traumatismos || '',
-      transfusiones: raw.transfusiones || '',
-    },
-    notaLibreDoctor: typeof raw.notaLibreDoctor === 'string' ? raw.notaLibreDoctor : '',
-  };
+const calcularRespuestaLegacy = (values: unknown[]): SiNoValue => {
+  if (values.some((value) => value === 'si')) return 'si';
+  if (values.some((value) => value === 'no')) return 'no';
+  return '';
 };
 
-const getDefaultAntecedentesPatologicosFamiliares = (): AntecedentesPatologicosFamiliares => ({
-  items: [],
-});
+const normalizarAntecedentesPatologicosPersonalesFamiliares = (
+  raw: any,
+  legacyPatologicos: any,
+  legacyFamiliares: any,
+): AntecedentesPatologicosPersonalesFamiliares => {
+  const defaults = getDefaultAntecedentesPatologicosPersonalesFamiliares();
 
-const normalizarAntecedentesPatologicosFamiliares = (raw: any): AntecedentesPatologicosFamiliares => {
-  const defaults = getDefaultAntecedentesPatologicosFamiliares();
-
-  if (!raw) return defaults;
-
-  if (Array.isArray(raw)) {
+  if (raw && typeof raw === 'object') {
     return {
-      items: raw.filter((item) => typeof item === 'string' && item.trim() !== ''),
+      clinicos: normalizarSiNoNotas(raw.clinicos),
+      traumatologicos: normalizarSiNoNotas(raw.traumatologicos),
+      pediatricos: normalizarSiNoNotas(raw.pediatricos),
+      quirurgicos: normalizarSiNoNotas(raw.quirurgicos),
+      familiares: normalizarSiNoNotas(raw.familiares),
+      otros: normalizarSiNoNotas(raw.otros),
     };
   }
 
-  if (typeof raw === 'object' && Array.isArray(raw.items)) {
-    return {
-      items: raw.items.filter((item) => typeof item === 'string' && item.trim() !== ''),
-    };
-  }
+  const clinicosLegacy = legacyPatologicos?.clinicos && typeof legacyPatologicos.clinicos === 'object'
+    ? legacyPatologicos.clinicos
+    : {};
+  const quirurgicosLegacy = legacyPatologicos?.quirurgicos && typeof legacyPatologicos.quirurgicos === 'object'
+    ? legacyPatologicos.quirurgicos
+    : {};
 
-  // Compatibilidad con formato legacy si/no: se inicializa vacio por decision funcional.
-  return defaults;
+  const familiaresLegacyItems = Array.isArray(legacyFamiliares)
+    ? legacyFamiliares
+    : Array.isArray(legacyFamiliares?.items)
+      ? legacyFamiliares.items
+      : [];
+
+  return {
+    ...defaults,
+    clinicos: {
+      respuesta: calcularRespuestaLegacy(Object.values(clinicosLegacy)),
+      notas: typeof legacyPatologicos?.notaLibreDoctor === 'string' ? legacyPatologicos.notaLibreDoctor : '',
+    },
+    quirurgicos: {
+      respuesta: calcularRespuestaLegacy(Object.values(quirurgicosLegacy)),
+      notas: '',
+    },
+    familiares: {
+      respuesta: familiaresLegacyItems.length > 0 ? 'si' : '',
+      notas: familiaresLegacyItems.join(', '),
+    },
+  };
 };
 
 const getDefaultAntecedentesGineco = () => ({
@@ -235,9 +217,10 @@ interface AntecedentesViewProps {
       hasOtherVaccines: boolean | null;
     };
     alergias?: string[];
-    antecedentesPatologicos?: AntecedentesPatologicosPersonales | Record<string, string>;
+    antecedentesPatologicosPersonalesFamiliares?: AntecedentesPatologicosPersonalesFamiliares;
+    antecedentesPatologicos?: Record<string, any>;
     antecedentesNoPatologicos?: Record<string, string>;
-    antecedentesHeredofamiliares?: AntecedentesPatologicosFamiliares | Record<string, string> | string[];
+    antecedentesHeredofamiliares?: Record<string, any> | string[];
     antecedentesGineco?: Record<string, any>;
     antecedentesperinatales?: Record<string, any>;
     antecedentesPostnatales?: Record<string, any>;
@@ -273,9 +256,13 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
   );
   const [nuevoMedicamento, setNuevoMedicamento] = useState('');
   
-  // Estados para Antecedentes Patológicos
-  const [antecedentesPatologicos, setAntecedentesPatologicos] = useState<AntecedentesPatologicosPersonales>(
-    normalizarAntecedentesPatologicos(antecedentes?.antecedentesPatologicos)
+  // Estado para Antecedentes Patológicos Personales y Familiares
+  const [antecedentesPatologicosPersonalesFamiliares, setAntecedentesPatologicosPersonalesFamiliares] = useState<AntecedentesPatologicosPersonalesFamiliares>(
+    normalizarAntecedentesPatologicosPersonalesFamiliares(
+      antecedentes?.antecedentesPatologicosPersonalesFamiliares,
+      antecedentes?.antecedentesPatologicos,
+      antecedentes?.antecedentesHeredofamiliares
+    )
   );
 
   // Estados para Antecedentes No Patológicos
@@ -289,12 +276,6 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
       otros: '',
     }
   );
-
-  // Estados para Antecedentes Patologicos Familiares
-  const [antecedentesHeredofamiliares, setAntecedentesHeredofamiliares] = useState<AntecedentesPatologicosFamiliares>(
-    normalizarAntecedentesPatologicosFamiliares(antecedentes?.antecedentesHeredofamiliares)
-  );
-  const [nuevoAntecedenteFamiliar, setNuevoAntecedenteFamiliar] = useState('');
 
   // Estados para Antecedentes Gineco-Obstétricos
   const [antecedentesGineco, setAntecedentesGineco] = useState(
@@ -387,19 +368,18 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
         setMedicamentos(antecedentes.medicamentos);
       }
       
-      // Actualizar antecedentes patológicos
-      if (antecedentes.antecedentesPatologicos) {
-        setAntecedentesPatologicos(normalizarAntecedentesPatologicos(antecedentes.antecedentesPatologicos));
-      }
+      // Actualizar antecedentes patológicos personales y familiares
+      setAntecedentesPatologicosPersonalesFamiliares(
+        normalizarAntecedentesPatologicosPersonalesFamiliares(
+          antecedentes.antecedentesPatologicosPersonalesFamiliares,
+          antecedentes.antecedentesPatologicos,
+          antecedentes.antecedentesHeredofamiliares
+        )
+      );
       
       // Actualizar antecedentes no patológicos
       if (antecedentes.antecedentesNoPatologicos) {
         setAntecedentesNoPatologicos(antecedentes.antecedentesNoPatologicos);
-      }
-      
-      // Actualizar antecedentes heredofamiliares
-      if (antecedentes.antecedentesHeredofamiliares) {
-        setAntecedentesHeredofamiliares(normalizarAntecedentesPatologicosFamiliares(antecedentes.antecedentesHeredofamiliares));
       }
       
       // Actualizar antecedentes gineco-obstétricos
@@ -505,49 +485,32 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
     onActualizarAntecedentes?.(pacienteId, 'alergias', alergias);
   };
 
-  const handleGuardarAntecedentesPatologicos = () => {
-    onActualizarAntecedentes?.(pacienteId, 'antecedentesPatologicos', antecedentesPatologicos);
+  const handleChangeAntecedentesPatologicosPersonalesFamiliares = (
+    key: AntecedentePpfKey,
+    field: 'respuesta' | 'notas',
+    value: string,
+  ) => {
+    setAntecedentesPatologicosPersonalesFamiliares((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        [field]: field === 'respuesta'
+          ? ((value === 'si' || value === 'no' ? value : '') as SiNoValue)
+          : value,
+      },
+    }));
+  };
+
+  const handleGuardarAntecedentesPatologicosPersonalesFamiliares = () => {
+    onActualizarAntecedentes?.(
+      pacienteId,
+      'antecedentesPatologicosPersonalesFamiliares',
+      antecedentesPatologicosPersonalesFamiliares,
+    );
   };
 
   const handleGuardarAntecedentesNoPatologicos = () => {
     onActualizarAntecedentes?.(pacienteId, 'antecedentesNoPatologicos', antecedentesNoPatologicos);
-  };
-
-  const handleGuardarAntecedentesHeredofamiliares = () => {
-    onActualizarAntecedentes?.(pacienteId, 'antecedentesHeredofamiliares', antecedentesHeredofamiliares);
-  };
-
-  const handleAddAntecedenteFamiliar = () => {
-    const nuevo = nuevoAntecedenteFamiliar.trim();
-    if (!nuevo) return;
-
-    const existe = antecedentesHeredofamiliares.items.some(
-      (item) => item.toLowerCase() === nuevo.toLowerCase()
-    );
-    if (existe) {
-      setNuevoAntecedenteFamiliar('');
-      return;
-    }
-
-    setAntecedentesHeredofamiliares((prev) => ({
-      ...prev,
-      items: [...prev.items, nuevo],
-    }));
-    setNuevoAntecedenteFamiliar('');
-  };
-
-  const handleRemoveAntecedenteFamiliar = (index: number) => {
-    setAntecedentesHeredofamiliares((prev) => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index),
-    }));
-  };
-
-  const handleKeyPressAntecedenteFamiliar = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAddAntecedenteFamiliar();
-    }
   };
 
   const handleGuardarAntecedentesGineco = () => {
@@ -586,73 +549,53 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
       </div>
 
       <Accordion type="single" collapsible className="space-y-2">
-        {/* Esquema de Vacunación */}
-        <AccordionItem value="esquema-vacunacion" className="border rounded-lg px-4 bg-blue-50">
+        {/* Antecedentes Patológicos Personales y Familiares */}
+        <AccordionItem value="antecedentes-patologicos-personales-familiares" className="border rounded-lg px-4 bg-orange-50">
           <AccordionTrigger className="hover:no-underline">
-            <h3 className="text-gray-900">Esquema de Vacunación</h3>
+            <h3 className="text-gray-900">Antecedentes patológicos personales y familiares</h3>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-4 pt-2">
-              {vaccinationSchedule.map((group, groupIndex) => (
-                <div key={groupIndex} className="space-y-2">
-                  <h4 className="text-gray-700">{group.age}</h4>
-                  <div className="space-y-2 pl-4">
-                    {group.vaccines.map((vaccine, vaccineIndex) => {
-                      const vaccineId = `${group.age}-${vaccineIndex}`;
-                      return (
-                        <div key={vaccineId} className="flex items-start gap-2">
-                          <Checkbox
-                            id={vaccineId}
-                            checked={selectedVaccines.has(vaccineId)}
-                            onCheckedChange={() => handleVaccineToggle(vaccineId)}
-                            className="mt-0.5"
-                          />
-                          <Label
-                            htmlFor={vaccineId}
-                            className="text-sm text-gray-700 cursor-pointer leading-tight"
-                          >
-                            {vaccine}
-                          </Label>
-                        </div>
-                      );
-                    })}
+            <div className="pt-2 space-y-3">
+              {ANTECEDENTES_PPF_ITEMS.map((item) => (
+                <div key={item.key} className="p-3 border rounded-md bg-white space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-sm text-gray-700">
+                      {item.numero}. {item.label}
+                    </Label>
+                    <RadioGroup
+                      value={antecedentesPatologicosPersonalesFamiliares[item.key].respuesta}
+                      onValueChange={(value: string) =>
+                        handleChangeAntecedentesPatologicosPersonalesFamiliares(item.key, 'respuesta', value)
+                      }
+                      className="flex gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="si" id={`${item.key}-si`} />
+                        <Label htmlFor={`${item.key}-si`} className="text-sm cursor-pointer">Sí</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="no" id={`${item.key}-no`} />
+                        <Label htmlFor={`${item.key}-no`} className="text-sm cursor-pointer">No</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-600 mb-1 block">Notas</Label>
+                    <Textarea
+                      value={antecedentesPatologicosPersonalesFamiliares[item.key].notas}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                        handleChangeAntecedentesPatologicosPersonalesFamiliares(item.key, 'notas', e.target.value)
+                      }
+                      placeholder={`Detalle para ${item.label.toLowerCase()}...`}
+                      className="min-h-[70px] text-sm"
+                    />
                   </div>
                 </div>
               ))}
 
-              {/* Otras Vacunas */}
-              <div className="pt-4 border-t">
-                <div className="flex items-center gap-4">
-                  <Label className="text-gray-700">Otras Vacunas</Label>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="otras-si"
-                        checked={hasOtherVaccines === true}
-                        onCheckedChange={() => setHasOtherVaccines(true)}
-                      />
-                      <Label htmlFor="otras-si" className="text-sm cursor-pointer">
-                        Sí
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="otras-no"
-                        checked={hasOtherVaccines === false}
-                        onCheckedChange={() => setHasOtherVaccines(false)}
-                      />
-                      <Label htmlFor="otras-no" className="text-sm cursor-pointer">
-                        No
-                      </Label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Botón de Guardar */}
               <div className="pt-4 border-t mt-4">
-                <Button 
-                  onClick={handleGuardarEsquemaVacunacion}
+                <Button
+                  onClick={handleGuardarAntecedentesPatologicosPersonalesFamiliares}
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700"
                 >
@@ -734,110 +677,73 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
           </AccordionContent>
         </AccordionItem>
 
-        {/* Antecedentes Patológicos */}
-        <AccordionItem value="antecedentes-patologicos" className="border rounded-lg px-4 bg-orange-50">
+        {/* Esquema de Vacunación */}
+        <AccordionItem value="esquema-vacunacion" className="border rounded-lg px-4 bg-blue-50">
           <AccordionTrigger className="hover:no-underline">
-            <h3 className="text-gray-900">Antecedentes patológicos personales</h3>
+            <h3 className="text-gray-900">Esquema de Vacunación</h3>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="pt-2 space-y-3">
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-800">Clínicos</h4>
-                {([
-                  ['diabetes', 'Diabetes'],
-                  ['tiroideas', 'Enfermedades Tiroideas'],
-                  ['hipertension', 'Hipertensión Arterial'],
-                  ['cardiopatias', 'Cardiopatías'],
-                  ['cancer', 'Cáncer'],
-                  ['tuberculosis', 'Tuberculosis'],
-                  ['respiratorias', 'Patologías Respiratorias'],
-                  ['gastrointestinales', 'Patologías Gastrointestinales'],
-                  ['ets', 'Enfermedades de Transmisión Sexual'],
-                  ['renalCronica', 'Enfermedad Renal Crónica'],
-                ] as const).map(([key, label]) => (
-                  <div key={key} className="flex items-center justify-between py-2 border-b">
-                    <Label className="text-sm text-gray-700">{label}</Label>
-                    <RadioGroup
-                      value={antecedentesPatologicos.clinicos[key]}
-                      onValueChange={(value: string) =>
-                        setAntecedentesPatologicos((prev) => ({
-                          ...prev,
-                          clinicos: {
-                            ...prev.clinicos,
-                            [key]: value as SiNoValue,
-                          },
-                        }))
-                      }
-                      className="flex gap-4"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="si" id={`${key}-si`} />
-                        <Label htmlFor={`${key}-si`} className="text-sm cursor-pointer">Sí</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="no" id={`${key}-no`} />
-                        <Label htmlFor={`${key}-no`} className="text-sm cursor-pointer">No</Label>
-                      </div>
-                    </RadioGroup>
+            <div className="space-y-4 pt-2">
+              {vaccinationSchedule.map((group, groupIndex) => (
+                <div key={groupIndex} className="space-y-2">
+                  <h4 className="text-gray-700">{group.age}</h4>
+                  <div className="space-y-2 pl-4">
+                    {group.vaccines.map((vaccine, vaccineIndex) => {
+                      const vaccineId = `${group.age}-${vaccineIndex}`;
+                      return (
+                        <div key={vaccineId} className="flex items-start gap-2">
+                          <Checkbox
+                            id={vaccineId}
+                            checked={selectedVaccines.has(vaccineId)}
+                            onCheckedChange={() => handleVaccineToggle(vaccineId)}
+                            className="mt-0.5"
+                          />
+                          <Label
+                            htmlFor={vaccineId}
+                            className="text-sm text-gray-700 cursor-pointer leading-tight"
+                          >
+                            {vaccine}
+                          </Label>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
 
-              <div className="space-y-2 pt-2">
-                <h4 className="text-sm font-medium text-gray-800">Quirúrgicos</h4>
-                {([
-                  ['hospitalizacion', 'Hospitalización Previa'],
-                  ['cirugias', 'Cirugías Previas'],
-                  ['traumatismos', 'Traumatismos'],
-                  ['transfusiones', 'Transfusiones'],
-                ] as const).map(([key, label]) => (
-                  <div key={key} className="flex items-center justify-between py-2 border-b">
-                    <Label className="text-sm text-gray-700">{label}</Label>
-                    <RadioGroup
-                      value={antecedentesPatologicos.quirurgicos[key]}
-                      onValueChange={(value: string) =>
-                        setAntecedentesPatologicos((prev) => ({
-                          ...prev,
-                          quirurgicos: {
-                            ...prev.quirurgicos,
-                            [key]: value as SiNoValue,
-                          },
-                        }))
-                      }
-                      className="flex gap-4"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="si" id={`${key}-si`} />
-                        <Label htmlFor={`${key}-si`} className="text-sm cursor-pointer">Sí</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="no" id={`${key}-no`} className="text-sm cursor-pointer" />
-                        <Label htmlFor={`${key}-no`} className="text-sm cursor-pointer">No</Label>
-                      </div>
-                    </RadioGroup>
+              {/* Otras Vacunas */}
+              <div className="pt-4 border-t">
+                <div className="flex items-center gap-4">
+                  <Label className="text-gray-700">Otras Vacunas</Label>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="otras-si"
+                        checked={hasOtherVaccines === true}
+                        onCheckedChange={() => setHasOtherVaccines(true)}
+                      />
+                      <Label htmlFor="otras-si" className="text-sm cursor-pointer">
+                        Sí
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="otras-no"
+                        checked={hasOtherVaccines === false}
+                        onCheckedChange={() => setHasOtherVaccines(false)}
+                      />
+                      <Label htmlFor="otras-no" className="text-sm cursor-pointer">
+                        No
+                      </Label>
+                    </div>
                   </div>
-                ))}
-              </div>
-
-              <div className="pt-2">
-                <Label className="text-sm text-gray-700 mb-2 block">Nota libre del doctor</Label>
-                <Textarea
-                  value={antecedentesPatologicos.notaLibreDoctor}
-                  onChange={(e) =>
-                    setAntecedentesPatologicos((prev) => ({
-                      ...prev,
-                      notaLibreDoctor: e.target.value,
-                    }))
-                  }
-                  placeholder="Detalle clínico o quirúrgico adicional del paciente..."
-                  className="min-h-[90px]"
-                />
+                </div>
               </div>
 
               {/* Botón de Guardar */}
               <div className="pt-4 border-t mt-4">
                 <Button 
-                  onClick={handleGuardarAntecedentesPatologicos}
+                  onClick={handleGuardarEsquemaVacunacion}
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700"
                 >
@@ -978,73 +884,6 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
               <div className="pt-4 border-t mt-4">
                 <Button 
                   onClick={handleGuardarAntecedentesNoPatologicos}
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  <Save className="size-4 mr-2" />
-                  Guardar
-                </Button>
-              </div>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-
-        {/* Antecedentes Patologicos Familiares */}
-        <AccordionItem value="antecedentes-heredofamiliares" className="border rounded-lg px-4 bg-purple-50">
-          <AccordionTrigger className="hover:no-underline">
-            <h3 className="text-gray-900">Antecedentes patológicos familiares</h3>
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="pt-2 space-y-4">
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-700">Agregar antecedente familiar</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={nuevoAntecedenteFamiliar}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNuevoAntecedenteFamiliar(e.target.value)}
-                    onKeyDown={handleKeyPressAntecedenteFamiliar}
-                    placeholder="Ej: Diabetes tipo 2 en madre"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleAddAntecedenteFamiliar}
-                    className="shrink-0"
-                  >
-                    <Plus className="size-4 mr-2" />
-                    Agregar
-                  </Button>
-                </div>
-              </div>
-
-              {antecedentesHeredofamiliares.items.length === 0 ? (
-                <div className="text-sm text-gray-500 py-2 border rounded-md px-3 bg-white">
-                  No hay antecedentes familiares registrados.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {antecedentesHeredofamiliares.items.map((antecedente, index) => (
-                    <div key={`${antecedente}-${index}`} className="flex items-center justify-between gap-2 py-2 px-3 border rounded-md bg-white">
-                      <span className="text-sm text-gray-700">{antecedente}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveAntecedenteFamiliar(index)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        aria-label="Eliminar antecedente"
-                      >
-                        <X className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Botón de Guardar */}
-              <div className="pt-4 border-t mt-4">
-                <Button 
-                  onClick={handleGuardarAntecedentesHeredofamiliares}
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700"
                 >

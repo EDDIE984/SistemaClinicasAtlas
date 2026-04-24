@@ -28,12 +28,19 @@ export interface SignoVital {
   estatura_cm: number | null;
   peso_kg: number | null;
   imc: number | null;
+  perimetro_cefalico_cm: number | null;
   temperatura_c: number | null;
   frecuencia_respiratoria: number | null;
   frecuencia_cardiaca: number | null;
   presion_sistolica: number | null;
   presion_diastolica: number | null;
   saturacion_oxigeno: number | null;
+  glucosa_mg_dl: number | null;
+  glasgow_ocular: number | null;
+  glasgow_verbal: number | null;
+  glasgow_motora: number | null;
+  reaccion_pupilar: string | null;
+  tiempo_llenado_capilar_seg: number | null;
   notas: string | null;
   created_at?: string;
 }
@@ -409,6 +416,27 @@ export const RANGOS_SIGNOS_VITALES: Record<string, RangoSignoVital> = {
     criticoMin: 90, criticoMax: 100,
     soloMin: true,
   },
+  glucosa_mg_dl: {
+    etiqueta: 'Glucemia capilar',
+    unidad: 'mg/dL',
+    normalMin: 70, normalMax: 140,
+    advertenciaMin: 60, advertenciaMax: 180,
+    criticoMin: 55, criticoMax: 250,
+  },
+  tiempo_llenado_capilar_seg: {
+    etiqueta: 'Tiempo de llenado capilar',
+    unidad: 'seg',
+    normalMin: 0, normalMax: 2,
+    advertenciaMin: 0, advertenciaMax: 3,
+    criticoMin: 0, criticoMax: 4,
+  },
+  glasgow_total: {
+    etiqueta: 'Glasgow total',
+    unidad: 'pts',
+    normalMin: 15, normalMax: 15,
+    advertenciaMin: 13, advertenciaMax: 15,
+    criticoMin: 3, criticoMax: 12,
+  },
   imc: {
     etiqueta: 'IMC',
     unidad: 'kg/m²',
@@ -426,9 +454,8 @@ export function evaluarSignosVitales(
 ): Omit<AlertaSignoVital, 'id_alerta' | 'created_at'>[] {
   const alertas: Omit<AlertaSignoVital, 'id_alerta' | 'created_at'>[] = [];
 
-  for (const [campo, rango] of Object.entries(RANGOS_SIGNOS_VITALES)) {
-    const valor = signo[campo as keyof SignoVital] as number | null;
-    if (valor === null || valor === undefined) continue;
+  const evaluarCampo = (campo: string, valor: number | null | undefined, rango: RangoSignoVital) => {
+    if (valor === null || valor === undefined) return;
 
     let nivel: 'advertencia' | 'critico' | null = null;
     let descripcion = '';
@@ -445,17 +472,32 @@ export function evaluarSignosVitales(
         : `${rango.etiqueta} alta: ${valor} ${rango.unidad} (máx. normal: ${rango.normalMax})`;
     }
 
-    if (nivel) {
-      alertas.push({
-        id_signo_vital: signo.id_signo_vital,
-        campo,
-        valor,
-        rango_min: rango.normalMin,
-        rango_max: rango.soloMin ? null : rango.normalMax,
-        nivel,
-        descripcion,
-      });
-    }
+    if (!nivel) return;
+
+    alertas.push({
+      id_signo_vital: signo.id_signo_vital,
+      campo,
+      valor,
+      rango_min: rango.normalMin,
+      rango_max: rango.soloMin ? null : rango.normalMax,
+      nivel,
+      descripcion,
+    });
+  };
+
+  for (const [campo, rango] of Object.entries(RANGOS_SIGNOS_VITALES)) {
+    if (campo === 'glasgow_total') continue;
+    const valor = signo[campo as keyof SignoVital] as number | null;
+    evaluarCampo(campo, valor, rango);
+  }
+
+  if (
+    signo.glasgow_ocular != null &&
+    signo.glasgow_verbal != null &&
+    signo.glasgow_motora != null
+  ) {
+    const glasgowTotal = signo.glasgow_ocular + signo.glasgow_verbal + signo.glasgow_motora;
+    evaluarCampo('glasgow_total', glasgowTotal, RANGOS_SIGNOS_VITALES.glasgow_total);
   }
 
   return alertas;
@@ -554,12 +596,19 @@ export async function createSignoVital(signo: Omit<SignoVital, 'id_signo_vital' 
       estatura_cm: signo.estatura_cm !== null ? Math.min(999.99, Math.max(0, Number(signo.estatura_cm))) : null,
       peso_kg: signo.peso_kg !== null ? Math.min(999.99, Math.max(0, Number(signo.peso_kg))) : null,
       imc: signo.imc !== null ? Math.min(999.99, Math.max(0, Number(signo.imc))) : null,
+      perimetro_cefalico_cm: signo.perimetro_cefalico_cm !== null ? Math.min(999.99, Math.max(0, Number(signo.perimetro_cefalico_cm))) : null,
       temperatura_c: signo.temperatura_c !== null ? Math.min(999.99, Math.max(0, Number(signo.temperatura_c))) : null,
       frecuencia_respiratoria: signo.frecuencia_respiratoria !== null ? Math.min(999, Math.max(0, Number(signo.frecuencia_respiratoria))) : null,
       frecuencia_cardiaca: signo.frecuencia_cardiaca !== null ? Math.min(999, Math.max(0, Number(signo.frecuencia_cardiaca))) : null,
       presion_sistolica: signo.presion_sistolica !== null ? Math.min(999, Math.max(0, Number(signo.presion_sistolica))) : null,
       presion_diastolica: signo.presion_diastolica !== null ? Math.min(999, Math.max(0, Number(signo.presion_diastolica))) : null,
       saturacion_oxigeno: signo.saturacion_oxigeno !== null ? Math.min(100, Math.max(0, Number(signo.saturacion_oxigeno))) : null,
+      glucosa_mg_dl: signo.glucosa_mg_dl !== null ? Math.min(999, Math.max(0, Number(signo.glucosa_mg_dl))) : null,
+      glasgow_ocular: signo.glasgow_ocular !== null ? Math.min(4, Math.max(1, Number(signo.glasgow_ocular))) : null,
+      glasgow_verbal: signo.glasgow_verbal !== null ? Math.min(5, Math.max(1, Number(signo.glasgow_verbal))) : null,
+      glasgow_motora: signo.glasgow_motora !== null ? Math.min(6, Math.max(1, Number(signo.glasgow_motora))) : null,
+      reaccion_pupilar: signo.reaccion_pupilar ? String(signo.reaccion_pupilar) : null,
+      tiempo_llenado_capilar_seg: signo.tiempo_llenado_capilar_seg !== null ? Math.min(99.99, Math.max(0, Number(signo.tiempo_llenado_capilar_seg))) : null,
     };
 
     console.log('📊 Datos limpiados:', JSON.stringify(signoLimpio, null, 2));

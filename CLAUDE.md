@@ -10,6 +10,7 @@ Sistema de gestión clínica para **Clínica Atlas** (Ecuador). Permite administ
 - Configuración: empresas, sucursales, consultorios, usuarios, especialidades, aseguradoras
 - Reportes: analítica de atención médica
 - Chatbot: asistente de consulta médica con IA
+- Interconsultas: derivaciones entre médicos internos y externos
 
 Usuarios del sistema: médicos, secretarias, enfermeras, personal administrativo.
 Contexto geográfico: Ecuador — integración con Registro Civil para validación de cédula.
@@ -61,6 +62,7 @@ Sistema Medico Clinica Atlas/
 │   │   ├── CargosViewSupabase.tsx    # Facturación y cobros
 │   │   ├── ReportesViewSupabase.tsx  # Reportes y analítica
 │   │   ├── ChatBotViewSupabase.tsx   # Asistente IA
+│   │   ├── InterconsultasView.tsx    # Módulo de interconsultas (derivaciones)
 │   │   └── ConfiguracionesViewSupabase.tsx  # Configuración del sistema
 │   ├── lib/                          # Servicios y lógica de negocio
 │   │   ├── supabase.ts               # Cliente Supabase (singleton)
@@ -73,6 +75,7 @@ Sistema Medico Clinica Atlas/
 │   │   ├── reportesService.ts        # Agregación de datos para reportes
 │   │   ├── chatbotService.ts         # Lógica del asistente IA
 │   │   ├── registroCivilService.ts   # Integración Registro Civil Ecuador
+│   │   ├── interconsultaService.ts   # CRUD interconsultas y cambio de estado
 │   │   └── slotsService.ts           # Disponibilidad de horarios
 │   ├── hooks/                        # Custom hooks (estado + llamadas a servicios)
 │   │   ├── useCitas.ts
@@ -121,6 +124,7 @@ src/lib/
   authService.ts             # Autenticación y roles
   chatbotService.ts          # Lógica del asistente IA
   registroCivilService.ts    # Proxy a API del Registro Civil
+  interconsultaService.ts    # CRUD interconsultas (getInterconsultas, createInterconsulta, updateEstadoInterconsulta, deleteInterconsulta, asignarCitaInterconsulta)
   slotsService.ts            # Disponibilidad de horarios
 ```
 
@@ -239,6 +243,14 @@ Las llamadas a APIs externas deben pasar por una serverless function en `api/`. 
 - Vista de agenda: `src/components/AgendaViewSupabase.tsx`
 - Modal de agendar: `src/components/AgendarCitaModalSupabase.tsx`
 
+### Modificar el módulo de interconsultas
+
+- Servicio: `src/lib/interconsultaService.ts`
+- Vista del módulo: `src/components/InterconsultasView.tsx`
+- Formulario dentro de consulta: buscar bloque `{/* Interconsulta */}` en `src/components/PacientesViewSupabase.tsx`
+- Tipos: interfaces `Interconsulta` e `InterconsultaCompleta` en `src/lib/supabaseTypes.ts`
+- Migración SQL: `src/supabase/042_interconsultas.sql`
+
 ### Modificar precios base o precios por médico
 
 - Componente precio base: `src/components/config/PrecioBaseTabSupabase.tsx`
@@ -326,6 +338,94 @@ Los cobros (`cobrosService.ts`) deben respetar esta jerarquía al calcular el mo
 ### Función utilitaria
 
 `formatearMoneda(valor: number): string` — formatea números como moneda en USD. Exportada desde `configuracionesService.ts` y re-exportada por `useConfiguraciones.ts`.
+
+---
+
+## Módulo de Interconsultas
+
+### Concepto
+Una interconsulta es la derivación formal de un paciente a otro especialista durante una consulta activa. Puede ser **interna** (a un médico de Clínica Atlas) o **externa** (a un especialista fuera de la clínica).
+
+### Archivos clave
+
+| Archivo | Rol |
+|---------|-----|
+| `src/supabase/042_interconsultas.sql` | Migración SQL — ejecutar en Supabase SQL Editor |
+| `src/lib/interconsultaService.ts` | Servicio CRUD completo |
+| `src/components/InterconsultasView.tsx` | Vista del módulo (tabla, filtros, detalle, cambio de estado) |
+| `src/components/PacientesViewSupabase.tsx` | Contiene el formulario de registro dentro de la consulta |
+
+### Modelo de datos (`interconsulta`)
+
+```typescript
+interface Interconsulta {
+  id_interconsulta: number
+  id_consulta_medica: number | null      // Consulta que la origina
+  id_paciente: number | null
+  id_usuario_solicitante: number | null  // Médico que solicita
+  tipo_destino: 'interno' | 'externo'
+  id_usuario_destino: number | null      // Médico interno destino
+  id_especialidad_destino: number | null
+  especialidad_destino_texto: string | null  // Para destino externo
+  medico_destino_externo: string | null      // Para destino externo
+  motivo: string
+  resumen_clinico: string | null
+  urgencia: 'normal' | 'urgente'
+  fecha_limite: string | null
+  estado: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+  id_cita_generada: number | null        // Cita creada por la secretaria
+}
+```
+
+### Flujo de trabajo
+
+1. **Médico** registra la interconsulta dentro de la consulta activa (sección morada debajo de "Pedido de Hospitalización" en `PacientesViewSupabase.tsx`). La consulta médica debe existir previamente (auto-guardada).
+2. La interconsulta queda en estado **pendiente**.
+3. **Secretaria/Administrativo** ve la interconsulta en el módulo "Interconsultas" del menú y puede usar el botón **"Agendar"** para convertirla en una cita real (abre `AgendarCitaModalSupabase`). Al confirmar la cita, el estado pasa a **en_proceso**.
+4. El **médico destino** (interno) puede cambiar el estado a **atendida** desde el módulo.
+5. Cualquier rol puede marcar como **cancelada**.
+
+### Acceso por rol
+
+| Rol | Qué ve |
+|-----|--------|
+| Médico | Solo las que él generó + las dirigidas a él |
+| Secretaria | Todas; puede convertir internos a cita |
+| Enfermera | Todas |
+| Administrativo | Todas; puede convertir internos a cita |
+
+### Importante al modificar
+
+- La interconsulta **solo se puede eliminar si está en estado `pendiente`** — el servicio `deleteInterconsulta` filtra por ese estado en BD.
+- El formulario de registro **requiere que la consulta médica ya exista** en BD (auto-save activo). Si no hay consulta guardada, muestra toast de error.
+- El `id_consulta_medica` se obtiene llamando `getConsultaMedicaByCita(idCita)` en el momento de guardar — no se trackea en estado del componente.
+
+### Modificar interconsultas
+
+```
+InterconsultasView.tsx → interconsultaService.ts → tabla interconsulta
+PacientesViewSupabase.tsx (formulario) → interconsultaService.ts → tabla interconsulta
+```
+
+---
+
+## Build y optimización de chunks
+
+El `vite.config.ts` usa `manualChunks` para dividir los vendors en archivos separados. Esto mejora el tiempo de carga y permite que el browser cachee librerías independientemente del código de la app.
+
+| Chunk | Contenido |
+|-------|-----------|
+| `vendor-react` | react, react-dom |
+| `vendor-supabase` | @supabase/supabase-js, @jsr/supabase |
+| `vendor-ui` | @radix-ui/*, cmdk, vaul, embla-carousel |
+| `vendor-charts` | recharts, d3 |
+| `vendor-pdf` | pdf-lib |
+| `vendor-xlsx` | xlsx, fflate |
+| `vendor-icons` | lucide-react |
+| `vendor-misc` | resto de dependencias |
+| `index` | código de la aplicación |
+
+**Regla:** al agregar una dependencia grande (>100 kB), evaluar si merece su propio chunk en `vite.config.ts`.
 
 ---
 

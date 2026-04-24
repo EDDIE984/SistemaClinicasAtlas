@@ -379,12 +379,19 @@ export interface Database {
           estatura_cm: number | null
           peso_kg: number | null
           imc: number | null
+          perimetro_cefalico_cm: number | null
           temperatura_c: number | null
           frecuencia_respiratoria: number | null
           frecuencia_cardiaca: number | null
           presion_sistolica: number | null
           presion_diastolica: number | null
           saturacion_oxigeno: number | null
+          glucosa_mg_dl: number | null
+          glasgow_ocular: number | null
+          glasgow_verbal: number | null
+          glasgow_motora: number | null
+          reaccion_pupilar: string | null
+          tiempo_llenado_capilar_seg: number | null
           notas: string | null
           created_at: string
         }
@@ -395,12 +402,19 @@ export interface Database {
           estatura_cm?: number | null
           peso_kg?: number | null
           imc?: number | null
+          perimetro_cefalico_cm?: number | null
           temperatura_c?: number | null
           frecuencia_respiratoria?: number | null
           frecuencia_cardiaca?: number | null
           presion_sistolica?: number | null
           presion_diastolica?: number | null
           saturacion_oxigeno?: number | null
+          glucosa_mg_dl?: number | null
+          glasgow_ocular?: number | null
+          glasgow_verbal?: number | null
+          glasgow_motora?: number | null
+          reaccion_pupilar?: string | null
+          tiempo_llenado_capilar_seg?: number | null
           notas?: string | null
           created_at?: string
         }
@@ -411,12 +425,19 @@ export interface Database {
           estatura_cm?: number | null
           peso_kg?: number | null
           imc?: number | null
+          perimetro_cefalico_cm?: number | null
           temperatura_c?: number | null
           frecuencia_respiratoria?: number | null
           frecuencia_cardiaca?: number | null
           presion_sistolica?: number | null
           presion_diastolica?: number | null
           saturacion_oxigeno?: number | null
+          glucosa_mg_dl?: number | null
+          glasgow_ocular?: number | null
+          glasgow_verbal?: number | null
+          glasgow_motora?: number | null
+          reaccion_pupilar?: string | null
+          tiempo_llenado_capilar_seg?: number | null
           notas?: string | null
           created_at?: string
         }
@@ -669,6 +690,223 @@ export interface Database {
           updated_at?: string
         }
       }
+      examen_laboratorio: {
+        Row: {
+          id_examen_laboratorio: number
+          categoria: string
+          nombre: string
+          descripcion: string | null
+          estado: 'activo' | 'inactivo'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id_examen_laboratorio?: number
+          categoria: string
+          nombre: string
+          descripcion?: string | null
+          estado?: 'activo' | 'inactivo'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id_examen_laboratorio?: number
+          categoria?: string
+          nombre?: string
+          descripcion?: string | null
+          estado?: 'activo' | 'inactivo'
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      pedido_laboratorio: {
+        Row: {
+          id_pedido_laboratorio: number
+          numero_pedido_laboratorio: number
+          id_cita: number
+          id_paciente: number
+          id_sucursal: number
+          id_usuario_solicitante: number
+          id_usuario_sucursal_medico: number
+          fecha_pedido: string
+          estado: 'pendiente' | 'procesado' | 'cancelado'
+          observaciones: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id_pedido_laboratorio?: number
+          numero_pedido_laboratorio?: number
+          id_cita: number
+          id_paciente: number
+          id_sucursal: number
+          id_usuario_solicitante: number
+          id_usuario_sucursal_medico: number
+          fecha_pedido?: string
+          estado?: 'pendiente' | 'procesado' | 'cancelado'
+          observaciones?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id_pedido_laboratorio?: number
+          numero_pedido_laboratorio?: number
+          id_cita?: number
+          id_paciente?: number
+          id_sucursal?: number
+          id_usuario_solicitante?: number
+          id_usuario_sucursal_medico?: number
+          fecha_pedido?: string
+          estado?: 'pendiente' | 'procesado' | 'cancelado'
+          observaciones?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      pedido_laboratorio_detalle: {
+        Row: {
+          id_pedido_laboratorio_detalle: number
+          id_pedido_laboratorio: number
+          id_examen_laboratorio: number
+          created_at: string
+        }
+        Insert: {
+          id_pedido_laboratorio_detalle?: number
+          id_pedido_laboratorio: number
+          id_examen_laboratorio: number
+          created_at?: string
+        }
+        Update: {
+          id_pedido_laboratorio_detalle?: number
+          id_pedido_laboratorio?: number
+          id_examen_laboratorio?: number
+          created_at?: string
+        }
+      }
+      solicitud_imagen: {
+        Row: {
+          id_solicitud_imagen: number
+          numero_solicitud_imagen: number
+          id_cita: number
+          id_paciente: number
+          id_sucursal: number
+          id_usuario_solicitante: number
+          fecha_solicitud: string
+          nombre_paciente: string
+          edad_paciente: number | null
+          procedimiento: string | null
+          antecedentes_clinico_quirurgico: string | null
+          cuadro_clinico: string | null
+          medicamentos: string | null
+          alergias: string | null
+          firma: string | null
+          sello: string | null
+          estado: 'activa' | 'anulada'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id_solicitud_imagen?: number
+          numero_solicitud_imagen?: number
+          id_cita: number
+          id_paciente: number
+          id_sucursal: number
+          id_usuario_solicitante: number
+          fecha_solicitud?: string
+          nombre_paciente: string
+          edad_paciente?: number | null
+          procedimiento?: string | null
+          antecedentes_clinico_quirurgico?: string | null
+          cuadro_clinico?: string | null
+          medicamentos?: string | null
+          alergias?: string | null
+          firma?: string | null
+          sello?: string | null
+          estado?: 'activa' | 'anulada'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id_solicitud_imagen?: number
+          numero_solicitud_imagen?: number
+          id_cita?: number
+          id_paciente?: number
+          id_sucursal?: number
+          id_usuario_solicitante?: number
+          fecha_solicitud?: string
+          nombre_paciente?: string
+          edad_paciente?: number | null
+          procedimiento?: string | null
+          antecedentes_clinico_quirurgico?: string | null
+          cuadro_clinico?: string | null
+          medicamentos?: string | null
+          alergias?: string | null
+          firma?: string | null
+          sello?: string | null
+          estado?: 'activa' | 'anulada'
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      interconsulta: {
+        Row: {
+          id_interconsulta: number
+          id_consulta_medica: number | null
+          id_paciente: number | null
+          id_usuario_solicitante: number | null
+          tipo_destino: 'interno' | 'externo'
+          id_usuario_destino: number | null
+          id_especialidad_destino: number | null
+          especialidad_destino_texto: string | null
+          medico_destino_externo: string | null
+          motivo: string
+          resumen_clinico: string | null
+          urgencia: 'normal' | 'urgente'
+          fecha_limite: string | null
+          estado: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+          id_cita_generada: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id_interconsulta?: number
+          id_consulta_medica?: number | null
+          id_paciente?: number | null
+          id_usuario_solicitante?: number | null
+          tipo_destino: 'interno' | 'externo'
+          id_usuario_destino?: number | null
+          id_especialidad_destino?: number | null
+          especialidad_destino_texto?: string | null
+          medico_destino_externo?: string | null
+          motivo: string
+          resumen_clinico?: string | null
+          urgencia?: 'normal' | 'urgente'
+          fecha_limite?: string | null
+          estado?: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+          id_cita_generada?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id_interconsulta?: number
+          id_consulta_medica?: number | null
+          id_paciente?: number | null
+          id_usuario_solicitante?: number | null
+          tipo_destino?: 'interno' | 'externo'
+          id_usuario_destino?: number | null
+          id_especialidad_destino?: number | null
+          especialidad_destino_texto?: string | null
+          medico_destino_externo?: string | null
+          motivo?: string
+          resumen_clinico?: string | null
+          urgencia?: 'normal' | 'urgente'
+          fecha_limite?: string | null
+          estado?: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+          id_cita_generada?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       // Agregar otras tablas según necesites
     }
     Views: {
@@ -684,4 +922,49 @@ export interface Database {
       [_ in never]: never
     }
   }
+}
+
+export interface Interconsulta {
+  id_interconsulta: number
+  id_consulta_medica: number | null
+  id_paciente: number | null
+  id_usuario_solicitante: number | null
+  tipo_destino: 'interno' | 'externo'
+  id_usuario_destino: number | null
+  id_especialidad_destino: number | null
+  especialidad_destino_texto: string | null
+  medico_destino_externo: string | null
+  motivo: string
+  resumen_clinico: string | null
+  urgencia: 'normal' | 'urgente'
+  fecha_limite: string | null
+  estado: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+  id_cita_generada: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InterconsultaCompleta extends Interconsulta {
+  paciente?: {
+    id_paciente: number
+    nombre: string
+    apellido: string
+    cedula: string
+  }
+  usuario_solicitante?: {
+    id_usuario: number
+    nombre: string
+    apellido: string
+    tipo_usuario: string
+  }
+  usuario_destino?: {
+    id_usuario: number
+    nombre: string
+    apellido: string
+    tipo_usuario: string
+  } | null
+  especialidad?: {
+    id_especialidad: number
+    nombre: string
+  } | null
 }

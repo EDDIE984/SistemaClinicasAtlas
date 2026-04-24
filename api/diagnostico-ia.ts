@@ -11,10 +11,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Método no permitido' });
   }
 
-  const { hallazgos } = req.body as { hallazgos?: string };
+  const { codigoCie10 } = req.body as { codigoCie10?: string };
+  const codigo = codigoCie10?.trim().toUpperCase();
 
-  if (!hallazgos || hallazgos.trim().length < 5) {
-    return res.status(400).json({ error: 'Los hallazgos clínicos son requeridos' });
+  if (!codigo) {
+    return res.status(400).json({ error: 'El código CIE-10 es requerido' });
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
@@ -36,19 +37,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           {
             role: 'system',
             content: `Eres un asistente médico experto en clasificación diagnóstica CIE-10 (Clasificación Internacional de Enfermedades, 10.ª revisión).
-Tu tarea es analizar los hallazgos clínicos descritos por el médico y sugerir los 3 diagnósticos más probables según el CIE-10.
+Tu tarea es validar un código CIE-10 y devolver su descripción clínica en español.
 
 REGLAS ESTRICTAS:
 - Responde ÚNICAMENTE con un JSON válido, sin texto adicional, sin bloques markdown, sin explicaciones fuera del JSON.
 - El JSON debe tener exactamente esta estructura:
-{"diagnosticos":[{"codigo":"X00.0","nombre":"Nombre exacto CIE-10","descripcion":"Justificación clínica en máximo 15 palabras"},{"codigo":"X00.1","nombre":"...","descripcion":"..."},{"codigo":"X00.2","nombre":"...","descripcion":"..."}]}
-- Los códigos deben ser válidos del CIE-10.
-- Ordena por probabilidad descendente (el más probable primero).
+{"diagnostico":{"codigo":"X00.0","nombre":"Nombre exacto CIE-10","descripcion":"Descripción clínica breve en máximo 20 palabras"}}
+- Si el código no es válido o no existe, responde exactamente:
+{"error":"Código CIE-10 no encontrado"}
+- El campo codigo debe conservar el formato oficial CIE-10.
 - Los textos deben estar en español.`
           },
           {
             role: 'user',
-            content: `Hallazgos clínicos del paciente:\n${hallazgos}`
+            content: `Código CIE-10 ingresado por el médico: ${codigo}`
           }
         ]
       })
@@ -69,7 +71,7 @@ REGLAS ESTRICTAS:
       return res.status(502).json({ error: 'Respuesta vacía del servicio de IA' });
     }
 
-    let parsed: { diagnosticos: DiagnosticoSugerido[] };
+    let parsed: { diagnostico?: DiagnosticoSugerido; error?: string };
     try {
       // Limpiar posibles bloques markdown que el modelo pueda ignorar
       const cleaned = content.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -79,11 +81,15 @@ REGLAS ESTRICTAS:
       return res.status(502).json({ error: 'El servicio de IA devolvió un formato inesperado' });
     }
 
-    if (!Array.isArray(parsed?.diagnosticos) || parsed.diagnosticos.length === 0) {
-      return res.status(502).json({ error: 'No se obtuvieron diagnósticos del servicio de IA' });
+    if (parsed?.error) {
+      return res.status(404).json({ error: parsed.error });
     }
 
-    return res.status(200).json({ diagnosticos: parsed.diagnosticos.slice(0, 3) });
+    if (!parsed?.diagnostico?.codigo || !parsed?.diagnostico?.nombre) {
+      return res.status(502).json({ error: 'No se obtuvo una descripción válida del código CIE-10' });
+    }
+
+    return res.status(200).json({ diagnostico: parsed.diagnostico });
 
   } catch (error) {
     console.error('❌ Error en diagnostico-ia:', error);

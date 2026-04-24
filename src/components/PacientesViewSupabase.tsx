@@ -1,15 +1,22 @@
 // Vista de Pacientes integrada con Supabase
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePacientes, useSignosVitales, calcularIMC, calcularEdad, getIniciales } from '../hooks/usePacientes';
 import type { Paciente, SignoVital, ArchivoMedico } from '../lib/pacientesService';
 import { AlertasSignosVitalesPanel } from './AlertasSignosVitalesPanel';
 import { RANGOS_SIGNOS_VITALES } from '../lib/pacientesService';
 import { getArchivosByPaciente, createArchivoMedico, deleteArchivoMedico, getAntecedentesByPaciente, saveAntecedente } from '../lib/pacientesService';
-import { getCitasByPaciente, formatearFecha, formatearHora, getColorEstado, marcarCitaCompletada, updateCita, type CitaCompleta } from '../lib/citasService';
-import { crearConsultaMedica, getConsultaMedicaByCita, type ConsultaMedica } from '../lib/consultasService.ts';
+import { getCitasByPaciente, getCitasByUsuarioYFechas, getCitasBySucursalYFechas, formatearFecha, formatearHora, getColorEstado, marcarCitaCompletada, updateCita, type CitaCompleta } from '../lib/citasService';
+import { actualizarConsultaMedica, crearConsultaMedica, getConsultaMedicaByCita, type ConsultaMedica } from '../lib/consultasService.ts';
+import { createInterconsulta, getInterconsultasByConsulta, deleteInterconsulta } from '../lib/interconsultaService';
+import type { InterconsultaCompleta } from '../lib/supabaseTypes';
+import { getAllEspecialidades, type Especialidad } from '../lib/configuracionesService';
+import { createPedidoLaboratorio, getExamenesLaboratorioActivos, getPedidoLaboratorioByCita, type ExamenLaboratorio, type PedidoLaboratorioCompleto } from '../lib/laboratorioService';
+import { getSolicitudImagenByCita, upsertSolicitudImagen, type SolicitudImagen } from '../lib/solicitudImagenService';
+import { getMedicosBySucursal, type AsignacionCompleta } from '../lib/authService';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { consultarCedulaRegistroCivil } from '../lib/registroCivilService';
+import logoClinicaAtlas from '../assets/535c4fa3c95ae864b14ba302621119ba18d73bbc.png';
 
 
 import { Card, CardContent, CardHeader } from './ui/card';
@@ -40,7 +47,14 @@ import {
   Pencil,
   Stethoscope,
   AlertTriangle,
-  Brain
+  Brain,
+  Printer,
+  RefreshCw,
+  XCircle,
+  X,
+  Eye,
+  ArrowLeftRight,
+  Trash2
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
@@ -62,9 +76,12 @@ import {
 } from './ui/select';
 import { Badge } from './ui/badge';
 import { Textarea } from './ui/textarea';
+import { Checkbox } from './ui/checkbox';
 import { AntecedentesView } from './AntecedentesView';
 import { ArchivosMedicosSection } from './ArchivosMedicosSection';
 import { SupabaseIndicator } from './SupabaseIndicator';
+import { CancelarCitaModalSupabase } from './CancelarCitaModalSupabase';
+import { DetalleCitaDialog } from './DetalleCitaDialog';
 import {
   Command,
   CommandEmpty,
@@ -81,6 +98,14 @@ import {
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "./ui/utils";
 
+// Helper para formatear fecha local YYYY-MM-DD
+const formatDateLocal = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Helper para formatear el sexo
 const formatearSexo = (sexo: 'M' | 'F' | 'Otro'): string => {
   switch (sexo) {
@@ -91,8 +116,199 @@ const formatearSexo = (sexo: 'M' | 'F' | 'Otro'): string => {
   }
 };
 
+const createEmptyConsultaForm = () => ({
+  motivo_consulta: '',
+  historial_clinico: '',
+  receta_medica: '',
+  receta_rp: '',
+  receta_indicaciones: '',
+  pedido_examenes: '',
+  fecha_seguimiento: '',
+  pedido_hospitalizacion: '',
+  diagnostico: ''
+});
+
+const EXAMEN_FISICO_SEGMENTOS = [
+  'PIEL - FANERAS',
+  'CABEZA',
+  'OJOS',
+  'OIDOS',
+  'NARIZ',
+  'BOCA',
+  'ORO FARINGE',
+  'CUELLO',
+  'AXILAS - MAMAS',
+  'TORAX',
+  'ABDOMEN',
+  'COLUMNA VERTEBRAL',
+  'INGLE - PERINE',
+  'MIEMBROS SUPERIORES',
+  'MIEMBROS INFERIORES',
+] as const;
+
+const buildExamenFisicoResumen = ({
+  segmentos,
+  nota,
+}: {
+  segmentos: string[];
+  nota?: string;
+}): string => {
+  const partes: string[] = [];
+
+  if (segmentos.length > 0) {
+    partes.push(`SEGMENTOS: ${segmentos.join(', ')}`);
+  }
+
+  if (nota?.trim()) {
+    partes.push(`NOTA: ${nota.trim().toUpperCase()}`);
+  }
+
+  return partes.join('\n');
+};
+
+const buildRecetaResumen = ({
+  rp,
+  indicaciones,
+}: {
+  rp?: string;
+  indicaciones?: string;
+}): string => {
+  const partes: string[] = [];
+
+  if (rp?.trim()) {
+    partes.push(`RP:\n${rp.trim().toUpperCase()}`);
+  }
+
+  if (indicaciones?.trim()) {
+    partes.push(`INDICACIONES:\n${indicaciones.trim().toUpperCase()}`);
+  }
+
+  return partes.join('\n\n');
+};
+
+const createEmptySolicitudImagenForm = () => ({
+  fecha_solicitud: formatDateLocal(new Date()),
+  procedimiento: '',
+  antecedentes_clinico_quirurgico: '',
+  cuadro_clinico: '',
+  medicamentos: '',
+});
+
+const solicitudImagenTieneContenido = (form: ReturnType<typeof createEmptySolicitudImagenForm>): boolean => {
+  return [
+    form.procedimiento,
+    form.antecedentes_clinico_quirurgico,
+    form.cuadro_clinico,
+    form.medicamentos,
+  ].some((valor) => valor.trim().length > 0);
+};
+
+const ANTECEDENTES_PPF_KEYS = [
+  'clinicos',
+  'traumatologicos',
+  'pediatricos',
+  'quirurgicos',
+  'familiares',
+  'otros',
+] as const;
+
+const tieneAntecedentesPatologicosCompletos = (antecedentes: any): boolean => {
+  const bloque = antecedentes?.antecedentesPatologicosPersonalesFamiliares;
+  if (!bloque || typeof bloque !== 'object') return false;
+
+  return ANTECEDENTES_PPF_KEYS.every((key) => {
+    const respuesta = bloque?.[key]?.respuesta;
+    return respuesta === 'si' || respuesta === 'no';
+  });
+};
+
+type DiagnosticoCie10 = {
+  codigo: string;
+  nombre: string;
+  descripcion: string;
+};
+
+const DIAGNOSTICOS_CIE10_REFERENCIA: Record<string, DiagnosticoCie10> = {
+  'A09': {
+    codigo: 'A09',
+    nombre: 'Gastroenteritis y colitis de origen infeccioso no especificado',
+    descripcion: 'Cuadro de diarrea y dolor abdominal por infección intestinal no especificada.'
+  },
+  'I10': {
+    codigo: 'I10',
+    nombre: 'Hipertensión esencial (primaria)',
+    descripcion: 'Presión arterial elevada crónica sin causa secundaria identificada.'
+  },
+  'J30.9': {
+    codigo: 'J30.9',
+    nombre: 'Rinitis alérgica no especificada',
+    descripcion: 'Inflamación nasal por alergia con congestión, estornudos y rinorrea.'
+  },
+  'J06.9': {
+    codigo: 'J06.9',
+    nombre: 'Infección aguda de vías respiratorias superiores no especificada',
+    descripcion: 'Infección respiratoria alta aguda, usualmente viral.'
+  },
+  'K29.7': {
+    codigo: 'K29.7',
+    nombre: 'Gastritis no especificada',
+    descripcion: 'Inflamación de la mucosa gástrica con dolor epigástrico o dispepsia.'
+  },
+  'N39.0': {
+    codigo: 'N39.0',
+    nombre: 'Infección de vías urinarias, sitio no especificado',
+    descripcion: 'Infección urinaria con disuria, urgencia o polaquiuria.'
+  },
+  'E11.9': {
+    codigo: 'E11.9',
+    nombre: 'Diabetes mellitus tipo 2 sin complicaciones',
+    descripcion: 'Hiperglucemia crónica por resistencia a insulina, sin complicaciones registradas.'
+  },
+  'C25.9': {
+    codigo: 'C25.9',
+    nombre: 'Neoplasia maligna del páncreas, parte no especificada',
+    descripcion: 'Tumor maligno pancreático en localización anatómica no especificada.'
+  },
+  '157': {
+    codigo: '157',
+    nombre: 'Referencia histórica: neoplasia maligna de páncreas',
+    descripcion: 'Código no estándar CIE-10; referencia clínica aproximada equivalente a C25.9.'
+  }
+};
+
+const buildPedidoLaboratorioResumen = ({
+  numeroPedido,
+  nombreMedico,
+  examenes,
+  observaciones,
+}: {
+  numeroPedido?: number | null;
+  nombreMedico: string;
+  examenes: string[];
+  observaciones?: string;
+}): string => {
+  const lineas = [
+    `PEDIDO DE LABORATORIO${numeroPedido ? ` #${numeroPedido}` : ''}`,
+    `MÉDICO: ${nombreMedico.toUpperCase()}`,
+    'EXÁMENES:'
+  ];
+
+  examenes.forEach((examen) => {
+    lineas.push(`- ${examen.toUpperCase()}`);
+  });
+
+  if (observaciones?.trim()) {
+    lineas.push(`OBSERVACIONES: ${observaciones.trim().toUpperCase()}`);
+  }
+
+  return lineas.join('\n');
+};
+
 interface PacientesViewProps {
-  currentUser?: { email: string } | null;
+  currentUser?: {
+    email: string;
+    tipo_usuario?: string;
+  } | null;
   pacienteIdInicial?: string | null;
   citaIdInicial?: number | null;
   onConsultaCompletada?: () => void;
@@ -114,6 +330,165 @@ export function PacientesViewSupabase({
     }
   }, [currentUser]);
 
+  // Leer id_usuario del médico desde localStorage
+  useEffect(() => {
+    const userId = localStorage.getItem('currentUserId');
+    if (userId) setIdUsuarioActual(parseInt(userId));
+  }, []);
+
+  // ── Helpers de agenda ─────────────────────────────────────────────────────
+  const getWeekRangeAgenda = (date: Date) => {
+    const start = new Date(date);
+    start.setDate(start.getDate() - start.getDay());
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    return { inicio: formatDateLocal(start), fin: formatDateLocal(end) };
+  };
+
+  const getWeekDaysAgenda = () => {
+    const days: Date[] = [];
+    const start = new Date(currentWeekAgenda);
+    start.setDate(start.getDate() - start.getDay());
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(start);
+      day.setDate(day.getDate() + i);
+      days.push(day);
+    }
+    return days;
+  };
+
+  const esRolAgenda = currentUser?.tipo_usuario === 'medico' || currentUser?.tipo_usuario === 'enfermera';
+
+  const resolveUsuarioIdActual = async (): Promise<number | null> => {
+    if (idUsuarioActual) return idUsuarioActual;
+
+    const userIdLs = localStorage.getItem('currentUserId');
+    if (userIdLs) {
+      const parsed = parseInt(userIdLs);
+      if (!Number.isNaN(parsed)) {
+        setIdUsuarioActual(parsed);
+        return parsed;
+      }
+    }
+
+    if (!currentUser?.email) return null;
+
+    const { data: usuarioData } = await supabase
+      .from('usuario')
+      .select('id_usuario')
+      .eq('email', currentUser.email)
+      .maybeSingle() as any;
+
+    if (usuarioData?.id_usuario) {
+      const resolved = Number(usuarioData.id_usuario);
+      if (!Number.isNaN(resolved)) {
+        setIdUsuarioActual(resolved);
+        localStorage.setItem('currentUserId', resolved.toString());
+        return resolved;
+      }
+    }
+
+    return null;
+  };
+
+  const resolveSucursalIdActual = async (): Promise<number | null> => {
+    const sucursalLs = localStorage.getItem('currentSucursalId');
+    if (sucursalLs) {
+      const parsed = parseInt(sucursalLs);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+
+    const usuarioId = await resolveUsuarioIdActual();
+    if (!usuarioId) return null;
+
+    const { data: asignacionData } = await supabase
+      .from('usuario_sucursal')
+      .select('id_sucursal')
+      .eq('id_usuario', usuarioId)
+      .eq('estado', 'activo')
+      .order('id_usuario_sucursal', { ascending: true })
+      .limit(1)
+      .maybeSingle() as any;
+
+    if (asignacionData?.id_sucursal) {
+      const resolved = Number(asignacionData.id_sucursal);
+      if (!Number.isNaN(resolved)) {
+        localStorage.setItem('currentSucursalId', resolved.toString());
+        return resolved;
+      }
+    }
+
+    return null;
+  };
+
+  const cargarAgendaMedico = async () => {
+    if (!esRolAgenda) return;
+    setIsLoadingAgenda(true);
+    try {
+      const { inicio, fin } = vistaAgenda === 'semana'
+        ? getWeekRangeAgenda(currentWeekAgenda)
+        : { inicio: filterFechaDesdeAgenda, fin: filterFechaHastaAgenda };
+
+      let citas: CitaCompleta[] = [];
+
+      if (currentUser?.tipo_usuario === 'enfermera') {
+        const currentSucursalId = await resolveSucursalIdActual();
+        if (currentSucursalId) {
+          citas = await getCitasBySucursalYFechas(currentSucursalId, inicio, fin);
+        }
+      } else {
+        const usuarioId = await resolveUsuarioIdActual();
+        if (!usuarioId) {
+          setAgendaMedico([]);
+          setAgendaFiltrada([]);
+          return;
+        }
+        const currentSucursalId = await resolveSucursalIdActual();
+        citas = await getCitasByUsuarioYFechas(usuarioId, inicio, fin, currentSucursalId || undefined);
+      }
+
+      setAgendaMedico(citas);
+      if (agendaFilterPaciente) {
+        setAgendaFiltrada(citas.filter(c => c.paciente.id_paciente === agendaFilterPaciente.id));
+      } else {
+        setAgendaFiltrada(citas);
+      }
+    } catch (error) {
+      console.error('❌ Error al cargar agenda:', error);
+    } finally {
+      setIsLoadingAgenda(false);
+    }
+  };
+
+  const getCitasPorDiaAgenda = (fecha: Date) => {
+    const fechaStr = formatDateLocal(fecha);
+    return agendaFiltrada.filter(cita => {
+      const cumpleFecha = cita.fecha_cita === fechaStr;
+      const cumpleCanceladas = mostrarCanceladasAgenda || cita.estado_cita !== 'cancelada';
+      return cumpleFecha && cumpleCanceladas;
+    });
+  };
+
+  const coloresSucursalAgenda = ['blue', 'green', 'purple', 'orange', 'pink', 'indigo'];
+  const getColorSucursalAgenda = (idSucursal: number) =>
+    coloresSucursalAgenda[idSucursal % coloresSucursalAgenda.length];
+
+  const handleIniciarCitaDesdeAgenda = async (cita: CitaCompleta) => {
+    // Replica Agenda: abrir el paciente y preservar la cita seleccionada
+    await cargarPacienteById(cita.id_paciente);
+    setExpandedPatientId(cita.id_paciente);
+    setSelectedPatientId(cita.id_paciente);
+    setCitaIdParaConsulta(cita.id_cita);
+    setCitaDetalleAgenda(null);
+  };
+
+  const handleCancelarCitaDesdeAgenda = (cita: CitaCompleta) => {
+    setCitaAgendaSeleccionada(cita);
+    setIsCancelarAgendaModalOpen(true);
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
   const { pacientes, isLoading, buscarPacientes, crearPaciente, actualizarPaciente, clearPacientes, cargarPacienteById } = usePacientes(idCompania || undefined, { initialLoad: false });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -121,14 +496,30 @@ export function PacientesViewSupabase({
   const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
   const [isNewPatientDialogOpen, setIsNewPatientDialogOpen] = useState(false);
   const [isSignosVitalesDialogOpen, setIsSignosVitalesDialogOpen] = useState(false);
-  const [isConsultaDialogOpen, setIsConsultaDialogOpen] = useState(false);
+  const [isConsultaScreenOpen, setIsConsultaScreenOpen] = useState(false);
   const [isSavingConsulta, setIsSavingConsulta] = useState(false);
+  const [isAutoSavingConsulta, setIsAutoSavingConsulta] = useState(false);
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
   const [isSearchingCedula, setIsSearchingCedula] = useState(false); // Estado para loading de cédula
   const [isEditingPatient, setIsEditingPatient] = useState(false); // Estado para edición
   const [citaIdParaConsulta, setCitaIdParaConsulta] = useState<number | null>(null); // ID de cita para iniciar consulta
+  const [consultaDraftKey, setConsultaDraftKey] = useState<string | null>(null);
   const [isVerConsultaDialogOpen, setIsVerConsultaDialogOpen] = useState(false);
   const [consultaSeleccionada, setConsultaSeleccionada] = useState<ConsultaMedica | null>(null);
+  const [isLoadingDetalleConsulta, setIsLoadingDetalleConsulta] = useState(false);
+  const [solicitudImagenDetalle, setSolicitudImagenDetalle] = useState<SolicitudImagen | null>(null);
+  const [pedidoLaboratorioDetalle, setPedidoLaboratorioDetalle] = useState<PedidoLaboratorioCompleto | null>(null);
+  const [isLaboratorioDialogOpen, setIsLaboratorioDialogOpen] = useState(false);
+  const [isLoadingLaboratorio, setIsLoadingLaboratorio] = useState(false);
+  const [isLoadingMedicosLaboratorio, setIsLoadingMedicosLaboratorio] = useState(false);
+  const [examenesLaboratorio, setExamenesLaboratorio] = useState<ExamenLaboratorio[]>([]);
+  const [medicosLaboratorio, setMedicosLaboratorio] = useState<AsignacionCompleta[]>([]);
+  const [examenesLaboratorioSeleccionados, setExamenesLaboratorioSeleccionados] = useState<number[]>([]);
+  const [medicoLaboratorioSeleccionado, setMedicoLaboratorioSeleccionado] = useState<string>('');
+  const [observacionesLaboratorio, setObservacionesLaboratorio] = useState('');
+  const [pedidoLaboratorioActual, setPedidoLaboratorioActual] = useState<PedidoLaboratorioCompleto | null>(null);
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isAutoSavingRef = useRef(false);
 
 
   // Estado para citas del paciente seleccionado
@@ -151,6 +542,41 @@ export function PacientesViewSupabase({
   // Estado para antecedentes del paciente seleccionado
   const [antecedentesData, setAntecedentesData] = useState<any>(null);
   const [isLoadingAntecedentes, setIsLoadingAntecedentes] = useState(false);
+
+  // ── Interconsulta ────────────────────────────────────────────────────────
+  const [interconsultaForm, setInterconsultaForm] = useState({
+    tipo_destino: 'interno' as 'interno' | 'externo',
+    id_usuario_destino: null as number | null,
+    id_especialidad_destino: null as number | null,
+    especialidad_destino_texto: '',
+    medico_destino_externo: '',
+    motivo: '',
+    resumen_clinico: '',
+    urgencia: 'normal' as 'normal' | 'urgente',
+    fecha_limite: '',
+  });
+  const [interconsultasActuales, setInterconsultasActuales] = useState<InterconsultaCompleta[]>([]);
+  const [isLoadingInterconsultas, setIsLoadingInterconsultas] = useState(false);
+  const [isSavingInterconsulta, setIsSavingInterconsulta] = useState(false);
+  const [especialidadesInterconsulta, setEspecialidadesInterconsulta] = useState<Especialidad[]>([]);
+  const [medicosParaInterconsulta, setMedicosParaInterconsulta] = useState<Array<{ id_usuario: number; nombre: string; apellido: string }>>([]);
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // ── Agenda en pantalla Pacientes (médico y enfermera) ────────────────────
+  const [idUsuarioActual, setIdUsuarioActual] = useState<number | null>(null);
+  const [agendaMedico, setAgendaMedico] = useState<CitaCompleta[]>([]);
+  const [agendaFiltrada, setAgendaFiltrada] = useState<CitaCompleta[]>([]);
+  const [isLoadingAgenda, setIsLoadingAgenda] = useState(false);
+  const [currentWeekAgenda, setCurrentWeekAgenda] = useState(new Date());
+  const [vistaAgenda, setVistaAgenda] = useState<'semana' | 'lista'>('semana');
+  const [mostrarCanceladasAgenda, setMostrarCanceladasAgenda] = useState(false);
+  const [filterFechaDesdeAgenda, setFilterFechaDesdeAgenda] = useState<string>(formatDateLocal(new Date()));
+  const [filterFechaHastaAgenda, setFilterFechaHastaAgenda] = useState<string>(formatDateLocal(new Date()));
+  const [agendaFilterPaciente, setAgendaFilterPaciente] = useState<{ id: number; nombre: string } | null>(null);
+  const [citaDetalleAgenda, setCitaDetalleAgenda] = useState<CitaCompleta | null>(null);
+  const [citaAgendaSeleccionada, setCitaAgendaSeleccionada] = useState<CitaCompleta | null>(null);
+  const [isCancelarAgendaModalOpen, setIsCancelarAgendaModalOpen] = useState(false);
+  // ──────────────────────────────────────────────────────────────────────────
 
   // Hook para signos vitales del paciente seleccionado
   const { signosVitales, alertasActuales, loadAlertasForSigno, guardarSignoVital } = useSignosVitales(selectedPatientId);
@@ -205,35 +631,548 @@ export function PacientesViewSupabase({
   const [signosVitalesForm, setSignosVitalesForm] = useState({
     estatura_cm: '',
     peso_kg: '',
+    perimetro_cefalico_cm: '',
     temperatura_c: '',
     frecuencia_respiratoria: '',
     frecuencia_cardiaca: '',
     presion_sistolica: '',
     presion_diastolica: '',
     saturacion_oxigeno: '',
+    glucosa_mg_dl: '',
+    glasgow_ocular: '',
+    glasgow_verbal: '',
+    glasgow_motora: '',
+    reaccion_pupilar: '',
+    tiempo_llenado_capilar_seg: '',
     notas: ''
   });
 
   // Formulario de consulta médica
-  const [consultaForm, setConsultaForm] = useState({
-    motivo_consulta: '',
-    historial_clinico: '',
-    receta_medica: '',
-    pedido_examenes: '',
-    fecha_seguimiento: '',
-    pedido_hospitalizacion: '',
-    diagnostico: ''
-  });
+  const [consultaForm, setConsultaForm] = useState(createEmptyConsultaForm);
 
   // Sucursal seleccionada para crear la consulta
   const [sucursalSeleccionada, setSucursalSeleccionada] = useState<number | null>(null);
   const [sucursales, setSucursales] = useState<any[]>([]);
+  const [examenFisicoSeleccionados, setExamenFisicoSeleccionados] = useState<string[]>([]);
+  const [notaExamenFisico, setNotaExamenFisico] = useState('');
+  const [solicitudImagenForm, setSolicitudImagenForm] = useState(createEmptySolicitudImagenForm);
+  const [solicitudImagenActual, setSolicitudImagenActual] = useState<SolicitudImagen | null>(null);
 
   // Estado para Diagnóstico IA
   const [isLoadingDiagnosticoIA, setIsLoadingDiagnosticoIA] = useState(false);
-  const [sugerenciasDiagnostico, setSugerenciasDiagnostico] = useState<
-    { codigo: string; nombre: string; descripcion: string }[]
-  >([]);
+  const [codigoCie10Input, setCodigoCie10Input] = useState('');
+  const [diagnosticosCie10, setDiagnosticosCie10] = useState<DiagnosticoCie10[]>([]);
+
+  const citaConsultaActual = (citaIdParaConsulta || citaIdInicial)
+    ? citasPaciente.find((cita) => cita.id_cita === (citaIdParaConsulta || citaIdInicial)) || null
+    : null;
+
+  const medicoLaboratorioActual = medicosLaboratorio.find(
+    (medico) => medico.id_usuario_sucursal.toString() === medicoLaboratorioSeleccionado
+  ) || null;
+
+  const examenesLaboratorioSeleccionadosData = examenesLaboratorio.filter((examen) =>
+    examenesLaboratorioSeleccionados.includes(examen.id_examen_laboratorio)
+  );
+
+  const resumenLaboratorioSeleccion = examenesLaboratorioSeleccionadosData.length > 0 && medicoLaboratorioActual?.usuario
+    ? buildPedidoLaboratorioResumen({
+        nombreMedico: `${medicoLaboratorioActual.usuario.nombre} ${medicoLaboratorioActual.usuario.apellido}`,
+        examenes: examenesLaboratorioSeleccionadosData.map((examen) => examen.nombre),
+        observaciones: observacionesLaboratorio,
+      })
+    : '';
+
+  const resumenExamenFisico = buildExamenFisicoResumen({
+    segmentos: examenFisicoSeleccionados,
+    nota: notaExamenFisico,
+  });
+
+  const resumenReceta = buildRecetaResumen({
+    rp: consultaForm.receta_rp,
+    indicaciones: consultaForm.receta_indicaciones,
+  });
+
+  const alergiasDesdeAntecedentesLista = Array.isArray(antecedentesData?.alergias)
+    ? antecedentesData.alergias.filter((item: unknown) => typeof item === 'string' && item.trim() !== '')
+    : [];
+
+  const alergiasDesdeAntecedentesTexto = alergiasDesdeAntecedentesLista.length > 0
+    ? alergiasDesdeAntecedentesLista.join(', ').toUpperCase()
+    : '';
+
+  const examenesLaboratorioAgrupados = examenesLaboratorio.reduce<Record<string, ExamenLaboratorio[]>>((acc, examen) => {
+    if (!acc[examen.categoria]) {
+      acc[examen.categoria] = [];
+    }
+    acc[examen.categoria].push(examen);
+    return acc;
+  }, {});
+
+  const resetLaboratorioState = () => {
+    setExamenesLaboratorioSeleccionados([]);
+    setMedicoLaboratorioSeleccionado('');
+    setObservacionesLaboratorio('');
+    setPedidoLaboratorioActual(null);
+  };
+
+  const resolveUsuarioConsulta = async (): Promise<number | null> => {
+    const resolved = await resolveUsuarioIdActual();
+    if (resolved) return resolved;
+
+    if (!currentUser?.email) return null;
+
+    const { data: usuarioData, error } = await supabase
+      .from('usuario')
+      .select('id_usuario')
+      .eq('email', currentUser.email)
+      .maybeSingle() as any;
+
+    if (error || !usuarioData?.id_usuario) return null;
+    return Number(usuarioData.id_usuario);
+  };
+
+  const ensureCitaParaConsulta = async (): Promise<number | null> => {
+    const citaActualId = citaIdParaConsulta || citaIdInicial;
+    if (citaActualId) return citaActualId;
+
+    if (!selectedPatientId || !sucursalSeleccionada) return null;
+
+    const usuarioId = await resolveUsuarioConsulta();
+    if (!usuarioId) return null;
+
+    let { data: asignacionData } = await supabase
+      .from('usuario_sucursal')
+      .select('id_usuario_sucursal')
+      .eq('id_usuario', usuarioId)
+      .eq('id_sucursal', sucursalSeleccionada)
+      .eq('estado', 'activo')
+      .maybeSingle() as any;
+
+    if (!asignacionData) {
+      const { data: nuevaAsignacion, error: errorAsignacion } = await supabase
+        .from('usuario_sucursal')
+        .insert({
+          id_usuario: usuarioId,
+          id_sucursal: sucursalSeleccionada,
+          especialidad: 'Medicina General',
+          estado: 'activo'
+        } as any)
+        .select()
+        .single() as any;
+
+      if (errorAsignacion || !nuevaAsignacion) {
+        return null;
+      }
+
+      await supabase
+        .from('precio_usuario_sucursal')
+        .insert({
+          id_usuario_sucursal: nuevaAsignacion.id_usuario_sucursal,
+          precio_consulta: 50.00,
+          duracion_consulta: 30,
+          estado: 'activo'
+        } as any);
+
+      asignacionData = nuevaAsignacion;
+    }
+
+    const { data: precioData } = await supabase
+      .from('precio_usuario_sucursal')
+      .select('precio_consulta, duracion_consulta')
+      .eq('id_usuario_sucursal', asignacionData.id_usuario_sucursal)
+      .eq('estado', 'activo')
+      .maybeSingle() as any;
+
+    const precioConsulta = precioData?.precio_consulta || 50;
+    const duracionConsulta = precioData?.duracion_consulta || 30;
+    const ahora = new Date();
+    const horaFin = new Date(ahora.getTime() + duracionConsulta * 60000);
+    const motivoInicial = (
+      consultaForm.motivo_consulta ||
+      citaConsultaActual?.motivo_consulta ||
+      'CONSULTA EN CURSO'
+    ).trim().toUpperCase();
+
+    const { data: citaCreada, error: citaError } = await supabase
+      .from('cita')
+      .insert({
+        id_paciente: selectedPatientId,
+        id_usuario_sucursal: asignacionData.id_usuario_sucursal,
+        id_sucursal: sucursalSeleccionada,
+        fecha_cita: ahora.toISOString().split('T')[0],
+        hora_inicio: ahora.toTimeString().split(' ')[0].substring(0, 5),
+        hora_fin: horaFin.toTimeString().split(' ')[0].substring(0, 5),
+        duracion_minutos: duracionConsulta,
+        tipo_cita: 'consulta',
+        motivo_consulta: motivoInicial,
+        estado_cita: 'en_atencion',
+        consulta_realizada: false,
+        precio_cita: precioConsulta,
+      } as any)
+      .select()
+      .single() as any;
+
+    if (citaError || !citaCreada?.id_cita) {
+      return null;
+    }
+
+    setCitaIdParaConsulta(citaCreada.id_cita);
+
+    const citasActualizadas = await getCitasByPaciente(selectedPatientId);
+    setCitasPaciente(citasActualizadas);
+
+    return citaCreada.id_cita;
+  };
+
+  // Cargar agenda cuando el usuario es médico o enfermera
+  useEffect(() => {
+    if (currentUser?.tipo_usuario === 'enfermera') {
+      cargarAgendaMedico();
+      return;
+    }
+
+    if (currentUser?.tipo_usuario === 'medico' && idUsuarioActual) {
+      cargarAgendaMedico();
+    }
+  }, [idUsuarioActual, currentWeekAgenda, vistaAgenda, filterFechaDesdeAgenda, filterFechaHastaAgenda, currentUser?.tipo_usuario, currentUser?.email]);
+
+  useEffect(() => {
+    const cargarExamenesLaboratorio = async () => {
+      setIsLoadingLaboratorio(true);
+      try {
+        const examenes = await getExamenesLaboratorioActivos();
+        setExamenesLaboratorio(examenes);
+      } finally {
+        setIsLoadingLaboratorio(false);
+      }
+    };
+
+    cargarExamenesLaboratorio();
+  }, []);
+
+  useEffect(() => {
+    const cargarMedicosLaboratorio = async () => {
+      if (!isConsultaScreenOpen || !sucursalSeleccionada) {
+        setMedicosLaboratorio([]);
+        return;
+      }
+
+      setIsLoadingMedicosLaboratorio(true);
+      try {
+        const medicos = await getMedicosBySucursal(sucursalSeleccionada);
+        setMedicosLaboratorio(medicos);
+
+        if (!medicoLaboratorioSeleccionado) {
+          const medicoPredeterminado = citaConsultaActual?.id_usuario_sucursal
+            ? medicos.find((medico) => medico.id_usuario_sucursal === citaConsultaActual.id_usuario_sucursal)
+            : medicos.find((medico) => medico.id_usuario === idUsuarioActual) || (medicos.length === 1 ? medicos[0] : null);
+
+          if (medicoPredeterminado) {
+            setMedicoLaboratorioSeleccionado(medicoPredeterminado.id_usuario_sucursal.toString());
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error al cargar médicos para laboratorio:', error);
+        toast.error('No se pudieron cargar los médicos para laboratorio');
+      } finally {
+        setIsLoadingMedicosLaboratorio(false);
+      }
+    };
+
+    cargarMedicosLaboratorio();
+  }, [isConsultaScreenOpen, sucursalSeleccionada, citaConsultaActual?.id_usuario_sucursal, idUsuarioActual, medicoLaboratorioSeleccionado]);
+
+  // Cargar especialidades y médicos para el formulario de interconsulta
+  useEffect(() => {
+    if (!isConsultaScreenOpen) return;
+
+    const cargarDatosInterconsulta = async () => {
+      try {
+        const [especialidades, { data: medicos }] = await Promise.all([
+          getAllEspecialidades(),
+          supabase
+            .from('usuario')
+            .select('id_usuario, nombre, apellido')
+            .eq('tipo_usuario', 'medico')
+            .eq('estado', 'activo')
+            .order('apellido'),
+        ]);
+        setEspecialidadesInterconsulta(especialidades.filter((e) => e.estado === 'activo'));
+        setMedicosParaInterconsulta((medicos as any[]) || []);
+      } catch (error) {
+        console.error('❌ Error al cargar datos para interconsulta:', error);
+      }
+    };
+
+    cargarDatosInterconsulta();
+  }, [isConsultaScreenOpen]);
+
+  // Cargar interconsultas existentes cuando cambia la cita de consulta
+  useEffect(() => {
+    if (!isConsultaScreenOpen) {
+      setInterconsultasActuales([]);
+      return;
+    }
+
+    const idCita = citaIdParaConsulta || citaIdInicial;
+    if (!idCita) return;
+
+    const cargarInterconsultas = async () => {
+      setIsLoadingInterconsultas(true);
+      try {
+        const consulta = await getConsultaMedicaByCita(idCita);
+        if (consulta) {
+          const lista = await getInterconsultasByConsulta(consulta.id_consulta_medica);
+          setInterconsultasActuales(lista);
+        } else {
+          setInterconsultasActuales([]);
+        }
+      } catch (error) {
+        console.error('❌ Error al cargar interconsultas:', error);
+      } finally {
+        setIsLoadingInterconsultas(false);
+      }
+    };
+
+    cargarInterconsultas();
+  }, [isConsultaScreenOpen, citaIdParaConsulta, citaIdInicial]);
+
+  const handleAgregarInterconsulta = async () => {
+    if (!interconsultaForm.motivo.trim()) {
+      toast.error('El motivo de la interconsulta es requerido');
+      return;
+    }
+
+    const idCita = citaIdParaConsulta || citaIdInicial;
+    if (!idCita || !selectedPatientId) {
+      toast.error('No hay una consulta activa');
+      return;
+    }
+
+    const consulta = await getConsultaMedicaByCita(idCita);
+    if (!consulta) {
+      toast.error('Guarde la consulta primero antes de agregar una interconsulta');
+      return;
+    }
+
+    setIsSavingInterconsulta(true);
+    try {
+      const datos = {
+        id_consulta_medica: consulta.id_consulta_medica,
+        id_paciente: selectedPatientId,
+        id_usuario_solicitante: idUsuarioActual,
+        tipo_destino: interconsultaForm.tipo_destino,
+        id_usuario_destino: interconsultaForm.tipo_destino === 'interno' ? interconsultaForm.id_usuario_destino : null,
+        id_especialidad_destino: interconsultaForm.tipo_destino === 'interno' ? interconsultaForm.id_especialidad_destino : null,
+        especialidad_destino_texto: interconsultaForm.tipo_destino === 'externo' ? interconsultaForm.especialidad_destino_texto || null : null,
+        medico_destino_externo: interconsultaForm.tipo_destino === 'externo' ? interconsultaForm.medico_destino_externo || null : null,
+        motivo: interconsultaForm.motivo,
+        resumen_clinico: interconsultaForm.resumen_clinico || null,
+        urgencia: interconsultaForm.urgencia,
+        fecha_limite: interconsultaForm.fecha_limite || null,
+        estado: 'pendiente' as const,
+        id_cita_generada: null,
+      };
+
+      const resultado = await createInterconsulta(datos);
+      if (resultado) {
+        toast.success('Interconsulta registrada correctamente');
+        setInterconsultaForm({
+          tipo_destino: 'interno',
+          id_usuario_destino: null,
+          id_especialidad_destino: null,
+          especialidad_destino_texto: '',
+          medico_destino_externo: '',
+          motivo: '',
+          resumen_clinico: '',
+          urgencia: 'normal',
+          fecha_limite: '',
+        });
+        const lista = await getInterconsultasByConsulta(consulta.id_consulta_medica);
+        setInterconsultasActuales(lista);
+      } else {
+        toast.error('No se pudo registrar la interconsulta');
+      }
+    } catch (error) {
+      console.error('❌ Error al agregar interconsulta:', error);
+      toast.error('Error al registrar la interconsulta');
+    } finally {
+      setIsSavingInterconsulta(false);
+    }
+  };
+
+  const handleEliminarInterconsulta = async (idInterconsulta: number) => {
+    const ok = await deleteInterconsulta(idInterconsulta);
+    if (ok) {
+      setInterconsultasActuales((prev) => prev.filter((i) => i.id_interconsulta !== idInterconsulta));
+      toast.success('Interconsulta eliminada');
+    } else {
+      toast.error('No se pudo eliminar la interconsulta');
+    }
+  };
+
+  useEffect(() => {
+    setConsultaForm((prev) => {
+      if (prev.pedido_examenes === resumenExamenFisico) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        pedido_examenes: resumenExamenFisico,
+      };
+    });
+  }, [resumenExamenFisico]);
+
+  useEffect(() => {
+    if (!isConsultaScreenOpen || !citaConsultaActual?.motivo_consulta) {
+      return;
+    }
+
+    setConsultaForm((prev) => {
+      if (prev.motivo_consulta.trim()) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        motivo_consulta: citaConsultaActual.motivo_consulta.toUpperCase(),
+      };
+    });
+  }, [isConsultaScreenOpen, citaConsultaActual?.id_cita, citaConsultaActual?.motivo_consulta]);
+
+  useEffect(() => {
+    if (!isConsultaScreenOpen) return;
+    if (citaIdParaConsulta || citaIdInicial) return;
+
+    void ensureCitaParaConsulta();
+  }, [isConsultaScreenOpen, citaIdParaConsulta, citaIdInicial, selectedPatientId, sucursalSeleccionada]);
+
+  useEffect(() => {
+    if (!isConsultaScreenOpen || !selectedPatientId || !sucursalSeleccionada) {
+      return;
+    }
+
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      if (isAutoSavingRef.current) return;
+      isAutoSavingRef.current = true;
+      setIsAutoSavingConsulta(true);
+
+      try {
+        const idCita = await ensureCitaParaConsulta();
+        if (!idCita) return;
+
+        const usuarioId = await resolveUsuarioConsulta();
+        if (!usuarioId) return;
+
+        if (consultaForm.motivo_consulta.trim()) {
+          await updateCita(idCita, {
+            motivo_consulta: consultaForm.motivo_consulta,
+          });
+        }
+
+        const consultaExistente = await getConsultaMedicaByCita(idCita);
+        const payloadConsulta = {
+          historial_clinico: consultaForm.historial_clinico || null,
+          diagnostico: consultaForm.diagnostico || null,
+          diagnostico_ia: consultaForm.diagnostico || null,
+          receta_medica: resumenReceta || null,
+          receta_rp: consultaForm.receta_rp || null,
+          receta_indicaciones: consultaForm.receta_indicaciones || null,
+          pedido_examenes: consultaForm.pedido_examenes || null,
+          observaciones: null,
+          fecha_seguimiento: consultaForm.fecha_seguimiento || null,
+          pedido_hospitalizacion: consultaForm.pedido_hospitalizacion || null,
+        };
+
+        if (consultaExistente) {
+          await actualizarConsultaMedica(consultaExistente.id_consulta_medica, payloadConsulta);
+        } else if (
+          consultaForm.motivo_consulta.trim() ||
+          consultaForm.historial_clinico.trim() ||
+          consultaForm.diagnostico.trim() ||
+          consultaForm.receta_rp.trim() ||
+          consultaForm.receta_indicaciones.trim() ||
+          consultaForm.pedido_examenes.trim()
+        ) {
+          await crearConsultaMedica({
+            id_cita: idCita,
+            id_paciente: selectedPatientId,
+            id_usuario: usuarioId,
+            ...payloadConsulta,
+          });
+        }
+
+        const pacienteActual = pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId) || null;
+
+        if (pacienteActual && solicitudImagenTieneContenido(solicitudImagenForm)) {
+          const solicitudImagen = await upsertSolicitudImagen({
+            id_cita: idCita,
+            id_paciente: selectedPatientId,
+            id_sucursal: sucursalSeleccionada,
+            id_usuario_solicitante: usuarioId,
+            fecha_solicitud: solicitudImagenForm.fecha_solicitud,
+            nombre_paciente: `${pacienteActual.nombres} ${pacienteActual.apellidos}`.trim(),
+            edad_paciente: calcularEdad(pacienteActual.fecha_nacimiento),
+            procedimiento: solicitudImagenForm.procedimiento,
+            antecedentes_clinico_quirurgico: solicitudImagenForm.antecedentes_clinico_quirurgico,
+            cuadro_clinico: solicitudImagenForm.cuadro_clinico,
+            medicamentos: solicitudImagenForm.medicamentos,
+            alergias: alergiasDesdeAntecedentesTexto,
+          });
+
+          if (solicitudImagen) {
+            setSolicitudImagenActual(solicitudImagen);
+          }
+        }
+
+        if (examenesLaboratorioSeleccionadosData.length > 0 && medicoLaboratorioActual) {
+          const pedido = await createPedidoLaboratorio({
+            id_cita: idCita,
+            id_paciente: selectedPatientId,
+            id_sucursal: sucursalSeleccionada,
+            id_usuario_solicitante: usuarioId,
+            id_usuario_sucursal_medico: medicoLaboratorioActual.id_usuario_sucursal,
+            observaciones: observacionesLaboratorio || null,
+            examenes: examenesLaboratorioSeleccionadosData.map((examen) => examen.id_examen_laboratorio),
+          });
+
+          if (pedido) {
+            setPedidoLaboratorioActual(pedido);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error en guardado automático de consulta:', error);
+      } finally {
+        isAutoSavingRef.current = false;
+        setIsAutoSavingConsulta(false);
+      }
+    }, 900);
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [
+    isConsultaScreenOpen,
+    selectedPatientId,
+    sucursalSeleccionada,
+    citaIdParaConsulta,
+    consultaForm,
+    resumenReceta,
+    solicitudImagenForm,
+    alergiasDesdeAntecedentesTexto,
+    examenesLaboratorioSeleccionadosData,
+    medicoLaboratorioActual,
+    observacionesLaboratorio,
+    pacientes,
+  ]);
 
   // Efecto de búsqueda automática REMOVIDO para usar botón manual
   // useEffect(() => {... }, [searchTerm]);
@@ -552,12 +1491,19 @@ export function PacientesViewSupabase({
       estatura_cm: estatura,
       peso_kg: peso,
       imc: estatura && peso ? calcularIMC(peso, estatura) : null,
+      perimetro_cefalico_cm: validarNumero(signosVitalesForm.perimetro_cefalico_cm, true),
       temperatura_c: validarNumero(signosVitalesForm.temperatura_c, true),
       frecuencia_respiratoria: validarNumero(signosVitalesForm.frecuencia_respiratoria, false),
       frecuencia_cardiaca: validarNumero(signosVitalesForm.frecuencia_cardiaca, false),
       presion_sistolica: validarNumero(signosVitalesForm.presion_sistolica, false),
       presion_diastolica: validarNumero(signosVitalesForm.presion_diastolica, false),
       saturacion_oxigeno: validarNumero(signosVitalesForm.saturacion_oxigeno, true),
+      glucosa_mg_dl: validarNumero(signosVitalesForm.glucosa_mg_dl, false),
+      glasgow_ocular: validarNumero(signosVitalesForm.glasgow_ocular, false),
+      glasgow_verbal: validarNumero(signosVitalesForm.glasgow_verbal, false),
+      glasgow_motora: validarNumero(signosVitalesForm.glasgow_motora, false),
+      reaccion_pupilar: signosVitalesForm.reaccion_pupilar || null,
+      tiempo_llenado_capilar_seg: validarNumero(signosVitalesForm.tiempo_llenado_capilar_seg, true),
       notas: signosVitalesForm.notas || null
     };
 
@@ -567,22 +1513,29 @@ export function PacientesViewSupabase({
     const resultado = await guardarSignoVital(signoVital);
 
     if (resultado) {
-      toast.success('Signos vitales guardados exitosamente');
+      toast.success('Constantes vitales y antropometría guardadas exitosamente');
       setIsSignosVitalesDialogOpen(false);
       // Limpiar formulario
       setSignosVitalesForm({
         estatura_cm: '',
         peso_kg: '',
+        perimetro_cefalico_cm: '',
         temperatura_c: '',
         frecuencia_respiratoria: '',
         frecuencia_cardiaca: '',
         presion_sistolica: '',
         presion_diastolica: '',
         saturacion_oxigeno: '',
+        glucosa_mg_dl: '',
+        glasgow_ocular: '',
+        glasgow_verbal: '',
+        glasgow_motora: '',
+        reaccion_pupilar: '',
+        tiempo_llenado_capilar_seg: '',
         notas: ''
       });
     } else {
-      toast.error('Error al guardar signos vitales');
+      toast.error('Error al guardar constantes vitales y antropometría');
     }
   };
 
@@ -613,22 +1566,38 @@ export function PacientesViewSupabase({
       toast.error('No hay paciente seleccionado');
       return;
     }
-    // Resetear formulario y seleccionar primera sucursal por defecto
-    setConsultaForm({
-      motivo_consulta: '',
-      historial_clinico: '',
-      receta_medica: '',
-      pedido_examenes: '',
-      fecha_seguimiento: '',
-      pedido_hospitalizacion: '',
-      diagnostico: ''
-    });
-    setSugerenciasDiagnostico([]);
-    if (sucursales.length > 0) {
-      setSucursalSeleccionada(sucursales[0].id_sucursal);
+
+    if (isLoadingAntecedentes) {
+      toast.error('Cargando antecedentes del paciente, intenta nuevamente en unos segundos');
+      return;
     }
-    setCitaIdParaConsulta(citaId || null);
-    setIsConsultaDialogOpen(true);
+
+    if (!tieneAntecedentesPatologicosCompletos(antecedentesData)) {
+      toast.error('Complete y guarde "Antecedentes patológicos personales y familiares" antes de iniciar la consulta');
+      return;
+    }
+
+    const proximaCitaId = citaId || null;
+    const draftKey = `${selectedPatientId}-${proximaCitaId ?? 'sin-cita'}`;
+    const mantenerBorrador = consultaDraftKey === draftKey;
+
+    if (!mantenerBorrador) {
+      setConsultaForm(createEmptyConsultaForm());
+      setExamenFisicoSeleccionados([]);
+      setNotaExamenFisico('');
+      setSolicitudImagenForm(createEmptySolicitudImagenForm());
+      setSolicitudImagenActual(null);
+      setCodigoCie10Input('');
+      setDiagnosticosCie10([]);
+      resetLaboratorioState();
+      if (sucursales.length > 0) {
+        setSucursalSeleccionada(sucursales[0].id_sucursal);
+      }
+    }
+
+    setCitaIdParaConsulta(proximaCitaId);
+    setConsultaDraftKey(draftKey);
+    setIsConsultaScreenOpen(true);
   };
 
   // Ver detalles de consulta médica
@@ -636,6 +1605,42 @@ export function PacientesViewSupabase({
     setConsultaSeleccionada(consulta);
     setIsVerConsultaDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!isVerConsultaDialogOpen || !consultaSeleccionada?.id_cita) {
+      setSolicitudImagenDetalle(null);
+      setPedidoLaboratorioDetalle(null);
+      return;
+    }
+
+    let activo = true;
+
+    const cargarDetalleRelacionado = async () => {
+      setIsLoadingDetalleConsulta(true);
+      try {
+        const [imagen, laboratorio] = await Promise.all([
+          getSolicitudImagenByCita(consultaSeleccionada.id_cita),
+          getPedidoLaboratorioByCita(consultaSeleccionada.id_cita),
+        ]);
+
+        if (!activo) return;
+        setSolicitudImagenDetalle(imagen);
+        setPedidoLaboratorioDetalle(laboratorio);
+      } catch (error) {
+        console.error('❌ Error al cargar detalle completo de la consulta:', error);
+      } finally {
+        if (activo) {
+          setIsLoadingDetalleConsulta(false);
+        }
+      }
+    };
+
+    cargarDetalleRelacionado();
+
+    return () => {
+      activo = false;
+    };
+  }, [isVerConsultaDialogOpen, consultaSeleccionada?.id_cita]);
 
   // Abrir confirmación de No Asistió
   const handleMarcarNoAsistio = (citaId: number) => {
@@ -677,6 +1682,7 @@ export function PacientesViewSupabase({
     const nombresLegibles: Record<string, string> = {
       esquemaVacunacion: 'Esquema de Vacunación',
       alergias: 'Alergias',
+      antecedentesPatologicosPersonalesFamiliares: 'Antecedentes patológicos personales y familiares',
       antecedentesPatologicos: 'Antecedentes patológicos personales',
       antecedentesNoPatologicos: 'Hábitos',
       antecedentesHeredofamiliares: 'Antecedentes patológicos familiares',
@@ -720,58 +1726,120 @@ export function PacientesViewSupabase({
     }
   };
 
-  // Obtener diagnóstico IA por CIE-10
-  const handleObtenerDiagnosticoIA = async () => {
-    if (!consultaForm.historial_clinico.trim()) return;
+  // Agregar diagnóstico por código CIE-10
+  const handleAgregarDiagnosticoIA = async () => {
+    const codigo = codigoCie10Input.trim().toUpperCase().replace(/\s+/g, '');
+    if (!codigo) {
+      toast.error('Ingrese un código CIE-10');
+      return;
+    }
+
     setIsLoadingDiagnosticoIA(true);
-    setSugerenciasDiagnostico([]);
 
     try {
-      // Detectar si estamos en desarrollo local o producción Vercel
-      const isLocalDev = import.meta.env.DEV;
+      let diagnosticoIA: DiagnosticoCie10 | null = null;
+      const openAIKey = typeof import.meta.env.VITE_OPENAI_API_KEY === 'string'
+        ? import.meta.env.VITE_OPENAI_API_KEY.trim()
+        : '';
 
-      if (isLocalDev) {
-        // ✅ Modo desarrollo: simular respuesta IA
-        console.log('🔧 Modo desarrollo: usando mock de diagnóstico IA');
-        // Simular delay de red
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        const mockDiagnosticos = [
-          {
-            codigo: 'J30.9',
-            nombre: 'Alergia no especificada',
-            descripcion: 'Reacción alérgica generalizada con síntomas de congestión y estornudos.'
-          },
-          {
-            codigo: 'J01.9',
-            nombre: 'Sinusitis aguda no especificada',
-            descripcion: 'Inflamación de los senos nasales, común con dolores de cabeza y congestión.'
-          },
-          {
-            codigo: 'J06.9',
-            nombre: 'Infección aguda de vías respiratorias superiores',
-            descripcion: 'Resfriado común o infección viral de vías aéreas superiores.'
+      try {
+        if (import.meta.env.DEV && openAIKey) {
+          // Desarrollo local sin Vercel: consumir OpenAI directamente
+          console.log('🚀 Desarrollo local: consultando OpenAI directo');
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${openAIKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              temperature: 0.2,
+              messages: [
+                {
+                  role: 'system',
+                  content: `Eres un asistente médico experto en clasificación diagnóstica CIE-10.
+Responde ÚNICAMENTE con JSON válido sin markdown, con esta estructura exacta:
+{"diagnostico":{"codigo":"X00.0","nombre":"Nombre CIE-10","descripcion":"Descripción clínica breve"}}
+Si el código no existe, responde exactamente:
+{"error":"Código CIE-10 no encontrado"}`
+                },
+                {
+                  role: 'user',
+                  content: `Código CIE-10 ingresado por el médico: ${codigo}`
+                }
+              ]
+            })
+          });
+
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(`[HTTP ${response.status}] ${payload?.error?.message || payload?.error || 'Error al consultar OpenAI'}`);
           }
-        ];
-        
-        setSugerenciasDiagnostico(mockDiagnosticos);
-        toast.success('⚠️ Usando datos de prueba (desarrollo local)');
-      } else {
-        // ✅ Modo producción: llamar a API real en Vercel
-        console.log('🚀 Modo producción: llamando a /api/diagnostico-ia');
-        const res = await fetch('/api/diagnostico-ia', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ hallazgos: consultaForm.historial_clinico }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          toast.error(data.error || 'Error al obtener diagnóstico IA');
-          return;
+
+          const rawContent = payload?.choices?.[0]?.message?.content;
+          if (!rawContent) {
+            throw new Error('Respuesta vacía de OpenAI');
+          }
+
+          const cleaned = String(rawContent).replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+          const parsed = JSON.parse(cleaned) as { diagnostico?: DiagnosticoCie10; error?: string };
+
+          if (parsed?.error) {
+            throw new Error(parsed.error);
+          }
+
+          diagnosticoIA = parsed?.diagnostico || null;
+        } else {
+          // Producción o fallback sin clave VITE: consumir endpoint serverless
+          console.log('🚀 Consultando /api/diagnostico-ia');
+          const res = await fetch('/api/diagnostico-ia', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codigoCie10: codigo }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(`[HTTP ${res.status}] ${data.error || 'Error al obtener diagnóstico IA'}`);
+          }
+
+          diagnosticoIA = data.diagnostico || null;
         }
-        setSugerenciasDiagnostico(data.diagnosticos || []);
-        toast.success('Diagnóstico IA obtenido exitosamente');
+      } catch (apiError) {
+        const referenciaLocal = DIAGNOSTICOS_CIE10_REFERENCIA[codigo];
+        if (referenciaLocal) {
+          diagnosticoIA = referenciaLocal;
+          if (import.meta.env.DEV) {
+            toast.success('⚠️ Usando catálogo local de referencia (modo desarrollo)');
+          }
+        } else {
+          if (import.meta.env.DEV) {
+            toast.error('No se pudo consultar IA en local. Verifica VITE_OPENAI_API_KEY en el .env y reinicia npm run dev.');
+            return;
+          }
+          throw apiError;
+        }
       }
+
+      if (!diagnosticoIA) {
+        toast.error('No se pudo obtener la descripción del código CIE-10');
+        return;
+      }
+
+      const yaExiste = diagnosticosCie10.some(d => d.codigo === diagnosticoIA.codigo);
+      if (yaExiste) {
+        toast.error('Ese código CIE-10 ya fue agregado');
+        return;
+      }
+
+      const nuevosDiagnosticos = [...diagnosticosCie10, diagnosticoIA];
+      setDiagnosticosCie10(nuevosDiagnosticos);
+      setConsultaForm({
+        ...consultaForm,
+        diagnostico: nuevosDiagnosticos.map(d => `${d.codigo} - ${d.nombre}: ${d.descripcion}`).join('\n')
+      });
+      setCodigoCie10Input('');
+      toast.success('Diagnóstico CIE-10 agregado');
     } catch (error) {
       console.error('Error:', error);
       toast.error('Error de conexión con el servicio de IA');
@@ -794,14 +1862,19 @@ export function PacientesViewSupabase({
     }
 
     // Validar que al menos un campo adicional esté completo
-    if (!consultaForm.historial_clinico && !consultaForm.receta_medica && !consultaForm.pedido_examenes) {
-      toast.error('Por favor, complete al menos un campo adicional (historial, receta o exámenes)');
+    if (!consultaForm.historial_clinico && !resumenReceta && !consultaForm.pedido_examenes && examenesLaboratorioSeleccionados.length === 0) {
+      toast.error('Por favor, complete al menos un campo adicional (historial, receta o examen físico)');
       return;
     }
 
     // Validar que haya una sucursal seleccionada
     if (!sucursalSeleccionada) {
       toast.error('Por favor, seleccione una sucursal');
+      return;
+    }
+
+    if (examenesLaboratorioSeleccionados.length > 0 && !medicoLaboratorioSeleccionado) {
+      toast.error('Seleccione el médico para el pedido de laboratorio');
       return;
     }
 
@@ -824,115 +1897,17 @@ export function PacientesViewSupabase({
         return;
       }
 
+      const pacienteActual = pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId) || null;
+      const nombrePacienteSolicitud = pacienteActual
+        ? `${pacienteActual.nombres} ${pacienteActual.apellidos}`.trim()
+        : 'PACIENTE SIN NOMBRE';
+      const edadPacienteSolicitud = pacienteActual ? calcularEdad(pacienteActual.fecha_nacimiento) : null;
+
       console.log('Usuario obtenido:', usuarioData);
 
       let idCitaParaConsulta = citaIdParaConsulta || citaIdInicial;
-
-      // Si no viene desde la agenda, crear una cita automática con la sucursal seleccionada
       if (!idCitaParaConsulta) {
-        console.log('No hay cita previa, creando cita automática...');
-
-        // Buscar o crear asignación del usuario con la sucursal seleccionada
-        let { data: asignacionData, error: errorBusqueda } = await supabase
-          .from('usuario_sucursal')
-          .select('id_usuario_sucursal')
-          .eq('id_usuario', usuarioData.id_usuario)
-          .eq('id_sucursal', sucursalSeleccionada)
-          .eq('estado', 'activo')
-          .maybeSingle() as any;
-
-        console.log('Búsqueda de asignación:', { asignacionData, errorBusqueda });
-
-        // Si no existe asignación, crearla automáticamente
-        if (!asignacionData) {
-          console.log('Creando nueva asignación usuario-sucursal...');
-
-          const { data: nuevaAsignacion, error: errorAsignacion } = await supabase
-            .from('usuario_sucursal')
-            .insert({
-              id_usuario: usuarioData.id_usuario,
-              id_sucursal: sucursalSeleccionada,
-              especialidad: 'Medicina General',
-              estado: 'activo'
-            } as any)
-            .select()
-            .single() as any;
-
-          if (errorAsignacion || !nuevaAsignacion) {
-            console.error('Error al crear asignación:', errorAsignacion);
-            toast.error('Error al crear asignación de sucursal: ' + (errorAsignacion?.message || 'desconocido'));
-            setIsSavingConsulta(false);
-            return;
-          }
-
-          console.log('Asignación creada:', nuevaAsignacion);
-
-          // Crear precio predeterminado
-          const { error: errorPrecio } = await supabase
-            .from('precio_usuario_sucursal')
-            .insert({
-              id_usuario_sucursal: nuevaAsignacion.id_usuario_sucursal,
-              precio_consulta: 50.00,
-              duracion_consulta: 30,
-              estado: 'activo'
-            } as any);
-
-          if (errorPrecio) {
-            console.error('Error al crear precio:', errorPrecio);
-          }
-
-          asignacionData = nuevaAsignacion;
-        }
-
-        // Obtener precio de consulta
-        const { data: precioData } = await supabase
-          .from('precio_usuario_sucursal')
-          .select('precio_consulta, duracion_consulta')
-          .eq('id_usuario_sucursal', asignacionData!.id_usuario_sucursal)
-          .eq('estado', 'activo')
-          .single() as any;
-
-        const precioConsulta = precioData?.precio_consulta || 50;
-        const duracionConsulta = precioData?.duracion_consulta || 30;
-
-        console.log('Precio obtenido:', { precioConsulta, duracionConsulta });
-
-        // Crear cita automática
-        const ahora = new Date();
-        const horaFin = new Date(ahora.getTime() + duracionConsulta * 60000);
-
-        const citaData = {
-          id_paciente: selectedPatientId,
-          id_usuario_sucursal: asignacionData!.id_usuario_sucursal,
-          id_sucursal: sucursalSeleccionada,
-          fecha_cita: ahora.toISOString().split('T')[0],
-          hora_inicio: ahora.toTimeString().split(' ')[0].substring(0, 5),
-          hora_fin: horaFin.toTimeString().split(' ')[0].substring(0, 5),
-          duracion_minutos: duracionConsulta,
-          tipo_cita: 'consulta',
-          motivo_consulta: consultaForm.motivo_consulta,
-          estado_cita: 'atendida',
-          precio_cita: precioConsulta,
-          consulta_realizada: true
-        };
-
-        console.log('Creando cita con datos:', citaData);
-
-        const { data: citaCreada, error: citaError } = await supabase
-          .from('cita')
-          .insert(citaData as any)
-          .select()
-          .single() as any;
-
-        if (citaError || !citaCreada) {
-          console.error('Error al crear cita:', citaError);
-          toast.error('Error al crear registro de consulta: ' + (citaError?.message || 'desconocido'));
-          setIsSavingConsulta(false);
-          return;
-        }
-
-        console.log('Cita creada exitosamente:', citaCreada);
-        idCitaParaConsulta = citaCreada.id_cita;
+        idCitaParaConsulta = await ensureCitaParaConsulta();
       }
 
       if (!idCitaParaConsulta) {
@@ -941,24 +1916,77 @@ export function PacientesViewSupabase({
         return;
       }
 
-      const nuevaConsulta = await crearConsultaMedica({
-        id_cita: idCitaParaConsulta,
-        id_paciente: selectedPatientId,
-        id_usuario: usuarioData.id_usuario,
+      const consultaPayload = {
         historial_clinico: consultaForm.historial_clinico || null,
         diagnostico: consultaForm.diagnostico || null,
         diagnostico_ia: consultaForm.diagnostico || null,
-        receta_medica: consultaForm.receta_medica || null,
+        receta_medica: resumenReceta || null,
+        receta_rp: consultaForm.receta_rp || null,
+        receta_indicaciones: consultaForm.receta_indicaciones || null,
         pedido_examenes: consultaForm.pedido_examenes || null,
         observaciones: null,
         fecha_seguimiento: consultaForm.fecha_seguimiento || null,
         pedido_hospitalizacion: consultaForm.pedido_hospitalizacion || null
-      });
+      };
+
+      const consultaExistente = await getConsultaMedicaByCita(idCitaParaConsulta);
+      let nuevaConsulta = consultaExistente
+        ? await actualizarConsultaMedica(consultaExistente.id_consulta_medica, consultaPayload)
+        : await crearConsultaMedica({
+            id_cita: idCitaParaConsulta,
+            id_paciente: selectedPatientId,
+            id_usuario: usuarioData.id_usuario,
+            ...consultaPayload,
+          });
 
       if (nuevaConsulta) {
+        if (examenesLaboratorioSeleccionadosData.length > 0 && medicoLaboratorioActual) {
+          const pedidoLaboratorio = await createPedidoLaboratorio({
+            id_cita: idCitaParaConsulta,
+            id_paciente: selectedPatientId,
+            id_sucursal: sucursalSeleccionada,
+            id_usuario_solicitante: usuarioData.id_usuario,
+            id_usuario_sucursal_medico: medicoLaboratorioActual.id_usuario_sucursal,
+            observaciones: observacionesLaboratorio || null,
+            examenes: examenesLaboratorioSeleccionadosData.map((examen) => examen.id_examen_laboratorio),
+          });
+
+          if (!pedidoLaboratorio) {
+            toast.error('La consulta se guardó, pero no se pudo generar el pedido de laboratorio');
+            setIsSavingConsulta(false);
+            return;
+          }
+
+          setPedidoLaboratorioActual(pedidoLaboratorio);
+        }
+
+        if (solicitudImagenTieneContenido(solicitudImagenForm)) {
+          const solicitudImagen = await upsertSolicitudImagen({
+            id_cita: idCitaParaConsulta,
+            id_paciente: selectedPatientId,
+            id_sucursal: sucursalSeleccionada,
+            id_usuario_solicitante: usuarioData.id_usuario,
+            fecha_solicitud: solicitudImagenForm.fecha_solicitud,
+            nombre_paciente: nombrePacienteSolicitud,
+            edad_paciente: edadPacienteSolicitud,
+            procedimiento: solicitudImagenForm.procedimiento,
+            antecedentes_clinico_quirurgico: solicitudImagenForm.antecedentes_clinico_quirurgico,
+            cuadro_clinico: solicitudImagenForm.cuadro_clinico,
+            medicamentos: solicitudImagenForm.medicamentos,
+            alergias: alergiasDesdeAntecedentesTexto,
+          });
+
+          if (!solicitudImagen) {
+            toast.error('La consulta se guardó, pero no se pudo registrar la solicitud de imagen');
+            setIsSavingConsulta(false);
+            return;
+          }
+
+          setSolicitudImagenActual(solicitudImagen);
+        }
+
         // Si la cita ya existía (vino desde la agenda), actualizar su estado a "atendida"
-        const citaEraPreexistente = !!(citaIdParaConsulta || citaIdInicial);
-        if (citaEraPreexistente && idCitaParaConsulta) {
+        if (idCitaParaConsulta) {
           const marcada = await marcarCitaCompletada(idCitaParaConsulta, usuarioData.id_usuario);
           if (!marcada) {
             console.error('⚠️ La consulta se guardó pero no se pudo actualizar el estado de la cita a "atendida"');
@@ -980,18 +2008,18 @@ export function PacientesViewSupabase({
         setConsultasPorCita(consultasMap);
 
         toast.success('Consulta guardada exitosamente');
-        setIsConsultaDialogOpen(false);
+        setIsConsultaScreenOpen(false);
+        setConsultaDraftKey(null);
 
         // Limpiar formulario
-        setConsultaForm({
-          motivo_consulta: '',
-          historial_clinico: '',
-          receta_medica: '',
-          pedido_examenes: '',
-          fecha_seguimiento: '',
-          pedido_hospitalizacion: '',
-          diagnostico: ''
-        });
+        setConsultaForm(createEmptyConsultaForm());
+        setExamenFisicoSeleccionados([]);
+        setNotaExamenFisico('');
+        setSolicitudImagenForm(createEmptySolicitudImagenForm());
+        setSolicitudImagenActual(null);
+        setCodigoCie10Input('');
+        setDiagnosticosCie10([]);
+        resetLaboratorioState();
 
         // Llamar callback si existe
         if (onConsultaCompletada) {
@@ -1008,6 +2036,601 @@ export function PacientesViewSupabase({
     }
   };
 
+  const escapeHtml = (valor: string): string => valor
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const handleImprimirSolicitudImagenDesdeConsulta = async () => {
+    const pacienteData = pacienteSeleccionado;
+    if (!pacienteData) {
+      toast.error('No hay paciente seleccionado para imprimir');
+      return;
+    }
+
+    // Si ya tenemos número de solicitud, imprimir directo
+    if (solicitudImagenActual?.numero_solicitud_imagen) {
+      handleImprimirSolicitudImagen(solicitudImagenActual, pacienteData);
+      return;
+    }
+
+    // Si el form tiene contenido, forzar guardado para obtener número
+    if (solicitudImagenTieneContenido(solicitudImagenForm)) {
+      try {
+        const idCita = await ensureCitaParaConsulta();
+        const usuarioId = await resolveUsuarioConsulta();
+        if (idCita && usuarioId && sucursalSeleccionada) {
+          const solicitudGuardada = await upsertSolicitudImagen({
+            id_cita: idCita,
+            id_paciente: selectedPatientId!,
+            id_sucursal: sucursalSeleccionada,
+            id_usuario_solicitante: usuarioId,
+            fecha_solicitud: solicitudImagenForm.fecha_solicitud,
+            nombre_paciente: `${pacienteData.nombres} ${pacienteData.apellidos}`.trim(),
+            edad_paciente: calcularEdad(pacienteData.fecha_nacimiento),
+            procedimiento: solicitudImagenForm.procedimiento,
+            antecedentes_clinico_quirurgico: solicitudImagenForm.antecedentes_clinico_quirurgico,
+            cuadro_clinico: solicitudImagenForm.cuadro_clinico,
+            medicamentos: solicitudImagenForm.medicamentos,
+            alergias: alergiasDesdeAntecedentesTexto,
+          });
+          if (solicitudGuardada) {
+            setSolicitudImagenActual(solicitudGuardada);
+            handleImprimirSolicitudImagen(solicitudGuardada, pacienteData);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error al guardar solicitud antes de imprimir:', error);
+      }
+    }
+
+    // Fallback: imprimir con lo que hay (sin número)
+    handleImprimirSolicitudImagen(solicitudImagenActual, pacienteData);
+  };
+
+  const handleImprimirSolicitudImagen = (
+    solicitudData: SolicitudImagen | null = solicitudImagenActual,
+    pacienteData: Paciente | null = pacienteSeleccionado,
+  ) => {
+    if (!pacienteData) {
+      toast.error('No hay paciente seleccionado para imprimir');
+      return;
+    }
+
+    const nombrePaciente = pacienteData
+      ? `${pacienteData.nombres} ${pacienteData.apellidos}`.trim()
+      : 'PACIENTE SIN NOMBRE';
+    const edadPaciente = solicitudData?.edad_paciente != null
+      ? String(solicitudData.edad_paciente)
+      : `${calcularEdad(pacienteData.fecha_nacimiento)}`;
+    const numeroSolicitud = solicitudData?.numero_solicitud_imagen
+      ? String(solicitudData.numero_solicitud_imagen).padStart(7, '0')
+      : '';
+
+    const contenido = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title></title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Georgia, 'Times New Roman', serif; margin: 18px; color: #3f3f46; }
+    .doc { border: 1px solid #e4e4e7; padding: 14px 18px 22px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #d4d4d8; padding-bottom: 10px; margin-bottom: 16px; }
+    .titulo { font-style: italic; font-size: 42px; letter-spacing: 0.4px; color: #71717a; margin: 0; line-height: 1.05; }
+    .numero { color: #3f3f46; font-size: 34px; margin-left: 14px; font-weight: 700; }
+    .logo { width: 200px; object-fit: contain; }
+    .fila { display: flex; gap: 16px; margin: 12px 0; }
+    .campo { flex: 1; }
+    .label { font-style: italic; font-size: 26px; color: #71717a; margin-right: 8px; }
+    .linea { border-bottom: 1px solid #c4c4c7; min-height: 38px; padding: 4px 0 2px; font-size: 23px; color: #27272a; white-space: pre-wrap; }
+    .linea.inline { display: inline-block; width: calc(100% - 165px); vertical-align: bottom; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .linea.corta { min-width: 170px; }
+    .fila-datos { display: flex; gap: 16px; margin: 12px 0; }
+    .campo-fecha { max-width: 320px; }
+    .campo-edad { max-width: 220px; }
+    @page { margin: 8mm; }
+    @media print { body { margin: 0; } .doc { border: none; padding: 8px 10px; } }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="header">
+      <div>
+        <span class="titulo">SOLICITUD DE IMAGEN</span>
+        ${numeroSolicitud ? `<span class="numero">N° ${escapeHtml(numeroSolicitud)}</span>` : ''}
+      </div>
+      <img src="${logoClinicaAtlas}" alt="Clinicas Atlas" class="logo" />
+    </div>
+
+    <div class="fila">
+      <div class="campo">
+        <span class="label">Nombre:</span>
+        <span class="linea inline">${escapeHtml(nombrePaciente)}</span>
+      </div>
+    </div>
+
+    <div class="fila-datos">
+      <div class="campo campo-fecha">
+        <span class="label">Fecha:</span>
+        <span class="linea inline corta">${escapeHtml(solicitudData?.fecha_solicitud || solicitudImagenForm.fecha_solicitud || formatDateLocal(new Date()))}</span>
+      </div>
+      <div class="campo campo-edad">
+        <span class="label">Edad:</span>
+        <span class="linea inline corta">${escapeHtml(edadPaciente)}</span>
+      </div>
+    </div>
+
+    <div class="fila"><div class="campo"><span class="label">Procedimiento:</span><div class="linea">${escapeHtml(solicitudData?.procedimiento || solicitudImagenForm.procedimiento)}</div></div></div>
+    <div class="fila"><div class="campo"><span class="label">Antecedentes Clinico - Quirurgico:</span><div class="linea">${escapeHtml(solicitudData?.antecedentes_clinico_quirurgico || solicitudImagenForm.antecedentes_clinico_quirurgico)}</div></div></div>
+    <div class="fila"><div class="campo"><span class="label">Cuadro Clinico:</span><div class="linea">${escapeHtml(solicitudData?.cuadro_clinico || solicitudImagenForm.cuadro_clinico)}</div></div></div>
+
+    <div class="fila">
+      <div class="campo"><span class="label">Medicamentos:</span><div class="linea">${escapeHtml(solicitudData?.medicamentos || solicitudImagenForm.medicamentos)}</div></div>
+      <div class="campo"><span class="label">Alergias:</span><div class="linea">${escapeHtml(solicitudData?.alergias || alergiasDesdeAntecedentesTexto)}</div></div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const printWindow = window.open('', '_blank', 'width=1200,height=900');
+    if (!printWindow) {
+      toast.error('No se pudo abrir la ventana de impresión. Verifica el bloqueador de popups.');
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(contenido);
+    printWindow.document.close();
+
+    // Esperar a que el logo cargue para evitar impresión sin imagen.
+    const imprimir = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    const logo = printWindow.document.querySelector('img.logo') as HTMLImageElement | null;
+    if (logo && !logo.complete) {
+      logo.onload = imprimir;
+      logo.onerror = imprimir;
+      return;
+    }
+
+    imprimir();
+  };
+
+  const handleImprimirReceta = async (
+    consultaData: ConsultaMedica | null = null,
+    pacienteData: Paciente | null = pacienteSeleccionado,
+  ) => {
+    if (!pacienteData) {
+      toast.error('No hay paciente seleccionado para imprimir la receta');
+      return;
+    }
+
+    const recetaRp = consultaData?.receta_rp || consultaForm.receta_rp;
+    const recetaIndicaciones = consultaData?.receta_indicaciones || consultaForm.receta_indicaciones;
+
+    if (!recetaRp.trim() && !recetaIndicaciones.trim()) {
+      toast.error('Complete RP o Indicaciones para imprimir la receta');
+      return;
+    }
+
+    const nombreCompleto = `${pacienteData.nombres} ${pacienteData.apellidos}`.trim().toUpperCase();
+    const edadTexto = `${calcularEdad(pacienteData.fecha_nacimiento)}`;
+    const diagnosticoTexto = (consultaData?.diagnostico || consultaForm.diagnostico).trim().toUpperCase();
+    const codigosCie = !consultaData && diagnosticosCie10.length > 0
+      ? diagnosticosCie10.map((d) => d.codigo).join(', ')
+      : (diagnosticoTexto.match(/[A-Z]\d{2}(?:\.\d+)?/g) || []).join(', ');
+    const numeroCita = consultaData?.id_cita || citaIdParaConsulta || citaIdInicial || citaConsultaActual?.id_cita || null;
+    const alergiasTexto = alergiasDesdeAntecedentesTexto;
+    const rpTexto = recetaRp.trim().toUpperCase();
+    const indicacionesTexto = recetaIndicaciones.trim().toUpperCase();
+    try {
+      const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([841.89, 595.28]); // A4 horizontal en puntos
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+      let logoImage: any = null;
+      try {
+        const logoBytes = await fetch(logoClinicaAtlas).then((res) => res.arrayBuffer());
+        logoImage = await pdfDoc.embedPng(logoBytes);
+      } catch (error) {
+        console.warn('No se pudo incrustar el logotipo en PDF:', error);
+      }
+
+      const margin = 20;
+      const panelGap = 8;
+      const pageWidth = page.getWidth();
+      const pageHeight = page.getHeight();
+      const panelWidth = (pageWidth - margin * 2 - panelGap) / 2;
+      const panelTop = pageHeight - margin;
+      const panelBottom = margin;
+      const footerLines = [
+        'Av. Francisco Hernandez de Giron N35-50 y Av. America',
+        'Telefonos. 3520 157 / (099 509) 321 / 1700 633 425 ext. 1030 - 1040 - 1060',
+        'www.clinicasatlas.med.ec',
+      ];
+
+      const measure = (text: string, textSize: number, useBold = false): number => {
+        const f = useBold ? fontBold : font;
+        return f.widthOfTextAtSize(text, textSize);
+      };
+
+      const truncate = (text: string, maxWidth: number, textSize: number): string => {
+        const normalized = text.trim();
+        if (!normalized) return '';
+        if (measure(normalized, textSize) <= maxWidth) return normalized;
+
+        let cut = normalized;
+        while (cut.length > 1 && measure(`${cut}...`, textSize) > maxWidth) {
+          cut = cut.slice(0, -1);
+        }
+        return `${cut}...`;
+      };
+
+      const wrapText = (text: string, maxWidth: number, textSize: number): string[] => {
+        const chunks = text
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+
+        if (chunks.length === 0) return [];
+
+        const lines: string[] = [];
+        chunks.forEach((chunk) => {
+          const words = chunk.split(/\s+/).filter(Boolean);
+          let current = '';
+
+          words.forEach((word) => {
+            const candidate = current ? `${current} ${word}` : word;
+            if (measure(candidate, textSize) <= maxWidth) {
+              current = candidate;
+            } else {
+              if (current) lines.push(current);
+              current = word;
+            }
+          });
+
+          if (current) lines.push(current);
+        });
+
+        return lines;
+      };
+
+      const drawFooter = (startX: number): void => {
+        const labelY = panelBottom + 52;
+        const label = 'Firma y Sello:';
+        const labelSize = 11;
+        const footerTextSize = 8;
+
+        page.drawText(label, {
+          x: startX,
+          y: labelY,
+          size: labelSize,
+          font,
+          color: rgb(0.45, 0.45, 0.48),
+        });
+
+        const lineStart = startX + measure(label, labelSize) + 6;
+        page.drawLine({
+          start: { x: lineStart, y: labelY + 2 },
+          end: { x: startX + panelWidth - 4, y: labelY + 2 },
+          thickness: 0.8,
+          color: rgb(0.78, 0.8, 0.83),
+        });
+
+        const centerX = startX + panelWidth / 2;
+        let currentY = panelBottom + 30;
+        footerLines.forEach((line) => {
+          const textWidth = measure(line, footerTextSize);
+          page.drawText(line, {
+            x: centerX - textWidth / 2,
+            y: currentY,
+            size: footerTextSize,
+            font,
+            color: rgb(0.62, 0.64, 0.68),
+          });
+          currentY -= 10;
+        });
+      };
+
+      const drawFieldLine = (
+        startX: number,
+        y: number,
+        label: string,
+        value: string,
+        maxEndX: number,
+      ): void => {
+        const labelSize = 11;
+        const valueSize = 10;
+        page.drawText(label, {
+          x: startX,
+          y,
+          size: labelSize,
+          font,
+          color: rgb(0.45, 0.45, 0.48),
+        });
+
+        const lineX = startX + measure(label, labelSize) + 6;
+        page.drawLine({
+          start: { x: lineX, y: y + 2 },
+          end: { x: maxEndX, y: y + 2 },
+          thickness: 0.8,
+          color: rgb(0.78, 0.8, 0.83),
+        });
+
+        const clean = truncate(value, Math.max(20, maxEndX - lineX - 3), valueSize);
+        if (clean) {
+          page.drawText(clean, {
+            x: lineX + 2,
+            y: y + 4,
+            size: valueSize,
+            font,
+            color: rgb(0.2, 0.23, 0.3),
+          });
+        }
+      };
+
+      const drawPanelBase = (startX: number): number => {
+        if (logoImage) {
+          const scale = Math.min(160 / logoImage.width, 36 / logoImage.height);
+          page.drawImage(logoImage, {
+            x: startX,
+            y: panelTop - 36,
+            width: logoImage.width * scale,
+            height: logoImage.height * scale,
+          });
+        }
+
+        const rightEdge = startX + panelWidth - 4;
+        let currentY = panelTop - 64;
+
+        const ageLabel = 'Edad:';
+        const ageLabelWidth = measure(ageLabel, 11);
+        const ageZone = 80;
+        const ageStart = rightEdge - ageZone;
+
+        drawFieldLine(startX, currentY, 'Nombres y apellidos:', nombreCompleto, ageStart - 10);
+        drawFieldLine(ageStart, currentY, ageLabel, edadTexto, rightEdge);
+        currentY -= 24;
+
+        if (numeroCita) {
+          drawFieldLine(startX, currentY, 'Cita N°:', String(numeroCita), rightEdge);
+          currentY -= 24;
+        }
+
+        return currentY;
+      };
+
+      const drawRpPanel = (startX: number): void => {
+        let currentY = drawPanelBase(startX);
+        const rightEdge = startX + panelWidth - 4;
+
+        const cieLabel = 'CIE-10:';
+        const cieZone = 110;
+        const cieStart = rightEdge - cieZone;
+
+        drawFieldLine(startX, currentY, 'Diagnostico:', diagnosticoTexto, cieStart - 10);
+        drawFieldLine(cieStart, currentY, cieLabel, codigosCie, rightEdge);
+        currentY -= 24;
+
+        drawFieldLine(startX, currentY, 'Alergias:', alergiasTexto, rightEdge);
+        currentY -= 28;
+
+        page.drawText('Rp:', {
+          x: startX,
+          y: currentY,
+          size: 11,
+          font,
+          color: rgb(0.45, 0.45, 0.48),
+        });
+
+        const contentX = startX + measure('Rp:', 11) + 8;
+        const maxWidth = rightEdge - contentX;
+        const maxLines = 11;
+        const wrapped = wrapText(rpTexto, maxWidth, 10).slice(0, maxLines);
+        let textY = currentY;
+        wrapped.forEach((line) => {
+          page.drawText(line, {
+            x: contentX,
+            y: textY,
+            size: 10,
+            font,
+            color: rgb(0.2, 0.23, 0.3),
+          });
+          textY -= 13;
+        });
+
+        drawFooter(startX);
+      };
+
+      const drawIndicacionesPanel = (startX: number): void => {
+        let currentY = drawPanelBase(startX);
+        const rightEdge = startX + panelWidth - 4;
+
+        page.drawText('Indicaciones:', {
+          x: startX,
+          y: currentY,
+          size: 11,
+          font,
+          color: rgb(0.45, 0.45, 0.48),
+        });
+
+        const contentX = startX + measure('Indicaciones:', 11) + 8;
+        const maxWidth = rightEdge - contentX;
+        const maxLines = 14;
+        const wrapped = wrapText(indicacionesTexto, maxWidth, 10).slice(0, maxLines);
+        let textY = currentY;
+        wrapped.forEach((line) => {
+          page.drawText(line, {
+            x: contentX,
+            y: textY,
+            size: 10,
+            font,
+            color: rgb(0.2, 0.23, 0.3),
+          });
+          textY -= 13;
+        });
+
+        drawFooter(startX);
+      };
+
+      page.drawLine({
+        start: { x: margin + panelWidth + panelGap / 2, y: panelBottom },
+        end: { x: margin + panelWidth + panelGap / 2, y: panelTop },
+        thickness: 0.8,
+        color: rgb(0.9, 0.91, 0.93),
+      });
+
+      drawRpPanel(margin);
+      drawIndicacionesPanel(margin + panelWidth + panelGap);
+
+      const pdfBytes = await pdfDoc.save();
+      const pdfBuffer = new ArrayBuffer(pdfBytes.length);
+      new Uint8Array(pdfBuffer).set(pdfBytes);
+      const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' });
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      const pdfWindow = window.open(pdfUrl, '_blank');
+
+      if (!pdfWindow) {
+        URL.revokeObjectURL(pdfUrl);
+        toast.error('No se pudo abrir el PDF. Verifica el bloqueador de popups.');
+        return;
+      }
+
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+    } catch (error) {
+      console.error('Error al generar PDF de receta:', error);
+      toast.error('No se pudo generar el PDF de la receta');
+    }
+  };
+
+  const handleImprimirPedidoLaboratorio = (
+    pedidoData: PedidoLaboratorioCompleto | null = pedidoLaboratorioActual,
+    pacienteData: Paciente | null = pacienteSeleccionado,
+    borradorData?: {
+      examenes: ExamenLaboratorio[];
+      medicoNombre?: string;
+      observaciones?: string;
+    },
+  ) => {
+    if (!pacienteData) {
+      toast.error('No hay pedido de laboratorio para imprimir');
+      return;
+    }
+
+    const examenesBorrador = borradorData?.examenes || [];
+    const tienePedidoPersistido = !!pedidoData;
+
+    if (!tienePedidoPersistido && examenesBorrador.length === 0) {
+      toast.error('No hay exámenes seleccionados para imprimir');
+      return;
+    }
+
+    const nombrePaciente = `${pacienteData.nombres} ${pacienteData.apellidos}`.trim();
+    const edadPaciente = `${calcularEdad(pacienteData.fecha_nacimiento)}`;
+    const medicoResponsable = pedidoData?.medico_asignacion?.usuario
+      ? `${pedidoData.medico_asignacion.usuario.nombre} ${pedidoData.medico_asignacion.usuario.apellido}`
+      : borradorData?.medicoNombre || (pedidoData ? `ID Usuario Sucursal ${pedidoData.id_usuario_sucursal_medico}` : 'NO ASIGNADO');
+    const examenesTexto = (pedidoData
+      ? pedidoData.detalle.map((detalle) => detalle.examen_laboratorio?.nombre || `Examen #${detalle.id_examen_laboratorio}`)
+      : examenesBorrador.map((examen) => examen.nombre)
+    )
+      .map((nombre) => `<li>${escapeHtml(nombre)}</li>`)
+      .join('');
+
+    const numeroPedido = pedidoData
+      ? `#${escapeHtml(String(pedidoData.numero_pedido_laboratorio).padStart(7, '0'))}`
+      : 'BORRADOR';
+
+    const fechaPedido = pedidoData
+      ? String(pedidoData.fecha_pedido).slice(0, 10)
+      : formatDateLocal(new Date());
+
+    const observacionesPedido = pedidoData?.observaciones || borradorData?.observaciones || '';
+
+    const contenido = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title></title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Georgia, 'Times New Roman', serif; margin: 18px; color: #3f3f46; }
+    .doc { border: 1px solid #e4e4e7; padding: 14px 18px 22px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #d4d4d8; padding-bottom: 10px; margin-bottom: 16px; }
+    .titulo { font-style: italic; font-size: 34px; letter-spacing: 0.4px; color: #71717a; margin: 0; line-height: 1.05; }
+    .numero { color: #3f3f46; font-size: 28px; margin-left: 14px; font-weight: 700; }
+    .logo { width: 200px; object-fit: contain; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+    .card { border: 1px solid #d4d4d8; border-radius: 10px; padding: 12px; }
+    .label { font-size: 13px; font-weight: 700; color: #52525b; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+    .value { font-size: 17px; color: #18181b; white-space: pre-wrap; }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+    li { font-size: 17px; margin: 4px 0; }
+    @page { margin: 8mm; }
+    @media print { body { margin: 0; } .doc { border: none; padding: 8px 10px; } }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="header">
+      <div>
+        <span class="titulo">PEDIDO DE LABORATORIO</span>
+        <span class="numero">${numeroPedido}</span>
+      </div>
+      <img src="${logoClinicaAtlas}" alt="Clinicas Atlas" class="logo" />
+    </div>
+    <div class="grid">
+      <div class="card"><div class="label">Nombre</div><div class="value">${escapeHtml(nombrePaciente)}</div></div>
+      <div class="card"><div class="label">Edad</div><div class="value">${escapeHtml(edadPaciente)} años</div></div>
+      <div class="card"><div class="label">Fecha</div><div class="value">${escapeHtml(fechaPedido)}</div></div>
+      <div class="card"><div class="label">Médico</div><div class="value">${escapeHtml(medicoResponsable)}</div></div>
+    </div>
+    <div class="card">
+      <div class="label">Catálogo de exámenes</div>
+      <ul>${examenesTexto}</ul>
+    </div>
+    <div class="card" style="margin-top: 14px;">
+      <div class="label">Observaciones del pedido</div>
+      <div class="value">${escapeHtml(observacionesPedido)}</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const printWindow = window.open('', '_blank', 'width=1200,height=900');
+    if (!printWindow) {
+      toast.error('No se pudo abrir la ventana de impresión. Verifica el bloqueador de popups.');
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(contenido);
+    printWindow.document.close();
+
+    const imprimir = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    const logo = printWindow.document.querySelector('img.logo') as HTMLImageElement | null;
+    if (logo && !logo.complete) {
+      logo.onload = imprimir;
+      logo.onerror = imprimir;
+      return;
+    }
+
+    imprimir();
+  };
+
   const pacienteSeleccionado = selectedPatientId ? pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId) : null;
   const signoActual = selectedPatientId ? getSignoVitalActual(selectedPatientId) : null;
   const currentIndex = selectedPatientId ? (signosVitalesIndex[selectedPatientId] || 0) : 0;
@@ -1016,8 +2639,22 @@ export function PacientesViewSupabase({
     <div className="h-full flex flex-col p-6 space-y-6">
       <SupabaseIndicator />
 
+      {!isConsultaScreenOpen && (
+        <>
       {/* Top Bar: Buscador y Nuevo Paciente */}
       <div className="flex gap-4 items-center max-w-2xl mx-auto w-full">
+        {/* Botón regresar a agenda (médico y enfermera con paciente abierto) */}
+        {esRolAgenda && selectedPatientId && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            onClick={() => setSelectedPatientId(null)}
+          >
+            <ChevronLeft className="size-4 mr-1" />
+            Agenda
+          </Button>
+        )}
         <Button
           variant="outline"
           className="flex-1 justify-start h-12 text-lg text-muted-foreground"
@@ -1030,6 +2667,8 @@ export function PacientesViewSupabase({
           <Search className="mr-2 h-5 w-5" />
           {selectedPatientId && pacienteSeleccionado
             ? `Paciente seleccionado: ${pacienteSeleccionado.nombres} ${pacienteSeleccionado.apellidos}`
+            : esRolAgenda
+            ? "Buscar paciente en la agenda..."
             : "Click para buscar paciente..."}
         </Button>
       </div>
@@ -1096,10 +2735,10 @@ export function PacientesViewSupabase({
                     )}
                   </div>
 
-                  {/* Signos Vitales */}
+                  {/* Constantes Vitales y Antropometría */}
                   <div className="border-t pt-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-medium text-gray-900">Signos Vitales</h4>
+                      <h4 className="font-medium text-gray-900">Constantes vitales y antropometría</h4>
                       <div className="flex items-center gap-1">
                         {signosVitales.length > 1 && (
                           <>
@@ -1138,7 +2777,7 @@ export function PacientesViewSupabase({
                       }}
                     >
                       <Plus className="size-4 mr-2" />
-                      Registrar Signos Vitales
+                      Registrar constantes vitales y antropometría
                     </Button>
 
                     {signoActual ? (
@@ -1186,7 +2825,7 @@ export function PacientesViewSupabase({
                                 <div className="flex items-center gap-2">
                                   <Ruler className="size-4 text-blue-600 shrink-0" />
                                   <div>
-                                    <p className="text-xs text-gray-500">Estatura</p>
+                                    <p className="text-xs text-gray-500">Talla</p>
                                     <p className="text-sm font-medium">{signoActual.estatura_cm || '-'} {signoActual.estatura_cm ? 'cm' : ''}</p>
                                   </div>
                                 </div>
@@ -1264,10 +2903,56 @@ export function PacientesViewSupabase({
                                 <div className="flex items-center gap-2 col-span-2">
                                   <Droplet className="size-4 text-blue-600 shrink-0" />
                                   <div>
-                                    <p className="text-xs text-gray-500">Sat. Oxígeno</p>
+                                    <p className="text-xs text-gray-500">Pulsoximetría</p>
                                     <p className={claseValor('saturacion_oxigeno')}>
                                       {signoActual.saturacion_oxigeno != null ? `${signoActual.saturacion_oxigeno}%` : '-'}
                                       {icono('saturacion_oxigeno')}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Ruler className="size-4 text-blue-600 shrink-0" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">Perímetro cefálico</p>
+                                    <p className="text-sm font-medium">{signoActual.perimetro_cefalico_cm || '-'} {signoActual.perimetro_cefalico_cm ? 'cm' : ''}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Droplet className="size-4 text-blue-600 shrink-0" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">Glucemia capilar</p>
+                                    <p className={claseValor('glucosa_mg_dl')}>
+                                      {signoActual.glucosa_mg_dl || '-'} {signoActual.glucosa_mg_dl ? 'mg/dL' : ''}
+                                      {icono('glucosa_mg_dl')}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Activity className="size-4 text-blue-600 shrink-0" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">Glasgow inicial</p>
+                                    <p className={claseValor('glasgow_total')}>
+                                      {signoActual.glasgow_ocular != null && signoActual.glasgow_verbal != null && signoActual.glasgow_motora != null
+                                        ? `O:${signoActual.glasgow_ocular} V:${signoActual.glasgow_verbal} M:${signoActual.glasgow_motora} T:${signoActual.glasgow_ocular + signoActual.glasgow_verbal + signoActual.glasgow_motora}`
+                                        : '-'}
+                                      {icono('glasgow_total')}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Eye className="size-4 text-blue-600 shrink-0" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">Reacción pupilar</p>
+                                    <p className="text-sm font-medium">{signoActual.reaccion_pupilar || '-'}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 col-span-2">
+                                  <Clock className="size-4 text-blue-600 shrink-0" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">T. llenado capilar</p>
+                                    <p className={claseValor('tiempo_llenado_capilar_seg')}>
+                                      {signoActual.tiempo_llenado_capilar_seg || '-'} {signoActual.tiempo_llenado_capilar_seg ? 'seg' : ''}
+                                      {icono('tiempo_llenado_capilar_seg')}
                                     </p>
                                   </div>
                                 </div>
@@ -1278,7 +2963,7 @@ export function PacientesViewSupabase({
                       </div>
                     ) : (
                       <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed text-gray-500 text-sm">
-                        No hay signos vitales registrados
+                        No hay constantes vitales y antropometría registradas
                       </div>
                     )}
                   </div>
@@ -1421,6 +3106,16 @@ export function PacientesViewSupabase({
                                 </div>
                               )}
 
+                              {tieneConsulta && consulta.pedido_examenes && (
+                                <div className="pt-2 border-t text-xs">
+                                  <p className="font-medium text-orange-700 mb-1 flex items-center gap-1">
+                                    <FileText className="size-3" />
+                                    Examen Físico:
+                                  </p>
+                                  <p className="text-gray-600 whitespace-pre-wrap bg-orange-50 p-2 rounded line-clamp-4">{consulta.pedido_examenes}</p>
+                                </div>
+                              )}
+
                               {tieneConsulta && estaExpandida && consulta.historial_clinico && (
                                 <div className="pt-2 border-t text-xs">
                                   <p className="font-medium text-gray-700 mb-1">Historial Clínico:</p>
@@ -1487,6 +3182,273 @@ export function PacientesViewSupabase({
               </Card>
             </div>
           </div>
+        ) : esRolAgenda ? (
+          /* ── AGENDA DE PACIENTES ─────────────────────────────────────────── */
+          <div className="h-full flex flex-col space-y-4 overflow-hidden">
+
+            {/* Chip de filtro activo por paciente */}
+            {agendaFilterPaciente && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <User className="size-4 text-blue-600" />
+                <span className="text-sm text-blue-700 font-medium">
+                  Filtrando: {agendaFilterPaciente.nombre}
+                </span>
+                <button
+                  className="ml-auto text-blue-500 hover:text-blue-700"
+                  onClick={() => {
+                    setAgendaFilterPaciente(null);
+                    setAgendaFiltrada(agendaMedico);
+                  }}
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Barra de navegación */}
+            <div className="flex items-center justify-between bg-white p-2 rounded-xl border shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-8 w-8 p-0 hover:bg-white hover:shadow-sm"
+                    onClick={() => {
+                      const d = new Date(currentWeekAgenda);
+                      d.setDate(d.getDate() - 7);
+                      setCurrentWeekAgenda(d);
+                    }}
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-8 px-3 text-xs font-medium hover:bg-white hover:shadow-sm"
+                    onClick={() => setCurrentWeekAgenda(new Date())}
+                  >
+                    Hoy
+                  </Button>
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-8 w-8 p-0 hover:bg-white hover:shadow-sm"
+                    onClick={() => {
+                      const d = new Date(currentWeekAgenda);
+                      d.setDate(d.getDate() + 7);
+                      setCurrentWeekAgenda(d);
+                    }}
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+                <span className="text-lg font-bold text-gray-800 tracking-tight">
+                  {(() => {
+                    const days = getWeekDaysAgenda();
+                    return days[0].toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
+                  })()}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                  <Button
+                    variant={vistaAgenda === 'semana' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setVistaAgenda('semana')}
+                    className={`h-8 px-4 text-xs font-medium transition-all ${vistaAgenda === 'semana' ? 'bg-white shadow-sm' : ''}`}
+                  >
+                    Semana
+                  </Button>
+                  <Button
+                    variant={vistaAgenda === 'lista' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setVistaAgenda('lista')}
+                    className={`h-8 px-4 text-xs font-medium transition-all ${vistaAgenda === 'lista' ? 'bg-white shadow-sm' : ''}`}
+                  >
+                    Lista
+                  </Button>
+                </div>
+                <Button
+                  size="sm" variant="outline" className="h-9 px-4"
+                  disabled={isLoadingAgenda}
+                  onClick={cargarAgendaMedico}
+                >
+                  <RefreshCw className={`size-4 mr-2 ${isLoadingAgenda ? 'animate-spin' : ''}`} />
+                  Actualizar
+                </Button>
+              </div>
+            </div>
+
+            {/* Barra de filtros */}
+            <div className="flex items-center gap-4 px-4 py-3 bg-gray-50/50 rounded-xl border border-dashed">
+              {vistaAgenda === 'lista' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Rango:</span>
+                  <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                    <div className="flex items-center gap-1 px-2 border-r">
+                      <Calendar className="size-3 text-gray-400" />
+                      <Input
+                        type="date"
+                        value={filterFechaDesdeAgenda}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilterFechaDesdeAgenda(e.target.value)}
+                        className="h-7 w-[120px] text-[11px] border-none focus-visible:ring-0 p-0"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1 px-2">
+                      <Calendar className="size-3 text-gray-400" />
+                      <Input
+                        type="date"
+                        value={filterFechaHastaAgenda}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilterFechaHastaAgenda(e.target.value)}
+                        className="h-7 w-[120px] text-[11px] border-none focus-visible:ring-0 p-0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-lg border border-gray-200 ml-auto">
+                <Checkbox
+                  id="agenda-canceladas"
+                  checked={mostrarCanceladasAgenda}
+                  onCheckedChange={(checked: boolean) => setMostrarCanceladasAgenda(checked)}
+                  className="data-[state=checked]:bg-blue-600"
+                />
+                <label htmlFor="agenda-canceladas" className="text-[11px] font-semibold text-gray-600 cursor-pointer uppercase tracking-tight">
+                  Ver canceladas
+                </label>
+              </div>
+            </div>
+
+            {/* Contenido de la agenda */}
+            {isLoadingAgenda ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="size-8 animate-spin text-blue-600" />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto">
+                {vistaAgenda === 'semana' ? (
+                  /* Vista Semana */
+                  <div className="grid grid-cols-7 gap-2">
+                    {getWeekDaysAgenda().map((day, dayIdx) => {
+                      const citasDelDia = getCitasPorDiaAgenda(day);
+                      const isToday = day.toDateString() === new Date().toDateString();
+                      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+                      return (
+                        <div key={dayIdx} className={`min-h-[400px] ${isToday ? 'bg-blue-50' : 'bg-white'} rounded-lg border p-2`}>
+                          <div className={`text-center mb-2 pb-2 border-b ${isToday ? 'border-blue-300' : ''}`}>
+                            <div className={`text-xs ${isToday ? 'text-blue-600 font-semibold' : 'text-gray-500'}`}>
+                              {dayNames[day.getDay()]}
+                            </div>
+                            <div className={`text-lg ${isToday ? 'bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center mx-auto' : ''}`}>
+                              {day.getDate()}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            {citasDelDia.map((cita) => (
+                              <Card
+                                key={cita.id_cita}
+                                className={`p-2 cursor-pointer hover:shadow-md transition-shadow ${cita.estado_cita === 'cancelada' ? 'opacity-50' : ''}`}
+                                onClick={() => setCitaDetalleAgenda(cita)}
+                              >
+                                <div className="text-xs space-y-1">
+                                  <div className="flex items-center gap-1 font-semibold text-blue-700">
+                                    <Clock className="size-3" />
+                                    <span>{cita.hora_inicio.substring(0, 5)}</span>
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 font-medium truncate">
+                                    Dr. {cita.usuario_sucursal.usuario.apellido.split(' ')[0]}
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 truncate">
+                                    {(cita as any).especialidades?.nombre || cita.usuario_sucursal.especialidad || 'Especialidad no definida'}
+                                  </div>
+                                  <div className="font-medium truncate text-gray-900">
+                                    {cita.paciente.nombres.split(' ')[0]} {cita.paciente.apellidos.split(' ')[0]}
+                                  </div>
+                                  <div className="text-xs text-gray-500 truncate">{cita.motivo_consulta}</div>
+                                  <Badge
+                                    variant={cita.estado_cita === 'cancelada' ? 'destructive' : cita.consulta_realizada ? 'default' : 'secondary'}
+                                    className="text-[10px] px-1 h-5"
+                                  >
+                                    {cita.estado_cita === 'cancelada' ? 'Cancelada' : cita.consulta_realizada ? 'Completada' : 'Programada'}
+                                  </Badge>
+                                </div>
+                              </Card>
+                            ))}
+                            {citasDelDia.length === 0 && (
+                              <div className="text-xs text-gray-400 text-center py-4">Sin citas</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Vista Lista */
+                  <div className="space-y-3">
+                    {agendaFiltrada.filter(c => mostrarCanceladasAgenda || c.estado_cita !== 'cancelada').length === 0 ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <FileText className="size-12 mx-auto mb-3 text-gray-300" />
+                        <p>No hay citas programadas para el rango seleccionado</p>
+                      </div>
+                    ) : (
+                      agendaFiltrada
+                        .filter(c => mostrarCanceladasAgenda || c.estado_cita !== 'cancelada')
+                        .map((cita) => (
+                          <Card key={cita.id_cita} className="p-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Badge
+                                    className={`bg-${getColorSucursalAgenda(cita.usuario_sucursal.sucursal.id_sucursal)}-100 text-${getColorSucursalAgenda(cita.usuario_sucursal.sucursal.id_sucursal)}-700`}
+                                  >
+                                    {cita.usuario_sucursal.sucursal.nombre}
+                                  </Badge>
+                                  <Badge variant={cita.estado_cita === 'cancelada' ? 'destructive' : cita.consulta_realizada ? 'default' : 'secondary'}>
+                                    {cita.estado_cita === 'cancelada' ? 'Cancelada' : cita.consulta_realizada ? 'Completada' : 'Programada'}
+                                  </Badge>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <User className="size-4 text-gray-500" />
+                                      <span className="font-semibold">{cita.paciente.nombres} {cita.paciente.apellidos}</span>
+                                    </div>
+                                    {cita.paciente.telefono && (
+                                      <div className="flex items-center gap-2 text-gray-600">
+                                        <Phone className="size-3" />
+                                        <span className="text-xs">{cita.paciente.telefono}</span>
+                                      </div>
+                                    )}
+                                    <div className="text-xs text-gray-500 mt-1">CI: {cita.paciente.cedula}</div>
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <Clock className="size-4 text-gray-500" />
+                                      <span className="font-semibold">
+                                        {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-ES')} — {cita.hora_inicio.substring(0, 5)}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-gray-600">{cita.motivo_consulta}</div>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 ml-4">
+                                <Button
+                                  size="sm"
+                                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                                  onClick={() => setCitaDetalleAgenda(cita)}
+                                >
+                                  <Stethoscope className="size-4 mr-1" />
+                                  Ver Detalles
+                                </Button>
+                              </div>
+                            </div>
+                          </Card>
+                        ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          /* ─────────────────────────────────────────────────────────────────── */
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-400 bg-white rounded-lg border-2 border-dashed border-gray-200">
             <div className="p-6 bg-gray-50 rounded-full mb-6">
@@ -1499,6 +3461,8 @@ export function PacientesViewSupabase({
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Dialog: Buscar Paciente */}
       <Dialog open={isSearchDialogOpen} onOpenChange={setIsSearchDialogOpen}>
@@ -1540,9 +3504,18 @@ export function PacientesViewSupabase({
                   key={paciente.id_paciente}
                   className="flex items-center gap-3 p-3 hover:bg-gray-100 rounded-lg cursor-pointer border transition-colors"
                   onClick={() => {
-                    setSelectedPatientId(paciente.id_paciente);
-                    setIsSearchDialogOpen(false);
-                    setSearchTerm('');
+                    if (esRolAgenda) {
+                      // En modo agenda: filtrar la agenda por este paciente
+                      const nombreCompleto = `${paciente.nombres} ${paciente.apellidos}`;
+                      setAgendaFilterPaciente({ id: paciente.id_paciente, nombre: nombreCompleto });
+                      setAgendaFiltrada(agendaMedico.filter(c => c.paciente.id_paciente === paciente.id_paciente));
+                      setIsSearchDialogOpen(false);
+                      setSearchTerm('');
+                    } else {
+                      setSelectedPatientId(paciente.id_paciente);
+                      setIsSearchDialogOpen(false);
+                      setSearchTerm('');
+                    }
                   }}
                 >
                   <Avatar className="h-10 w-10">
@@ -1695,11 +3668,11 @@ export function PacientesViewSupabase({
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Signos Vitales */}
+      {/* Dialog: Constantes Vitales y Antropometría */}
       <Dialog open={isSignosVitalesDialogOpen} onOpenChange={setIsSignosVitalesDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Registrar Signos Vitales</DialogTitle>
+            <DialogTitle>Registrar constantes vitales y antropometría</DialogTitle>
             <DialogDescription>
               {selectedPatientId && pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId)
                 ? `Paciente: ${pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId)!.nombres} ${pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId)!.apellidos}`
@@ -1709,7 +3682,7 @@ export function PacientesViewSupabase({
 
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Estatura (cm)</Label>
+              <Label>Talla (cm)</Label>
               <Input
                 type="number"
                 step="0.1"
@@ -1729,6 +3702,18 @@ export function PacientesViewSupabase({
                 value={signosVitalesForm.peso_kg}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignosVitalesForm({ ...signosVitalesForm, peso_kg: e.target.value })}
                 placeholder="70.5"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Perímetro cefálico (cm)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                max="999.99"
+                value={signosVitalesForm.perimetro_cefalico_cm}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignosVitalesForm({ ...signosVitalesForm, perimetro_cefalico_cm: e.target.value })}
+                placeholder="56"
               />
             </div>
 
@@ -1767,7 +3752,7 @@ export function PacientesViewSupabase({
             </div>
 
             <div className="space-y-2">
-              <Label>Saturación O2(%)</Label>
+              <Label>Pulsoximetría (%)</Label>
               <Input
                 type="number"
                 step="0.1"
@@ -1800,6 +3785,93 @@ export function PacientesViewSupabase({
               />
             </div>
 
+            <div className="space-y-2">
+              <Label>Glucemia capilar (mg/dL)</Label>
+              <Input
+                type="number"
+                max="999"
+                value={signosVitalesForm.glucosa_mg_dl}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignosVitalesForm({ ...signosVitalesForm, glucosa_mg_dl: e.target.value })}
+                placeholder="95"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Glasgow ocular (4)</Label>
+              <Input
+                type="number"
+                min="1"
+                max="4"
+                value={signosVitalesForm.glasgow_ocular}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignosVitalesForm({ ...signosVitalesForm, glasgow_ocular: e.target.value })}
+                placeholder="4"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Glasgow verbal (5)</Label>
+              <Input
+                type="number"
+                min="1"
+                max="5"
+                value={signosVitalesForm.glasgow_verbal}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignosVitalesForm({ ...signosVitalesForm, glasgow_verbal: e.target.value })}
+                placeholder="5"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Glasgow motora (6)</Label>
+              <Input
+                type="number"
+                min="1"
+                max="6"
+                value={signosVitalesForm.glasgow_motora}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignosVitalesForm({ ...signosVitalesForm, glasgow_motora: e.target.value })}
+                placeholder="6"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Reacción pupilar</Label>
+              <Select
+                value={signosVitalesForm.reaccion_pupilar || undefined}
+                onValueChange={(value) => setSignosVitalesForm({ ...signosVitalesForm, reaccion_pupilar: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccione" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="REACTIVA">Reactiva</SelectItem>
+                  <SelectItem value="LENTA">Lenta</SelectItem>
+                  <SelectItem value="NO REACTIVA">No reactiva</SelectItem>
+                  <SelectItem value="ANISOCORICAS">Anisocóricas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>T. llenado capilar (seg)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                max="99.99"
+                value={signosVitalesForm.tiempo_llenado_capilar_seg}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignosVitalesForm({ ...signosVitalesForm, tiempo_llenado_capilar_seg: e.target.value })}
+                placeholder="2"
+              />
+            </div>
+
+            <div className="space-y-2 col-span-3">
+              <Label>Notas</Label>
+              <Textarea
+                value={signosVitalesForm.notas}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setSignosVitalesForm({ ...signosVitalesForm, notas: e.target.value })}
+                placeholder="Observaciones clínicas adicionales..."
+                className="min-h-[90px]"
+              />
+            </div>
+
 
           </div>
 
@@ -1808,31 +3880,65 @@ export function PacientesViewSupabase({
               Cancelar
             </Button>
             <Button onClick={handleSaveSignosVitales} className="bg-blue-600 hover:bg-blue-700">
-              Guardar Signos Vitales
+              Guardar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog para Nueva Consulta */}
-      <Dialog open={isConsultaDialogOpen} onOpenChange={setIsConsultaDialogOpen}>
-        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Nueva Consulta - {pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId)?.nombres} {pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId)?.apellidos}
-            </DialogTitle>
-            <DialogDescription className="flex items-center gap-2">
-              <Calendar className="size-4" />
-              <span>{new Date().toLocaleDateString('es-ES', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}</span>
-            </DialogDescription>
-          </DialogHeader>
+      {/* Pantalla de Nueva Consulta */}
+      {isConsultaScreenOpen && (
+        <div className="flex-1 overflow-hidden">
+          <Card className="h-full flex flex-col">
+            <CardHeader className="border-b">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    Nueva Consulta - {pacienteSeleccionado?.nombres} {pacienteSeleccionado?.apellidos}
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
+                    <Calendar className="size-4" />
+                    <span>{new Date().toLocaleDateString('es-ES', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}</span>
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
+                      Cita N° {citaIdParaConsulta || citaIdInicial || 'GENERANDO...'}
+                    </Badge>
+                    {solicitudImagenActual?.numero_solicitud_imagen && (
+                      <Badge variant="outline" className="border-sky-300 text-sky-700 bg-sky-50">
+                        Imagen N° {String(solicitudImagenActual.numero_solicitud_imagen).padStart(7, '0')}
+                      </Badge>
+                    )}
+                    {pedidoLaboratorioActual?.numero_pedido_laboratorio && (
+                      <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">
+                        Lab N° {String(pedidoLaboratorioActual.numero_pedido_laboratorio).padStart(7, '0')}
+                      </Badge>
+                    )}
+                    {isAutoSavingConsulta && (
+                      <span className="inline-flex items-center gap-1 text-amber-700">
+                        <Loader2 className="size-3 animate-spin" /> Guardado automático...
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsConsultaScreenOpen(false)}
+                  disabled={isSavingConsulta}
+                >
+                  <ChevronLeft className="size-4 mr-1" />
+                  Volver
+                </Button>
+              </div>
+            </CardHeader>
 
-          <div className="space-y-4">
+            <CardContent className="flex-1 overflow-y-auto pt-6">
+              <div className="space-y-4 pb-6">
             {/* Selector de Sucursal */}
             <div className="space-y-2 bg-blue-50 p-4 rounded-lg border border-blue-200">
               <Label htmlFor="sucursalConsulta" className="font-medium text-blue-900">
@@ -1880,100 +3986,318 @@ export function PacientesViewSupabase({
               />
             </div>
 
-            {/* Hallazgos en la consulta */}
+            {/* Enfermedad o problema actual */}
             <div className="space-y-2">
-              <Label htmlFor="historialClinico" className="text-sm">Hallazgos en la consulta</Label>
+              <Label htmlFor="historialClinico" className="text-sm">Enfermedad o problema actual</Label>
               <Textarea
                 id="historialClinico"
                 value={consultaForm.historial_clinico}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setConsultaForm({ ...consultaForm, historial_clinico: e.target.value.toUpperCase() })}
-                placeholder="HALLAZGOS CLÍNICOS, DIAGNÓSTICO, OBSERVACIONES..."
+                placeholder="DESCRIBA LA ENFERMEDAD O PROBLEMA ACTUAL DEL PACIENTE..."
                 className="min-h-[100px] text-sm uppercase"
               />
             </div>
 
-            {/* Diagnóstico IA */}
+            {/* Diagnóstico IA por código CIE-10 */}
             <div className="space-y-3 border border-purple-200 rounded-lg p-4 bg-purple-50">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium text-purple-900 flex items-center gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="codigoCie10" className="text-sm font-medium text-purple-900 flex items-center gap-2">
                   <Brain className="size-4" />
-                  Diagnóstico IA (CIE-10)
+                  Código CIE-10
                 </Label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-purple-300 text-purple-700 hover:bg-purple-100"
-                  disabled={!consultaForm.historial_clinico.trim() || isLoadingDiagnosticoIA}
-                  onClick={handleObtenerDiagnosticoIA}
-                >
-                  {isLoadingDiagnosticoIA ? (
-                    <><Loader2 className="size-3 mr-1 animate-spin" />Analizando...</>
-                  ) : (
-                    <><Brain className="size-3 mr-1" />Obtener diagnóstico IA</>
-                  )}
-                </Button>
+                <div className="flex gap-2">
+                  <Input
+                    id="codigoCie10"
+                    value={codigoCie10Input}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCodigoCie10Input(e.target.value.toUpperCase())}
+                    placeholder="EJ: J30.9"
+                    className="text-sm uppercase bg-white"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-purple-300 text-purple-700 hover:bg-purple-100"
+                    disabled={!codigoCie10Input.trim() || isLoadingDiagnosticoIA}
+                    onClick={handleAgregarDiagnosticoIA}
+                  >
+                    {isLoadingDiagnosticoIA ? (
+                      <><Loader2 className="size-3 mr-1 animate-spin" />Consultando...</>
+                    ) : (
+                      <><Brain className="size-3 mr-1" />Agregar</>
+                    )}
+                  </Button>
+                </div>
               </div>
 
-              {sugerenciasDiagnostico.length > 0 && (
+              {diagnosticosCie10.length > 0 && (
                 <div className="space-y-1">
-                  <p className="text-xs text-purple-700 font-medium">Selecciona una sugerencia para aplicarla:</p>
-                  {sugerenciasDiagnostico.map((d, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setConsultaForm({ ...consultaForm, diagnostico: `${d.codigo} - ${d.nombre}` })}
-                      className={`w-full text-left px-3 py-2 rounded-md border transition-colors text-sm ${
-                        consultaForm.diagnostico === `${d.codigo} - ${d.nombre}`
-                          ? 'border-purple-500 bg-purple-100 text-purple-900'
-                          : 'border-purple-200 bg-white hover:border-purple-400 hover:bg-purple-50 text-gray-800'
-                      }`}
+                  <p className="text-xs text-purple-700 font-medium">Listado de diagnósticos CIE-10 agregados:</p>
+                  {diagnosticosCie10.map((d) => (
+                    <div
+                      key={d.codigo}
+                      className="w-full text-left px-3 py-2 rounded-md border border-purple-200 bg-white text-sm"
                     >
-                      <span className="font-mono font-bold text-purple-700">{d.codigo}</span>
-                      {' — '}
-                      <span className="font-medium">{d.nombre}</span>
-                      <br />
-                      <span className="text-xs text-gray-500">{d.descripcion}</span>
-                    </button>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className="font-mono font-bold text-purple-700">{d.codigo}</span>
+                          {' — '}
+                          <span className="font-medium">{d.nombre}</span>
+                          <p className="text-xs text-gray-500 mt-1">{d.descripcion}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-gray-500 hover:text-red-600"
+                          onClick={() => {
+                            const actualizados = diagnosticosCie10.filter(item => item.codigo !== d.codigo);
+                            setDiagnosticosCie10(actualizados);
+                            setConsultaForm({
+                              ...consultaForm,
+                              diagnostico: actualizados.map(item => `${item.codigo} - ${item.nombre}: ${item.descripcion}`).join('\n')
+                            });
+                          }}
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
 
               <div>
                 <Textarea
+                  id="diagnosticoConfirmado"
                   value={consultaForm.diagnostico}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                     setConsultaForm({ ...consultaForm, diagnostico: e.target.value.toUpperCase() })
                   }
-                  placeholder="Diagnóstico confirmado (selecciona una sugerencia o escribe manualmente)..."
+                  placeholder="Diagnóstico confirmado (puede editar manualmente el texto final)..."
                   className="min-h-[60px] text-sm uppercase"
                 />
               </div>
-              <p className="text-xs text-purple-600">⚕️ La IA es una referencia. El médico confirma el diagnóstico final.</p>
             </div>
 
-            {/* Receta Médica */}
-            <div className="space-y-2">
-              <Label htmlFor="recetaMedica" className="text-sm">Receta Médica</Label>
-              <Textarea
-                id="recetaMedica"
-                value={consultaForm.receta_medica}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setConsultaForm({ ...consultaForm, receta_medica: e.target.value.toUpperCase() })}
-                placeholder="MEDICAMENTOS Y DOSIS..."
-                className="min-h-[100px] text-sm uppercase"
-              />
+            {/* Examen Físico */}
+            <div className="space-y-3 rounded-lg border border-orange-200 bg-orange-50 p-4">
+              <div>
+                <Label className="text-sm font-medium text-orange-900">Examen Físico</Label>
+                <p className="text-xs text-orange-700 mt-1">
+                  Marque los segmentos evaluados durante la exploración física.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {EXAMEN_FISICO_SEGMENTOS.map((segmento) => {
+                  const checked = examenFisicoSeleccionados.includes(segmento);
+
+                  return (
+                    <label
+                      key={segmento}
+                      className="flex items-start gap-2 rounded-md border border-orange-200 bg-white p-2 text-xs cursor-pointer hover:border-orange-300"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(value) => {
+                          setExamenFisicoSeleccionados((prev) => {
+                            if (value === true) {
+                              return [...prev, segmento];
+                            }
+                            return prev.filter((item) => item !== segmento);
+                          });
+                        }}
+                      />
+                      <span>{segmento}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notaExamenFisico" className="text-xs font-medium text-orange-900">
+                  Nota adicional
+                </Label>
+                <Textarea
+                  id="notaExamenFisico"
+                  value={notaExamenFisico}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotaExamenFisico(e.target.value)}
+                  placeholder="Describa hallazgos del examen fisico..."
+                  className="min-h-[72px] bg-white text-xs"
+                />
+              </div>
+
+              <div className="rounded-md border border-orange-200 bg-white p-2 text-xs text-orange-900">
+                {consultaForm.pedido_examenes || 'SIN EXAMEN FISICO REGISTRADO'}
+              </div>
             </div>
 
-            {/* Pedido de Exámenes */}
-            <div className="space-y-2">
-              <Label htmlFor="pedidoExamenes" className="text-sm">Pedido de Exámenes</Label>
-              <Textarea
-                id="pedidoExamenes"
-                value={consultaForm.pedido_examenes}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setConsultaForm({ ...consultaForm, pedido_examenes: e.target.value.toUpperCase() })}
-                placeholder="EXÁMENES SOLICITADOS..."
-                className="min-h-[100px] text-sm uppercase"
-              />
+            {/* Solicitud de Imagen */}
+            <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label className="text-sm font-medium text-sky-900">Solicitud de Imagen</Label>
+                  <p className="text-xs text-sky-700 mt-1">
+                    Complete los datos del formato y use imprimir para generar la hoja con logotipo.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {solicitudImagenActual?.numero_solicitud_imagen && (
+                    <Badge variant="outline" className="bg-white border-sky-300 text-sky-800">
+                      N° {String(solicitudImagenActual.numero_solicitud_imagen).padStart(7, '0')}
+                    </Badge>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-sky-300 bg-white text-sky-800 hover:bg-sky-100"
+                    onClick={handleImprimirSolicitudImagenDesdeConsulta}
+                  >
+                    <Printer className="size-4 mr-2" />
+                    Imprimir
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1 md:col-span-1">
+                  <Label className="text-xs font-medium text-sky-900">Fecha</Label>
+                  <Input
+                    type="date"
+                    value={solicitudImagenForm.fecha_solicitud}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setSolicitudImagenForm((prev) => ({ ...prev, fecha_solicitud: e.target.value }))
+                    }
+                    className="bg-white"
+                  />
+                </div>
+                <div className="space-y-1 md:col-span-1">
+                  <Label className="text-xs font-medium text-sky-900">Nombre</Label>
+                  <Input
+                    value={pacienteSeleccionado ? `${pacienteSeleccionado.nombres} ${pacienteSeleccionado.apellidos}` : ''}
+                    readOnly
+                    className="bg-white"
+                  />
+                </div>
+                <div className="space-y-1 md:col-span-1">
+                  <Label className="text-xs font-medium text-sky-900">Edad</Label>
+                  <Input
+                    value={pacienteSeleccionado ? `${calcularEdad(pacienteSeleccionado.fecha_nacimiento)} años` : ''}
+                    readOnly
+                    className="bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-sky-900">Procedimiento</Label>
+                <Textarea
+                  value={solicitudImagenForm.procedimiento}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    setSolicitudImagenForm((prev) => ({ ...prev, procedimiento: e.target.value.toUpperCase() }))
+                  }
+                  className="min-h-[70px] bg-white text-sm uppercase"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-sky-900">Antecedentes Clínico - Quirúrgico</Label>
+                <Textarea
+                  value={solicitudImagenForm.antecedentes_clinico_quirurgico}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    setSolicitudImagenForm((prev) => ({ ...prev, antecedentes_clinico_quirurgico: e.target.value.toUpperCase() }))
+                  }
+                  className="min-h-[70px] bg-white text-sm uppercase"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-sky-900">Cuadro Clínico</Label>
+                <Textarea
+                  value={solicitudImagenForm.cuadro_clinico}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    setSolicitudImagenForm((prev) => ({ ...prev, cuadro_clinico: e.target.value.toUpperCase() }))
+                  }
+                  className="min-h-[70px] bg-white text-sm uppercase"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-sky-900">Medicamentos</Label>
+                  <Textarea
+                    value={solicitudImagenForm.medicamentos}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                      setSolicitudImagenForm((prev) => ({ ...prev, medicamentos: e.target.value.toUpperCase() }))
+                    }
+                    className="min-h-[70px] bg-white text-sm uppercase"
+                  />
+                </div>
+                <p className="text-xs text-sky-700">
+                  Alergias: <span className="font-medium text-sky-900">{alergiasDesdeAntecedentesTexto}</span>
+                </p>
+              </div>
+
+            </div>
+
+            {/* Gestión de Laboratorio */}
+            <div className="space-y-3 rounded-lg border border-orange-200 bg-orange-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label className="text-sm font-medium text-orange-900">Gestión de Laboratorio</Label>
+                  <p className="text-xs text-orange-700 mt-1">
+                    Seleccione médico y exámenes desde el catálogo de laboratorio.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
+                    onClick={() => handleImprimirPedidoLaboratorio(
+                      pedidoLaboratorioActual,
+                      pacienteSeleccionado,
+                      {
+                        examenes: examenesLaboratorioSeleccionadosData,
+                        medicoNombre: medicoLaboratorioActual?.usuario
+                          ? `${medicoLaboratorioActual.usuario.nombre} ${medicoLaboratorioActual.usuario.apellido}`
+                          : undefined,
+                        observaciones: observacionesLaboratorio,
+                      }
+                    )}
+                    disabled={!pedidoLaboratorioActual && examenesLaboratorioSeleccionadosData.length === 0}
+                  >
+                    <Printer className="size-4 mr-2" />
+                    Imprimir gestión
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
+                    onClick={() => setIsLaboratorioDialogOpen(true)}
+                  >
+                    <Plus className="size-4 mr-2" />
+                    Gestionar laboratorio
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
+                  {examenesLaboratorioSeleccionadosData.length} examen(es) seleccionado(s)
+                </Badge>
+                {medicoLaboratorioActual?.usuario && (
+                  <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
+                    Médico: {medicoLaboratorioActual.usuario.nombre} {medicoLaboratorioActual.usuario.apellido}
+                  </Badge>
+                )}
+                {pedidoLaboratorioActual && (
+                  <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
+                    Pedido #{pedidoLaboratorioActual.numero_pedido_laboratorio}
+                  </Badge>
+                )}
+              </div>
             </div>
 
             {/* Fecha de Seguimiento */}
@@ -1999,29 +4323,385 @@ export function PacientesViewSupabase({
                 className="min-h-[80px] text-sm uppercase"
               />
             </div>
+
+            {/* Interconsulta */}
+            <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50 p-4">
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight className="size-4 text-purple-700" />
+                <Label className="text-sm font-medium text-purple-900">Interconsulta</Label>
+              </div>
+
+              {/* Formulario nueva interconsulta */}
+              <div className="space-y-3 rounded-md border border-purple-200 bg-white p-3">
+                {/* Tipo destino */}
+                <div className="flex gap-3">
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-xs text-gray-600">Tipo de destino</Label>
+                    <Select
+                      value={interconsultaForm.tipo_destino}
+                      onValueChange={(v: 'interno' | 'externo') =>
+                        setInterconsultaForm({ ...interconsultaForm, tipo_destino: v, id_usuario_destino: null, id_especialidad_destino: null, especialidad_destino_texto: '', medico_destino_externo: '' })
+                      }
+                    >
+                      <SelectTrigger className="text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="interno">Interno (Clínica Atlas)</SelectItem>
+                        <SelectItem value="externo">Externo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-xs text-gray-600">Urgencia</Label>
+                    <Select
+                      value={interconsultaForm.urgencia}
+                      onValueChange={(v: 'normal' | 'urgente') => setInterconsultaForm({ ...interconsultaForm, urgencia: v })}
+                    >
+                      <SelectTrigger className="text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="normal">Normal</SelectItem>
+                        <SelectItem value="urgente">Urgente</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Especialidad */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-600">Especialidad destino</Label>
+                  {interconsultaForm.tipo_destino === 'interno' ? (
+                    <Select
+                      value={interconsultaForm.id_especialidad_destino?.toString() ?? ''}
+                      onValueChange={(v) => setInterconsultaForm({ ...interconsultaForm, id_especialidad_destino: parseInt(v) })}
+                    >
+                      <SelectTrigger className="text-sm">
+                        <SelectValue placeholder="Seleccione especialidad" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {especialidadesInterconsulta.map((e) => (
+                          <SelectItem key={e.id_especialidad} value={e.id_especialidad.toString()}>
+                            {e.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={interconsultaForm.especialidad_destino_texto}
+                      onChange={(e) => setInterconsultaForm({ ...interconsultaForm, especialidad_destino_texto: e.target.value })}
+                      placeholder="Especialidad destino..."
+                      className="text-sm"
+                    />
+                  )}
+                </div>
+
+                {/* Médico destino */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-600">Médico destino</Label>
+                  {interconsultaForm.tipo_destino === 'interno' ? (
+                    <Select
+                      value={interconsultaForm.id_usuario_destino?.toString() ?? ''}
+                      onValueChange={(v) => setInterconsultaForm({ ...interconsultaForm, id_usuario_destino: parseInt(v) })}
+                    >
+                      <SelectTrigger className="text-sm">
+                        <SelectValue placeholder="Seleccione médico" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {medicosParaInterconsulta.map((m) => (
+                          <SelectItem key={m.id_usuario} value={m.id_usuario.toString()}>
+                            {m.apellido} {m.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={interconsultaForm.medico_destino_externo}
+                      onChange={(e) => setInterconsultaForm({ ...interconsultaForm, medico_destino_externo: e.target.value })}
+                      placeholder="Nombre del médico externo (opcional)..."
+                      className="text-sm"
+                    />
+                  )}
+                </div>
+
+                {/* Fecha límite */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-600">Fecha límite deseada (opcional)</Label>
+                  <Input
+                    type="date"
+                    value={interconsultaForm.fecha_limite}
+                    onChange={(e) => setInterconsultaForm({ ...interconsultaForm, fecha_limite: e.target.value })}
+                    className="text-sm"
+                  />
+                </div>
+
+                {/* Motivo */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-600">Motivo <span className="text-red-500">*</span></Label>
+                  <Textarea
+                    value={interconsultaForm.motivo}
+                    onChange={(e) => setInterconsultaForm({ ...interconsultaForm, motivo: e.target.value })}
+                    placeholder="Motivo de la interconsulta..."
+                    className="min-h-[60px] text-sm"
+                  />
+                </div>
+
+                {/* Resumen clínico */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-600">Resumen clínico</Label>
+                  <Textarea
+                    value={interconsultaForm.resumen_clinico}
+                    onChange={(e) => setInterconsultaForm({ ...interconsultaForm, resumen_clinico: e.target.value })}
+                    placeholder="Resumen clínico del paciente (pre-llenar desde diagnóstico si aplica)..."
+                    className="min-h-[60px] text-sm"
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleAgregarInterconsulta}
+                  disabled={isSavingInterconsulta || !interconsultaForm.motivo.trim()}
+                  className="w-full bg-purple-700 text-white hover:bg-purple-800"
+                >
+                  {isSavingInterconsulta ? (
+                    <><Loader2 className="size-4 mr-2 animate-spin" />Guardando...</>
+                  ) : (
+                    <><Plus className="size-4 mr-2" />Agregar interconsulta</>
+                  )}
+                </Button>
+              </div>
+
+              {/* Lista de interconsultas guardadas */}
+              {isLoadingInterconsultas && (
+                <div className="flex items-center gap-2 text-xs text-purple-600">
+                  <Loader2 className="size-3 animate-spin" />
+                  Cargando interconsultas...
+                </div>
+              )}
+              {interconsultasActuales.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-purple-800">Interconsultas registradas:</p>
+                  {interconsultasActuales.map((ic) => {
+                    const destino = ic.tipo_destino === 'interno'
+                      ? `${ic.usuario_destino?.apellido ?? ''} ${ic.usuario_destino?.nombre ?? ''} · ${ic.especialidad?.nombre ?? 'Sin especialidad'}`
+                      : `${ic.medico_destino_externo ? ic.medico_destino_externo + ' · ' : ''}${ic.especialidad_destino_texto ?? 'Externo'}`;
+                    const estadoColors: Record<string, string> = {
+                      pendiente: 'bg-yellow-100 text-yellow-800',
+                      en_proceso: 'bg-blue-100 text-blue-800',
+                      atendida: 'bg-green-100 text-green-800',
+                      cancelada: 'bg-red-100 text-red-800',
+                    };
+                    return (
+                      <div key={ic.id_interconsulta} className="flex items-start justify-between gap-2 rounded border border-purple-100 bg-purple-50 p-2 text-xs">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${estadoColors[ic.estado]}`}>{ic.estado.replace('_', ' ')}</span>
+                            {ic.urgencia === 'urgente' && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">URGENTE</span>}
+                            <span className="font-medium text-gray-800">{destino}</span>
+                          </div>
+                          <p className="text-gray-600">{ic.motivo}</p>
+                          {ic.fecha_limite && <p className="text-gray-500">Límite: {new Date(ic.fecha_limite + 'T00:00:00').toLocaleDateString('es-ES')}</p>}
+                        </div>
+                        {ic.estado === 'pendiente' && (
+                          <button
+                            type="button"
+                            onClick={() => handleEliminarInterconsulta(ic.id_interconsulta)}
+                            className="text-red-400 hover:text-red-600 mt-0.5"
+                            title="Eliminar interconsulta"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Receta Médica */}
+            <div className="space-y-3 rounded-lg border border-cyan-200 bg-cyan-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label className="text-sm font-medium text-cyan-900">Receta Médica</Label>
+                  <p className="text-xs text-cyan-700 mt-1">Complete Rp e Indicaciones para impresión en formato de receta.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-cyan-300 bg-white text-cyan-800 hover:bg-cyan-100"
+                  onClick={handleImprimirReceta}
+                >
+                  <Printer className="size-4 mr-2" />
+                  Imprimir Receta
+                </Button>
+              </div>
+
+              <div className="rounded-md border border-cyan-200 bg-white p-3 text-sm text-cyan-900">
+                <span className="font-medium">Alergias:</span> {alergiasDesdeAntecedentesTexto}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="recetaRp" className="text-sm">Rp</Label>
+                <Textarea
+                  id="recetaRp"
+                  value={consultaForm.receta_rp}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    setConsultaForm({ ...consultaForm, receta_rp: e.target.value.toUpperCase() })
+                  }
+                  placeholder="MEDICACIÓN (FÁRMACO, DOSIS, VÍA, FRECUENCIA)..."
+                  className="min-h-[100px] text-sm uppercase bg-white"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="recetaIndicaciones" className="text-sm">Indicaciones</Label>
+                <Textarea
+                  id="recetaIndicaciones"
+                  value={consultaForm.receta_indicaciones}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    setConsultaForm({ ...consultaForm, receta_indicaciones: e.target.value.toUpperCase() })
+                  }
+                  placeholder="INDICACIONES AL PACIENTE..."
+                  className="min-h-[100px] text-sm uppercase bg-white"
+                />
+              </div>
+            </div>
+              </div>
+            </CardContent>
+
+            <div className="border-t p-4 flex justify-end">
+              <Button
+                onClick={handleGuardarConsulta}
+                className="bg-blue-600 hover:bg-blue-700"
+                disabled={isSavingConsulta}
+              >
+                {isSavingConsulta ? (
+                  <>
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  'Guardar Consulta'
+                )}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      <Dialog open={isLaboratorioDialogOpen} onOpenChange={setIsLaboratorioDialogOpen}>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-700">
+              <FileText className="size-5" />
+              Pedido de Laboratorio
+            </DialogTitle>
+            <DialogDescription>
+              Seleccione el médico responsable y los exámenes que se solicitarán en esta consulta.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="medicoLaboratorio">Médico *</Label>
+              <Select value={medicoLaboratorioSeleccionado} onValueChange={setMedicoLaboratorioSeleccionado}>
+                <SelectTrigger id="medicoLaboratorio" className="bg-white">
+                  <SelectValue placeholder={isLoadingMedicosLaboratorio ? 'Cargando médicos...' : 'Seleccione un médico'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {medicosLaboratorio.map((medico) => (
+                    <SelectItem key={medico.id_usuario_sucursal} value={medico.id_usuario_sucursal.toString()}>
+                      {medico.usuario?.nombre} {medico.usuario?.apellido} - {medico.especialidad || 'Sin especialidad'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="observacionesLaboratorio">Observaciones del pedido</Label>
+              <Textarea
+                id="observacionesLaboratorio"
+                value={observacionesLaboratorio}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setObservacionesLaboratorio(e.target.value.toUpperCase())}
+                placeholder="OBSERVACIONES OPCIONALES DEL PEDIDO DE LABORATORIO..."
+                className="min-h-[90px] text-sm uppercase bg-white"
+              />
+            </div>
+
+            <div className="rounded-lg border bg-white">
+              <div className="border-b px-4 py-3 text-sm font-medium text-gray-700">
+                Catálogo de exámenes
+              </div>
+              <div className="max-h-[380px] overflow-y-auto p-4 space-y-4">
+                {isLoadingLaboratorio ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <Loader2 className="size-4 animate-spin" />
+                    Cargando catálogo de laboratorio...
+                  </div>
+                ) : Object.keys(examenesLaboratorioAgrupados).length === 0 ? (
+                  <p className="text-sm text-gray-500">No hay exámenes activos en el catálogo.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(examenesLaboratorioAgrupados).map(([categoria, examenes]) => (
+                      <div key={categoria} className="space-y-3 rounded-md border border-orange-100 bg-orange-50/40 p-3">
+                        <h4 className="text-sm font-semibold text-orange-800">{categoria}</h4>
+                        <div className="space-y-2">
+                          {examenes.map((examen) => {
+                            const checked = examenesLaboratorioSeleccionados.includes(examen.id_examen_laboratorio);
+                            return (
+                              <label
+                                key={examen.id_examen_laboratorio}
+                                className="flex items-start gap-3 rounded-md border bg-white p-3 text-sm cursor-pointer hover:border-orange-300"
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(value) => {
+                                    setExamenesLaboratorioSeleccionados((prev) => {
+                                      if (value === true) {
+                                        return [...prev, examen.id_examen_laboratorio];
+                                      }
+                                      return prev.filter((item) => item !== examen.id_examen_laboratorio);
+                                    });
+                                  }}
+                                />
+                                <span>{examen.nombre}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+              <h4 className="text-sm font-medium text-orange-900 mb-2">Resumen del pedido</h4>
+              <Textarea
+                value={resumenLaboratorioSeleccion}
+                readOnly
+                placeholder="Seleccione médico y exámenes para generar el resumen"
+                className="min-h-[140px] bg-white text-sm"
+              />
+            </div>
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsConsultaDialogOpen(false)}
-              disabled={isSavingConsulta}
-            >
-              Cancelar
+            <Button variant="outline" onClick={() => setIsLaboratorioDialogOpen(false)}>
+              Cerrar
             </Button>
             <Button
-              onClick={handleGuardarConsulta}
-              className="bg-blue-600 hover:bg-blue-700"
-              disabled={isSavingConsulta}
+              onClick={() => setIsLaboratorioDialogOpen(false)}
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={examenesLaboratorioSeleccionados.length > 0 && !medicoLaboratorioSeleccionado}
             >
-              {isSavingConsulta ? (
-                <>
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                'Guardar Consulta'
-              )}
+              Usar pedido en consulta
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2058,6 +4738,13 @@ export function PacientesViewSupabase({
                 </div>
               </div>
 
+              {isLoadingDetalleConsulta && (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 className="size-4 animate-spin" />
+                  Cargando solicitud de imagen y pedido de laboratorio...
+                </div>
+              )}
+
               {/* Motivo de Consulta */}
               {(() => {
                 const citaCorrespondiente = citasPaciente.find(c => c.id_cita === consultaSeleccionada.id_cita);
@@ -2071,42 +4758,148 @@ export function PacientesViewSupabase({
                 );
               })()}
 
-              {/* Historial Clínico */}
+              {/* Enfermedad o problema actual */}
               {consultaSeleccionada.historial_clinico && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Historial Clínico</Label>
+                  <Label className="text-sm font-medium">Enfermedad o problema actual</Label>
                   <div className="bg-gray-50 p-3 rounded-md text-sm whitespace-pre-wrap">
                     {consultaSeleccionada.historial_clinico}
                   </div>
                 </div>
               )}
 
-              {/* Diagnóstico */}
+              {/* Código CIE-10 */}
               {consultaSeleccionada.diagnostico && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Diagnóstico</Label>
+                  <Label className="text-sm font-medium">Código CIE-10</Label>
                   <div className="bg-blue-50 p-3 rounded-md text-sm whitespace-pre-wrap border border-blue-200">
                     {consultaSeleccionada.diagnostico}
                   </div>
                 </div>
               )}
 
-              {/* Receta Médica */}
-              {consultaSeleccionada.receta_medica && (
+              {/* Examen Físico */}
+              {consultaSeleccionada.pedido_examenes && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium text-green-700">Receta Médica</Label>
-                  <div className="bg-green-50 p-3 rounded-md text-sm whitespace-pre-wrap border border-green-200">
-                    {consultaSeleccionada.receta_medica}
+                  <Label className="text-sm font-medium text-orange-700">Examen Físico</Label>
+                  <div className="bg-orange-50 p-3 rounded-md text-sm whitespace-pre-wrap border border-orange-200">
+                    {consultaSeleccionada.pedido_examenes}
                   </div>
                 </div>
               )}
 
-              {/* Pedido de Exámenes */}
-              {consultaSeleccionada.pedido_examenes && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-orange-700">Pedido de Exámenes</Label>
-                  <div className="bg-orange-50 p-3 rounded-md text-sm whitespace-pre-wrap border border-orange-200">
-                    {consultaSeleccionada.pedido_examenes}
+              {/* Solicitud de Imagen */}
+              {solicitudImagenDetalle && (
+                <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Label className="text-sm font-medium text-sky-900">Solicitud de Imagen</Label>
+                      <p className="text-xs text-sky-700 mt-1">Información guardada en la base de datos para reimpresión.</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-sky-300 bg-white text-sky-800 hover:bg-sky-100"
+                      onClick={() => handleImprimirSolicitudImagen(solicitudImagenDetalle, pacienteSeleccionado)}
+                    >
+                      <Printer className="size-4 mr-2" />
+                      Reimprimir
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-sky-900">Fecha</Label>
+                      <div className="rounded-md border border-sky-200 bg-white p-2 text-sm">{solicitudImagenDetalle.fecha_solicitud}</div>
+                    </div>
+                    <div className="space-y-1 md:col-span-1">
+                      <Label className="text-xs font-medium text-sky-900">Nombre</Label>
+                      <div className="rounded-md border border-sky-200 bg-white p-2 text-sm">{solicitudImagenDetalle.nombre_paciente}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-sky-900">Edad</Label>
+                      <div className="rounded-md border border-sky-200 bg-white p-2 text-sm">{solicitudImagenDetalle.edad_paciente ?? ''}{solicitudImagenDetalle.edad_paciente != null ? ' años' : ''}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-sky-900">Procedimiento</Label>
+                    <div className="rounded-md border border-sky-200 bg-white p-2 text-sm whitespace-pre-wrap">{solicitudImagenDetalle.procedimiento || ''}</div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-sky-900">Antecedentes Clínico - Quirúrgico</Label>
+                    <div className="rounded-md border border-sky-200 bg-white p-2 text-sm whitespace-pre-wrap">{solicitudImagenDetalle.antecedentes_clinico_quirurgico || ''}</div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-sky-900">Cuadro Clínico</Label>
+                    <div className="rounded-md border border-sky-200 bg-white p-2 text-sm whitespace-pre-wrap">{solicitudImagenDetalle.cuadro_clinico || ''}</div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-sky-900">Medicamentos</Label>
+                      <div className="rounded-md border border-sky-200 bg-white p-2 text-sm whitespace-pre-wrap">{solicitudImagenDetalle.medicamentos || ''}</div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-sky-900">Alergias</Label>
+                      <div className="rounded-md border border-sky-200 bg-white p-2 text-sm whitespace-pre-wrap">{solicitudImagenDetalle.alergias || ''}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Gestión de Laboratorio */}
+              {pedidoLaboratorioDetalle && (
+                <div className="space-y-3 rounded-lg border border-orange-200 bg-orange-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Label className="text-sm font-medium text-orange-900">Gestión de Laboratorio</Label>
+                      <p className="text-xs text-orange-700 mt-1">Pedido guardado en la base de datos para reimpresión.</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
+                      onClick={() => handleImprimirPedidoLaboratorio(pedidoLaboratorioDetalle, pacienteSeleccionado)}
+                    >
+                      <Printer className="size-4 mr-2" />
+                      Reimprimir
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-orange-900">Pedido</Label>
+                      <div className="rounded-md border border-orange-200 bg-white p-2 text-sm">#{String(pedidoLaboratorioDetalle.numero_pedido_laboratorio).padStart(7, '0')}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-orange-900">Médico *</Label>
+                      <div className="rounded-md border border-orange-200 bg-white p-2 text-sm">
+                        {pedidoLaboratorioDetalle.medico_asignacion?.usuario
+                          ? `${pedidoLaboratorioDetalle.medico_asignacion.usuario.nombre} ${pedidoLaboratorioDetalle.medico_asignacion.usuario.apellido}`
+                          : `ID Usuario Sucursal ${pedidoLaboratorioDetalle.id_usuario_sucursal_medico}`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-orange-900">Observaciones del pedido</Label>
+                    <div className="rounded-md border border-orange-200 bg-white p-2 text-sm whitespace-pre-wrap">{pedidoLaboratorioDetalle.observaciones || ''}</div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-orange-900">Catálogo de exámenes</Label>
+                    <div className="rounded-md border border-orange-200 bg-white p-2 text-sm">
+                      <ul className="list-disc pl-4 space-y-1">
+                        {pedidoLaboratorioDetalle.detalle.map((detalle) => (
+                          <li key={detalle.id_pedido_laboratorio_detalle}>
+                            {detalle.examen_laboratorio?.nombre || `Examen #${detalle.id_examen_laboratorio}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2114,7 +4907,7 @@ export function PacientesViewSupabase({
               {/* Próxima Consulta */}
               {consultaSeleccionada.fecha_seguimiento && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium text-blue-700">Próxima Consulta / Seguimiento</Label>
+                  <Label className="text-sm font-medium text-blue-700">Próxima Consulta / Fecha de Seguimiento</Label>
                   <div className="bg-blue-50 p-3 rounded-md text-sm border border-blue-200">
                     {new Date(consultaSeleccionada.fecha_seguimiento + 'T00:00:00').toLocaleDateString('es-ES', {
                       weekday: 'long',
@@ -2122,6 +4915,45 @@ export function PacientesViewSupabase({
                       month: 'long',
                       day: 'numeric'
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* Receta Médica */}
+              {(consultaSeleccionada.receta_rp || consultaSeleccionada.receta_indicaciones || consultaSeleccionada.receta_medica) && (
+                <div className="space-y-3 rounded-lg border border-cyan-200 bg-cyan-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Label className="text-sm font-medium text-cyan-900">Receta Médica</Label>
+                      <p className="text-xs text-cyan-700 mt-1">Complete Rp e Indicaciones para impresión en formato de receta.</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-cyan-300 bg-white text-cyan-800 hover:bg-cyan-100"
+                      onClick={() => handleImprimirReceta(consultaSeleccionada, pacienteSeleccionado)}
+                    >
+                      <Printer className="size-4 mr-2" />
+                      Reimprimir Receta
+                    </Button>
+                  </div>
+
+                  <div className="rounded-md border border-cyan-200 bg-white p-3 text-sm text-cyan-900">
+                    <span className="font-medium">Alergias:</span> {alergiasDesdeAntecedentesTexto || 'SIN ALERGIAS REGISTRADAS'}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">Rp</Label>
+                    <div className="rounded-md border border-cyan-200 bg-white p-2 text-sm whitespace-pre-wrap">
+                      {consultaSeleccionada.receta_rp || consultaSeleccionada.receta_medica || ''}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">Indicaciones</Label>
+                    <div className="rounded-md border border-cyan-200 bg-white p-2 text-sm whitespace-pre-wrap">
+                      {consultaSeleccionada.receta_indicaciones || ''}
+                    </div>
                   </div>
                 </div>
               )}
@@ -2161,6 +4993,35 @@ export function PacientesViewSupabase({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal de cancelación de cita (mismo flujo que Agenda) */}
+      <CancelarCitaModalSupabase
+        isOpen={isCancelarAgendaModalOpen}
+        onClose={() => {
+          setIsCancelarAgendaModalOpen(false);
+          setCitaAgendaSeleccionada(null);
+        }}
+        cita={citaAgendaSeleccionada}
+        onCitaCancelada={async () => {
+          await cargarAgendaMedico();
+          if (selectedPatientId) {
+            const citas = await getCitasByPaciente(selectedPatientId);
+            setCitasPaciente(citas);
+          }
+        }}
+      />
+
+      {/* Detalle de cita desde cards de agenda */}
+      <DetalleCitaDialog
+        isOpen={!!citaDetalleAgenda}
+        onClose={() => setCitaDetalleAgenda(null)}
+        cita={citaDetalleAgenda}
+        onIniciarConsulta={handleIniciarCitaDesdeAgenda}
+        onModificar={() => {
+          toast.info('La modificación de citas se gestiona desde el módulo Agenda');
+        }}
+        onCancelar={handleCancelarCitaDesdeAgenda}
+      />
 
       {/* Dialog: Confirmación No Asistió */}
       <Dialog open={isNoAsistioConfirmOpen} onOpenChange={setIsNoAsistioConfirmOpen}>

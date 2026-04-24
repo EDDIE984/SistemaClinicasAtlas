@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent } from './ui/dialog';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Phone, Mail, Calendar, Clock, MapPin, Stethoscope, XCircle, Minimize2, Maximize2, X } from 'lucide-react';
+import { Phone, Mail, Calendar, Clock, MapPin, Stethoscope, XCircle, Minimize2, Maximize2, X, Loader2 } from 'lucide-react';
 import type { CitaCompleta } from '../lib/citasService';
 import { canModificarCita, canCancelarCita, canIniciarCita } from '../lib/citasService';
 import { calcularEdad } from '../lib/pacientesService';
+import { getConsultaMedicaByCita, type ConsultaMedica } from '../lib/consultasService';
+import { getSolicitudImagenByCita, type SolicitudImagen } from '../lib/solicitudImagenService';
+import { getPedidoLaboratorioByCita, type PedidoLaboratorioCompleto } from '../lib/laboratorioService';
 
 interface DetalleCitaDialogProps {
     isOpen: boolean;
@@ -25,6 +28,11 @@ export function DetalleCitaDialog({
     onCancelar
 }: DetalleCitaDialogProps) {
     const [windowState, setWindowState] = useState<'normal' | 'minimized'>('normal');
+    const [isLoadingDatosClinicos, setIsLoadingDatosClinicos] = useState(false);
+    const [consultaData, setConsultaData] = useState<ConsultaMedica | null>(null);
+    const [solicitudImagenData, setSolicitudImagenData] = useState<SolicitudImagen | null>(null);
+    const [pedidoLaboratorioData, setPedidoLaboratorioData] = useState<PedidoLaboratorioCompleto | null>(null);
+    const [tabActiva, setTabActiva] = useState<'consulta' | 'laboratorio' | 'imagen'>('consulta');
 
     useEffect(() => {
         if (isOpen && windowState === 'minimized') {
@@ -33,6 +41,59 @@ export function DetalleCitaDialog({
             setWindowState('normal');
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        if (!isOpen || !cita?.id_cita) {
+            setConsultaData(null);
+            setSolicitudImagenData(null);
+            setPedidoLaboratorioData(null);
+            return;
+        }
+
+        let isMounted = true;
+
+        const cargarDatosClinicos = async () => {
+            setIsLoadingDatosClinicos(true);
+            try {
+                const [consulta, solicitudImagen, pedidoLaboratorio] = await Promise.all([
+                    getConsultaMedicaByCita(cita.id_cita),
+                    getSolicitudImagenByCita(cita.id_cita),
+                    getPedidoLaboratorioByCita(cita.id_cita),
+                ]);
+
+                if (!isMounted) return;
+                setConsultaData(consulta);
+                setSolicitudImagenData(solicitudImagen);
+                setPedidoLaboratorioData(pedidoLaboratorio);
+            } finally {
+                if (isMounted) {
+                    setIsLoadingDatosClinicos(false);
+                }
+            }
+        };
+
+        cargarDatosClinicos();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [isOpen, cita?.id_cita]);
+
+    useEffect(() => {
+        if (consultaData) {
+            setTabActiva('consulta');
+            return;
+        }
+
+        if (pedidoLaboratorioData) {
+            setTabActiva('laboratorio');
+            return;
+        }
+
+        if (solicitudImagenData) {
+            setTabActiva('imagen');
+        }
+    }, [consultaData, pedidoLaboratorioData, solicitudImagenData]);
 
     if (!cita) return null;
 
@@ -43,7 +104,7 @@ export function DetalleCitaDialog({
     return (
         <>
             <Dialog open={isOpen && windowState !== 'minimized'} onOpenChange={onClose}>
-                <DialogContent className="w-80 p-4 gap-0 max-h-[90vh] overflow-y-auto">
+                <DialogContent className="w-[560px] max-w-[95vw] p-4 gap-0 max-h-[90vh] overflow-y-auto">
                     <div className="space-y-3">
                         {/* Header */}
                         <div className="flex items-start justify-between pb-3 border-b relative">
@@ -120,8 +181,169 @@ export function DetalleCitaDialog({
                             </div>
                         )}
 
+                        {/* Datos clínicos de la consulta */}
+                        <div className="pt-2 border-t space-y-2">
+                            <p className="text-xs font-medium text-gray-700">Detalle clínico</p>
+
+                            {isLoadingDatosClinicos && (
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <Loader2 className="size-3 animate-spin" />
+                                    <span>Cargando datos de consulta...</span>
+                                </div>
+                            )}
+
+                            {!isLoadingDatosClinicos && !consultaData && !solicitudImagenData && !pedidoLaboratorioData && (
+                                <p className="text-xs text-gray-500">No hay información clínica registrada para esta cita.</p>
+                            )}
+
+                            {!isLoadingDatosClinicos && (consultaData || pedidoLaboratorioData || solicitudImagenData) && (
+                                <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={tabActiva === 'consulta' ? 'secondary' : 'ghost'}
+                                        className="h-7 text-[11px]"
+                                        onClick={() => setTabActiva('consulta')}
+                                        disabled={!consultaData}
+                                    >
+                                        Consulta
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={tabActiva === 'laboratorio' ? 'secondary' : 'ghost'}
+                                        className="h-7 text-[11px]"
+                                        onClick={() => setTabActiva('laboratorio')}
+                                        disabled={!pedidoLaboratorioData}
+                                    >
+                                        Laboratorio
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={tabActiva === 'imagen' ? 'secondary' : 'ghost'}
+                                        className="h-7 text-[11px]"
+                                        onClick={() => setTabActiva('imagen')}
+                                        disabled={!solicitudImagenData}
+                                    >
+                                        Imagen
+                                    </Button>
+                                </div>
+                            )}
+
+                            {tabActiva === 'consulta' && consultaData && (
+                                <div className="space-y-2">
+                                    <p className="text-[11px] font-semibold text-blue-700">Consulta médica</p>
+                                    {consultaData.historial_clinico && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Enfermedad o problema actual</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{consultaData.historial_clinico}</p>
+                                        </div>
+                                    )}
+                                    {consultaData.diagnostico && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Diagnóstico</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{consultaData.diagnostico}</p>
+                                        </div>
+                                    )}
+                                    {consultaData.pedido_examenes && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Examen físico</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{consultaData.pedido_examenes}</p>
+                                        </div>
+                                    )}
+                                    {(consultaData.receta_rp || consultaData.receta_medica) && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">RP</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{consultaData.receta_rp || consultaData.receta_medica}</p>
+                                        </div>
+                                    )}
+                                    {consultaData.receta_indicaciones && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Indicaciones</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{consultaData.receta_indicaciones}</p>
+                                        </div>
+                                    )}
+                                    {consultaData.fecha_seguimiento && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Fecha de seguimiento</p>
+                                            <p className="text-xs text-gray-600">{consultaData.fecha_seguimiento}</p>
+                                        </div>
+                                    )}
+                                    {consultaData.pedido_hospitalizacion && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Pedido de hospitalización</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{consultaData.pedido_hospitalizacion}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {tabActiva === 'laboratorio' && pedidoLaboratorioData && (
+                                <div className="space-y-2 pt-1 border-t">
+                                    <p className="text-[11px] font-semibold text-purple-700">Pedido de laboratorio</p>
+                                    <p className="text-xs text-gray-600">N° {String(pedidoLaboratorioData.numero_pedido_laboratorio).padStart(7, '0')} · {pedidoLaboratorioData.estado}</p>
+                                    {pedidoLaboratorioData.observaciones && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Observaciones</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{pedidoLaboratorioData.observaciones}</p>
+                                        </div>
+                                    )}
+                                    {pedidoLaboratorioData.detalle?.length > 0 && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Exámenes solicitados</p>
+                                            <ul className="text-xs text-gray-600 list-disc pl-4 space-y-0.5">
+                                                {pedidoLaboratorioData.detalle.map((detalle) => (
+                                                    <li key={detalle.id_pedido_laboratorio_detalle}>
+                                                        {detalle.examen_laboratorio?.nombre || `Examen #${detalle.id_examen_laboratorio}`}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {tabActiva === 'imagen' && solicitudImagenData && (
+                                <div className="space-y-2 pt-1 border-t">
+                                    <p className="text-[11px] font-semibold text-amber-700">Solicitud de imagen</p>
+                                    <p className="text-xs text-gray-600">N° {String(solicitudImagenData.numero_solicitud_imagen).padStart(7, '0')} · {solicitudImagenData.fecha_solicitud}</p>
+                                    {solicitudImagenData.procedimiento && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Procedimiento</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{solicitudImagenData.procedimiento}</p>
+                                        </div>
+                                    )}
+                                    {solicitudImagenData.antecedentes_clinico_quirurgico && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Antecedentes clínico-quirúrgico</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{solicitudImagenData.antecedentes_clinico_quirurgico}</p>
+                                        </div>
+                                    )}
+                                    {solicitudImagenData.cuadro_clinico && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Cuadro clínico</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{solicitudImagenData.cuadro_clinico}</p>
+                                        </div>
+                                    )}
+                                    {solicitudImagenData.medicamentos && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Medicamentos</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{solicitudImagenData.medicamentos}</p>
+                                        </div>
+                                    )}
+                                    {solicitudImagenData.alergias && (
+                                        <div>
+                                            <p className="text-[11px] font-medium text-gray-700">Alergias</p>
+                                            <p className="text-xs text-gray-600 whitespace-pre-wrap">{solicitudImagenData.alergias}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
                         {/* Botones de acción */}
-                        {!cita.consulta_realizada && cita.estado_cita !== 'cancelada' && (
+                        {cita.estado_cita !== 'cancelada' && (
                             <div className="space-y-2 pt-3 border-t">
                                 <Button
                                     size="sm"
@@ -133,7 +355,7 @@ export function DetalleCitaDialog({
                                     disabled={!esIniciable}
                                 >
                                     <Stethoscope className="size-3 mr-1" />
-                                    Iniciar cita
+                                    Iniciar consulta
                                 </Button>
                                 <Button
                                     size="sm"
@@ -145,7 +367,7 @@ export function DetalleCitaDialog({
                                     disabled={!esModificable}
                                 >
                                     <Calendar className="size-3 mr-1" />
-                                    Modificar cita
+                                    Modificar
                                 </Button>
                                 <Button
                                     size="sm"
@@ -157,7 +379,7 @@ export function DetalleCitaDialog({
                                     disabled={!esCancelable}
                                 >
                                     <XCircle className="size-3 mr-1" />
-                                    Cancelar cita
+                                    Cancelar
                                 </Button>
                             </div>
                         )}

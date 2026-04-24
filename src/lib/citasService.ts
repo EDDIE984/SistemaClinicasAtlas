@@ -93,12 +93,13 @@ export function canIniciarCita(cita: CitaCompleta): boolean {
   const ahora = new Date();
   const diferenciaMs = fechaHoraCita.getTime() - ahora.getTime();
 
-  // No permitir citas pasadas
-  if (diferenciaMs < 0) return false;
+  // Permitir iniciar hasta 30 minutos después de la hora programada
+  const treintaMinutosMs = 30 * 60 * 1000;
+  if (diferenciaMs <= -treintaMinutosMs) return false;
 
-  // Permitir iniciar desde 1 hora antes hasta 1 hora después
+  // Permitir iniciar desde 1 hora antes hasta 30 minutos después
   const unaHoraMs = 60 * 60 * 1000;
-  return Math.abs(diferenciaMs) <= unaHoraMs;
+  return diferenciaMs <= unaHoraMs;
 }
 
 export interface Cancelacion {
