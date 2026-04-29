@@ -4,8 +4,16 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/consulta-cedula",
+      "destination": "/api/consulta-cedula"
+    },
+    {
       "source": "/api/diagnostico-ia",
       "destination": "/api/diagnostico-ia"
+    },
+    {
+      "source": "/api/send-whatsapp",
+      "destination": "/api/send-whatsapp"
     },
     {
       "source": "/(.*)",

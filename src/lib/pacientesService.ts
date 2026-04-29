@@ -8,6 +8,7 @@ import { supabaseAdmin } from './supabase';  // ⚡ Cambio: usar supabaseAdmin e
 export interface Paciente {
   id_paciente: number;
   id_compania: number;  // Agregado: campo de compañía
+  id_sucursal?: number | null;
   nombres: string;
   apellidos: string;
   fecha_nacimiento: string;
@@ -19,6 +20,39 @@ export interface Paciente {
   fecha_registro: string;
   estado: 'activo' | 'inactivo';
   created_at?: string;
+  nombre_admisionista?: string | null;
+  historia_clinica_establecimiento?: string | null;
+  tipo_documento_identificacion?: string | null;
+  estado_civil?: string | null;
+  telefono_fijo?: string | null;
+  lugar_nacimiento?: string | null;
+  nacionalidad?: string | null;
+  condicion_edad?: string | null;
+  grupo_prioritario?: string | null;
+  grupo_prioritario_especifique?: string | null;
+  autoidentificacion_etnica?: string | null;
+  nacionalidad_etnica?: string | null;
+  pueblo?: string | null;
+  nivel_educacion?: string | null;
+  estado_nivel_educacion?: string | null;
+  tipo_empresa_trabajo?: string | null;
+  ocupacion_profesion?: string | null;
+  seguro_salud_principal?: string | null;
+  provincia?: string | null;
+  canton?: string | null;
+  parroquia?: string | null;
+  barrio_sector?: string | null;
+  calle_principal?: string | null;
+  calle_secundaria?: string | null;
+  referencia_domicilio?: string | null;
+  contacto_emergencia_nombre?: string | null;
+  contacto_emergencia_parentesco?: string | null;
+  contacto_emergencia_direccion?: string | null;
+  contacto_emergencia_telefono?: string | null;
+  forma_llegada?: string | null;
+  fuente_informacion?: string | null;
+  institucion_entrega_paciente?: string | null;
+  telefono_institucion_entrega?: string | null;
 }
 
 export interface SignoVital {
@@ -282,14 +316,21 @@ export async function createPaciente(paciente: Omit<Paciente, 'id_paciente' | 'c
       .single();
 
     if (error) {
-      console.error('❌ Error al crear paciente:', error);
+      const detalle = [
+        error.message,
+        error.details,
+        error.hint,
+        error.code ? `Código: ${error.code}` : null,
+      ].filter(Boolean).join(' | ');
+
+      console.error('❌ Error al crear paciente:', JSON.stringify(error, null, 2));
 
       // Si es error de cédula duplicada, retornar null con mensaje específico
       if (error.code === '23505' && error.message.includes('cedula')) {
         throw new Error('CEDULA_DUPLICADA');
       }
 
-      return null;
+      throw new Error(detalle || 'Error al crear paciente en Supabase');
     }
 
     console.log('✅ Paciente creado exitosamente');
@@ -302,7 +343,7 @@ export async function createPaciente(paciente: Omit<Paciente, 'id_paciente' | 'c
       throw error;
     }
 
-    return null;
+    throw error;
   }
 }
 
@@ -319,15 +360,21 @@ export async function updatePaciente(id_paciente: number, updates: Partial<Pacie
       .eq('id_paciente', id_paciente);
 
     if (error) {
-      console.error('❌ Error al actualizar paciente:', error);
-      return false;
+      const detalle = [
+        error.message,
+        error.details,
+        error.hint,
+        error.code ? `Código: ${error.code}` : null,
+      ].filter(Boolean).join(' | ');
+      console.error('❌ Error al actualizar paciente:', JSON.stringify(error, null, 2));
+      throw new Error(detalle || 'Error al actualizar paciente en Supabase');
     }
 
     console.log('✅ Paciente actualizado exitosamente');
     return true;
   } catch (error) {
     console.error('❌ Error inesperado al actualizar paciente:', error);
-    return false;
+    throw error;
   }
 }
 

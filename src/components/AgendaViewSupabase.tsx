@@ -34,6 +34,7 @@ const formatDateLocal = (date: Date) => {
 
 interface AgendaViewProps {
   currentUser?: {
+    name?: string;
     email: string;
     tipo_usuario?: string;
   } | null;
@@ -602,6 +603,7 @@ export function AgendaViewSupabase({ currentUser, onIniciarConsulta }: AgendaVie
         idUsuarioActual={idUsuarioActual}
         citaEditar={citaSeleccionada}
         tipoUsuario={currentUser?.tipo_usuario}
+        currentUserName={currentUser?.name}
       />
 
       {/* Modal Cancelar Cita */}

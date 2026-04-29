@@ -73,9 +73,9 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
 
   // Filtrar items del menú según el tipo de usuario
   const menuItems = allMenuItems.filter(item => {
-    // Si es secretaria: Agenda, Pacientes, Citas, Planificación e Interconsultas
+    // Si es secretaria: Agenda, Citas, Planificación e Interconsultas
     if (currentUser?.tipo_usuario === 'secretaria') {
-      return item.id === 'agenda' || item.id === 'pacientes' || item.id === 'citas' || item.id === 'planificacion' || item.id === 'interconsultas';
+      return item.id === 'agenda' || item.id === 'citas' || item.id === 'planificacion' || item.id === 'interconsultas';
     }
     // Si es administrativo, puede ver todo
     if (currentUser?.tipo_usuario === 'administrativo') {
@@ -95,6 +95,10 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
 
   // Función para manejar navegación desde Agenda a Pacientes con consulta
   const handleIniciarConsultaDesdeAgenda = (pacienteId: string, citaId: number) => {
+    if (currentUser?.tipo_usuario === 'secretaria') {
+      return;
+    }
+
     setPacienteIdSeleccionado(pacienteId);
     setCitaIdSeleccionada(citaId);
     setActiveItem('pacientes');

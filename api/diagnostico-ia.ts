@@ -11,12 +11,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Método no permitido' });
   }
 
-  const { codigoCie10 } = req.body as { codigoCie10?: string };
-  const codigo = codigoCie10?.trim().toUpperCase();
+  const body = req.body as { query?: string; codigoCie10?: string };
+  const rawInput = (body.query || body.codigoCie10 || '').trim();
 
-  if (!codigo) {
-    return res.status(400).json({ error: 'El código CIE-10 es requerido' });
+  if (!rawInput) {
+    return res.status(400).json({ error: 'Ingrese un código CIE-10 o una descripción clínica' });
   }
+
+  // Detecta si parece un código CIE-10 (ej: J30.9, A09, I10)
+  const esCodigo = /^[A-Z][0-9]{2}(\.[0-9A-Z]{0,4})?$/i.test(rawInput);
+  const codigo = esCodigo ? rawInput.toUpperCase() : rawInput;
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -37,20 +41,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           {
             role: 'system',
             content: `Eres un asistente médico experto en clasificación diagnóstica CIE-10 (Clasificación Internacional de Enfermedades, 10.ª revisión).
-Tu tarea es validar un código CIE-10 y devolver su descripción clínica en español.
+
+El médico puede ingresar:
+1. Un código CIE-10 directamente (ej: J30.9, A09, I10) → valida que exista y devuelve su nombre y descripción.
+2. Una descripción clínica, síntoma o causa (ej: "dolor abdominal", "hipertensión", "fractura de tibia") → encuentra el código CIE-10 más apropiado y devuelve código, nombre y descripción.
 
 REGLAS ESTRICTAS:
-- Responde ÚNICAMENTE con un JSON válido, sin texto adicional, sin bloques markdown, sin explicaciones fuera del JSON.
-- El JSON debe tener exactamente esta estructura:
-{"diagnostico":{"codigo":"X00.0","nombre":"Nombre exacto CIE-10","descripcion":"Descripción clínica breve en máximo 20 palabras"}}
-- Si el código no es válido o no existe, responde exactamente:
-{"error":"Código CIE-10 no encontrado"}
-- El campo codigo debe conservar el formato oficial CIE-10.
-- Los textos deben estar en español.`
+- Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin bloques markdown.
+- Estructura exacta: {"diagnostico":{"codigo":"X00.0","nombre":"Nombre exacto CIE-10","descripcion":"Descripción clínica breve en máximo 20 palabras"}}
+- Si es un código que no existe o no es válido: {"error":"Código CIE-10 no encontrado"}
+- Si la descripción es demasiado vaga para determinar un código: {"error":"Descripción no específica, proporcione más detalles"}
+- El campo codigo debe usar el formato oficial CIE-10 (letra + dígitos + punto decimal si aplica).
+- Todos los textos en español.`
           },
           {
             role: 'user',
-            content: `Código CIE-10 ingresado por el médico: ${codigo}`
+            content: esCodigo
+              ? `Código CIE-10: ${codigo}`
+              : `Descripción clínica ingresada por el médico: ${codigo}`
           }
         ]
       })

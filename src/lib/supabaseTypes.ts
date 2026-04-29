@@ -851,6 +851,7 @@ export interface Database {
       interconsulta: {
         Row: {
           id_interconsulta: number
+          numero_interconsulta: number
           id_consulta_medica: number | null
           id_paciente: number | null
           id_usuario_solicitante: number | null
@@ -863,13 +864,14 @@ export interface Database {
           resumen_clinico: string | null
           urgencia: 'normal' | 'urgente'
           fecha_limite: string | null
-          estado: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+          estado: 'ATENDIDO' | 'PENDIENTE_AGENDAR' | 'AGENDADA' | 'RECHAZADA'
           id_cita_generada: number | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id_interconsulta?: number
+          numero_interconsulta?: number
           id_consulta_medica?: number | null
           id_paciente?: number | null
           id_usuario_solicitante?: number | null
@@ -882,13 +884,14 @@ export interface Database {
           resumen_clinico?: string | null
           urgencia?: 'normal' | 'urgente'
           fecha_limite?: string | null
-          estado?: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+          estado?: 'ATENDIDO' | 'PENDIENTE_AGENDAR' | 'AGENDADA' | 'RECHAZADA'
           id_cita_generada?: number | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id_interconsulta?: number
+          numero_interconsulta?: number
           id_consulta_medica?: number | null
           id_paciente?: number | null
           id_usuario_solicitante?: number | null
@@ -901,7 +904,7 @@ export interface Database {
           resumen_clinico?: string | null
           urgencia?: 'normal' | 'urgente'
           fecha_limite?: string | null
-          estado?: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+          estado?: 'ATENDIDO' | 'PENDIENTE_AGENDAR' | 'AGENDADA' | 'RECHAZADA'
           id_cita_generada?: number | null
           created_at?: string
           updated_at?: string
@@ -926,6 +929,7 @@ export interface Database {
 
 export interface Interconsulta {
   id_interconsulta: number
+  numero_interconsulta: number
   id_consulta_medica: number | null
   id_paciente: number | null
   id_usuario_solicitante: number | null
@@ -938,8 +942,9 @@ export interface Interconsulta {
   resumen_clinico: string | null
   urgencia: 'normal' | 'urgente'
   fecha_limite: string | null
-  estado: 'pendiente' | 'en_proceso' | 'atendida' | 'cancelada'
+  estado: 'ATENDIDO' | 'PENDIENTE_AGENDAR' | 'AGENDADA' | 'RECHAZADA'
   id_cita_generada: number | null
+  observaciones_gestor?: string | null
   created_at: string
   updated_at: string
 }
@@ -947,9 +952,12 @@ export interface Interconsulta {
 export interface InterconsultaCompleta extends Interconsulta {
   paciente?: {
     id_paciente: number
-    nombre: string
-    apellido: string
+    nombres?: string
+    apellidos?: string
+    nombre?: string
+    apellido?: string
     cedula: string
+    telefono?: string | null
   }
   usuario_solicitante?: {
     id_usuario: number
@@ -962,6 +970,7 @@ export interface InterconsultaCompleta extends Interconsulta {
     nombre: string
     apellido: string
     tipo_usuario: string
+    telefono?: string | null
   } | null
   especialidad?: {
     id_especialidad: number

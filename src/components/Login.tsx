@@ -107,6 +107,10 @@ export function Login({ onLogin }: LoginProps) {
           usuario.id_usuario.toString(),
         );
         localStorage.setItem(
+          "currentUserName",
+          `${usuario.tipo_usuario === 'medico' ? 'Dr. ' : ''}${usuario.nombre} ${usuario.apellido}`,
+        );
+        localStorage.setItem(
           "currentUsuarioSucursalId",
           asignacionesUsuario[0].id_usuario_sucursal.toString(),
         );
@@ -157,6 +161,10 @@ export function Login({ onLogin }: LoginProps) {
       localStorage.setItem(
         "currentUserId",
         validatedUser.id_usuario.toString(),
+      );
+      localStorage.setItem(
+        "currentUserName",
+        `${validatedUser.tipo_usuario === 'medico' ? 'Dr. ' : ''}${validatedUser.nombre} ${validatedUser.apellido}`,
       );
       localStorage.setItem(
         "currentUsuarioSucursalId",

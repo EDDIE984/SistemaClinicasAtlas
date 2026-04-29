@@ -30,6 +30,7 @@ export interface Cita {
   created_at?: string;
   cancelada_por?: number;
   motivo_cancelacion?: string;
+  id_interconsulta?: number | null;
 }
 
 export interface CitaCompleta extends Cita {
@@ -42,6 +43,39 @@ export interface CitaCompleta extends Cita {
     email: string | null;  // Cambio: era "correo"
     fecha_nacimiento: string;
     sexo: string;
+    nombre_admisionista?: string | null;
+    historia_clinica_establecimiento?: string | null;
+    tipo_documento_identificacion?: string | null;
+    estado_civil?: string | null;
+    telefono_fijo?: string | null;
+    lugar_nacimiento?: string | null;
+    nacionalidad?: string | null;
+    condicion_edad?: string | null;
+    grupo_prioritario?: string | null;
+    grupo_prioritario_especifique?: string | null;
+    autoidentificacion_etnica?: string | null;
+    nacionalidad_etnica?: string | null;
+    pueblo?: string | null;
+    nivel_educacion?: string | null;
+    estado_nivel_educacion?: string | null;
+    tipo_empresa_trabajo?: string | null;
+    ocupacion_profesion?: string | null;
+    seguro_salud_principal?: string | null;
+    provincia?: string | null;
+    canton?: string | null;
+    parroquia?: string | null;
+    barrio_sector?: string | null;
+    calle_principal?: string | null;
+    calle_secundaria?: string | null;
+    referencia_domicilio?: string | null;
+    contacto_emergencia_nombre?: string | null;
+    contacto_emergencia_parentesco?: string | null;
+    contacto_emergencia_direccion?: string | null;
+    contacto_emergencia_telefono?: string | null;
+    forma_llegada?: string | null;
+    fuente_informacion?: string | null;
+    institucion_entrega_paciente?: string | null;
+    telefono_institucion_entrega?: string | null;
   };
   aseguradora?: {
     id_aseguradora: number;
@@ -160,16 +194,7 @@ export async function getCitasByPaciente(idPaciente: number): Promise<CitaComple
       .from('cita')
       .select(`
         *,
-        paciente:paciente!inner (
-          id_paciente,
-          nombres,
-          apellidos,
-          cedula,
-          telefono,
-          email,
-          fecha_nacimiento,
-          sexo
-        ),
+        paciente:paciente!inner (*),
         aseguradora (
           id_aseguradora,
           nombre
@@ -258,16 +283,7 @@ export async function getCitasByUsuarioYFechas(
       .from('cita')
       .select(`
         *,
-        paciente:paciente!inner (
-          id_paciente,
-          nombres,
-          apellidos,
-          cedula,
-          telefono,
-          email,
-          fecha_nacimiento,
-          sexo
-        ),
+        paciente:paciente!inner (*),
         aseguradora (
           id_aseguradora,
           nombre
@@ -328,16 +344,7 @@ export async function getCitasBySucursalYFechas(
       .from('cita')
       .select(`
         *,
-        paciente:paciente!inner (
-          id_paciente,
-          nombres,
-          apellidos,
-          cedula,
-          telefono,
-          email,
-          fecha_nacimiento,
-          sexo
-        ),
+        paciente:paciente!inner (*),
         aseguradora (
           id_aseguradora,
           nombre

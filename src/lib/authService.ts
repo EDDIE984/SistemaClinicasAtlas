@@ -338,13 +338,37 @@ export async function getMedicosBySucursal(id_sucursal: number): Promise<Asignac
 
     console.log(`✅ Se encontraron ${data.length} médicos`);
 
+    const idsEspecialidad = [
+      ...new Set(
+        data
+          .map((asig: any) => asig.id_especialidad)
+          .filter((id: number | null): id is number => Boolean(id))
+      ),
+    ];
+
+    const especialidadesPorId = new Map<number, string>();
+    if (idsEspecialidad.length > 0) {
+      const { data: especialidadesData, error: especialidadesError } = await supabase
+        .from('especialidad')
+        .select('id_especialidad, nombre')
+        .in('id_especialidad', idsEspecialidad);
+
+      if (especialidadesError) {
+        console.error('❌ Error al buscar nombres de especialidades:', especialidadesError);
+      } else {
+        (especialidadesData || []).forEach((esp: any) => {
+          especialidadesPorId.set(esp.id_especialidad, esp.nombre);
+        });
+      }
+    }
+
     // Convertir al formato esperado
     const medicos: AsignacionCompleta[] = data.map((asig: any) => ({
       id_usuario_sucursal: asig.id_usuario_sucursal,
       id_usuario: asig.id_usuario,
       id_sucursal: asig.id_sucursal,
       id_especialidad: asig.id_especialidad,
-      especialidad: asig.especialidad || 'Sin especialidad',
+      especialidad: asig.especialidad || especialidadesPorId.get(asig.id_especialidad) || 'Sin especialidad',
       cargo: asig.cargo || null,
       estado: asig.estado,
       usuario: {

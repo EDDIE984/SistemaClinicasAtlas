@@ -81,8 +81,9 @@ type AntecedentePpfKey =
   | 'traumatologicos'
   | 'pediatricos'
   | 'quirurgicos'
-  | 'familiares'
   | 'otros';
+
+type FamiliaresNotas = string[];
 
 type AntecedentesPatologicosPersonalesFamiliares = Record<AntecedentePpfKey, AntecedenteSiNoNotas>;
 
@@ -91,8 +92,7 @@ const ANTECEDENTES_PPF_ITEMS: Array<{ key: AntecedentePpfKey; numero: string; la
   { key: 'traumatologicos', numero: '2', label: 'Traumatológicos' },
   { key: 'pediatricos', numero: '3', label: 'Pediátricos' },
   { key: 'quirurgicos', numero: '4', label: 'Quirúrgicos' },
-  { key: 'familiares', numero: '5', label: 'Familiares' },
-  { key: 'otros', numero: '6', label: 'Otros' },
+  { key: 'otros', numero: '5', label: 'Otros' },
 ];
 
 const createDefaultSiNoNotas = (): AntecedenteSiNoNotas => ({
@@ -100,12 +100,11 @@ const createDefaultSiNoNotas = (): AntecedenteSiNoNotas => ({
   notas: '',
 });
 
-const getDefaultAntecedentesPatologicosPersonalesFamiliares = (): AntecedentesPatologicosPersonalesFamiliares => ({
+const getDefaultAntecedentesPatologicosPersonales = () => ({
   clinicos: createDefaultSiNoNotas(),
   traumatologicos: createDefaultSiNoNotas(),
   pediatricos: createDefaultSiNoNotas(),
   quirurgicos: createDefaultSiNoNotas(),
-  familiares: createDefaultSiNoNotas(),
   otros: createDefaultSiNoNotas(),
 });
 
@@ -120,37 +119,27 @@ const calcularRespuestaLegacy = (values: unknown[]): SiNoValue => {
   return '';
 };
 
-const normalizarAntecedentesPatologicosPersonalesFamiliares = (
+const normalizarAntecedentesPatologicosPersonales = (
   raw: any,
-  legacyPatologicos: any,
-  legacyFamiliares: any,
-): AntecedentesPatologicosPersonalesFamiliares => {
-  const defaults = getDefaultAntecedentesPatologicosPersonalesFamiliares();
-
+  legacyPatologicos: any
+): Record<AntecedentePpfKey, AntecedenteSiNoNotas> => {
+  const defaults = getDefaultAntecedentesPatologicosPersonales();
   if (raw && typeof raw === 'object') {
     return {
       clinicos: normalizarSiNoNotas(raw.clinicos),
       traumatologicos: normalizarSiNoNotas(raw.traumatologicos),
       pediatricos: normalizarSiNoNotas(raw.pediatricos),
       quirurgicos: normalizarSiNoNotas(raw.quirurgicos),
-      familiares: normalizarSiNoNotas(raw.familiares),
       otros: normalizarSiNoNotas(raw.otros),
     };
   }
-
+  // Legacy fallback
   const clinicosLegacy = legacyPatologicos?.clinicos && typeof legacyPatologicos.clinicos === 'object'
     ? legacyPatologicos.clinicos
     : {};
   const quirurgicosLegacy = legacyPatologicos?.quirurgicos && typeof legacyPatologicos.quirurgicos === 'object'
     ? legacyPatologicos.quirurgicos
     : {};
-
-  const familiaresLegacyItems = Array.isArray(legacyFamiliares)
-    ? legacyFamiliares
-    : Array.isArray(legacyFamiliares?.items)
-      ? legacyFamiliares.items
-      : [];
-
   return {
     ...defaults,
     clinicos: {
@@ -161,11 +150,20 @@ const normalizarAntecedentesPatologicosPersonalesFamiliares = (
       respuesta: calcularRespuestaLegacy(Object.values(quirurgicosLegacy)),
       notas: '',
     },
-    familiares: {
-      respuesta: familiaresLegacyItems.length > 0 ? 'si' : '',
-      notas: familiaresLegacyItems.join(', '),
-    },
   };
+};
+
+const normalizarAntecedentesPatologicosFamiliares = (raw: any, legacyFamiliares: any): FamiliaresNotas => {
+  if (raw && typeof raw === 'object' && Array.isArray(raw.notas)) {
+    return raw.notas;
+  }
+  // Legacy fallback
+  const familiaresLegacyItems = Array.isArray(legacyFamiliares)
+    ? legacyFamiliares
+    : Array.isArray(legacyFamiliares?.items)
+      ? legacyFamiliares.items
+      : [];
+  return familiaresLegacyItems;
 };
 
 const getDefaultAntecedentesGineco = () => ({
@@ -256,14 +254,22 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
   );
   const [nuevoMedicamento, setNuevoMedicamento] = useState('');
   
-  // Estado para Antecedentes Patológicos Personales y Familiares
-  const [antecedentesPatologicosPersonalesFamiliares, setAntecedentesPatologicosPersonalesFamiliares] = useState<AntecedentesPatologicosPersonalesFamiliares>(
-    normalizarAntecedentesPatologicosPersonalesFamiliares(
+  // Estado para Antecedentes Patológicos Personales
+  const [antecedentesPatologicosPersonales, setAntecedentesPatologicosPersonales] = useState<Record<AntecedentePpfKey, AntecedenteSiNoNotas>>(
+    normalizarAntecedentesPatologicosPersonales(
       antecedentes?.antecedentesPatologicosPersonalesFamiliares,
-      antecedentes?.antecedentesPatologicos,
+      antecedentes?.antecedentesPatologicos
+    )
+  );
+
+  // Estado para Antecedentes Patológicos Familiares (lista)
+  const [familiaresNotas, setFamiliaresNotas] = useState<FamiliaresNotas>(
+    normalizarAntecedentesPatologicosFamiliares(
+      antecedentes?.antecedentesPatologicosPersonalesFamiliares?.familiares,
       antecedentes?.antecedentesHeredofamiliares
     )
   );
+  const [nuevoFamiliar, setNuevoFamiliar] = useState('');
 
   // Estados para Antecedentes No Patológicos
   const [antecedentesNoPatologicos, setAntecedentesNoPatologicos] = useState<Record<string, string>>(
@@ -347,65 +353,21 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
   // Efecto para actualizar los estados cuando cambian los antecedentes cargados
   useEffect(() => {
     if (antecedentes) {
-      // Actualizar esquema de vacunación
-      if (antecedentes.esquemaVacunacion) {
-        setSelectedVaccines(new Set(antecedentes.esquemaVacunacion.selectedVaccines || []));
-        setHasOtherVaccines(antecedentes.esquemaVacunacion.hasOtherVaccines ?? null);
-      }
-      
-      // Actualizar alergias
-      if (antecedentes.alergias) {
-        setAlergias(antecedentes.alergias);
-      }
-      
-      // Actualizar vacunas
-      if (antecedentes.vacunas) {
-        setVacunas(antecedentes.vacunas);
-      }
-      
-      // Actualizar medicamentos
-      if (antecedentes.medicamentos) {
-        setMedicamentos(antecedentes.medicamentos);
-      }
-      
-      // Actualizar antecedentes patológicos personales y familiares
-      setAntecedentesPatologicosPersonalesFamiliares(
-        normalizarAntecedentesPatologicosPersonalesFamiliares(
+      // ...existing code...
+      // Actualizar antecedentes patológicos personales
+      setAntecedentesPatologicosPersonales(
+        normalizarAntecedentesPatologicosPersonales(
           antecedentes.antecedentesPatologicosPersonalesFamiliares,
-          antecedentes.antecedentesPatologicos,
+          antecedentes.antecedentesPatologicos
+        )
+      );
+      // Actualizar antecedentes patológicos familiares
+      setFamiliaresNotas(
+        normalizarAntecedentesPatologicosFamiliares(
+          antecedentes.antecedentesPatologicosPersonalesFamiliares?.familiares,
           antecedentes.antecedentesHeredofamiliares
         )
       );
-      
-      // Actualizar antecedentes no patológicos
-      if (antecedentes.antecedentesNoPatologicos) {
-        setAntecedentesNoPatologicos(antecedentes.antecedentesNoPatologicos);
-      }
-      
-      // Actualizar antecedentes gineco-obstétricos
-      if (antecedentes.antecedentesGineco) {
-        setAntecedentesGineco(normalizarAntecedentesGineco(antecedentes.antecedentesGineco));
-      }
-      
-      // Actualizar antecedentes perinatales
-      if (antecedentes.antecedentesperinatales) {
-        setAntecedentesperinatales(antecedentes.antecedentesperinatales);
-      }
-      
-      // Actualizar antecedentes postnatales
-      if (antecedentes.antecedentesPostnatales) {
-        setAntecedentesPostnatales(antecedentes.antecedentesPostnatales);
-      }
-      
-      // Actualizar antecedentes psiquiátricos
-      if (antecedentes.antecedentesPsiquiatricos) {
-        setAntecedentesPsiquiatricos(antecedentes.antecedentesPsiquiatricos);
-      }
-      
-      // Actualizar dieta nutriológica
-      if (antecedentes.dietaNutriologica) {
-        setDietaNutriologica(antecedentes.dietaNutriologica);
-      }
     }
   }, [antecedentes]);
 
@@ -485,12 +447,12 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
     onActualizarAntecedentes?.(pacienteId, 'alergias', alergias);
   };
 
-  const handleChangeAntecedentesPatologicosPersonalesFamiliares = (
+  const handleChangeAntecedentesPatologicosPersonales = (
     key: AntecedentePpfKey,
     field: 'respuesta' | 'notas',
     value: string,
   ) => {
-    setAntecedentesPatologicosPersonalesFamiliares((prev) => ({
+    setAntecedentesPatologicosPersonales((prev) => ({
       ...prev,
       [key]: {
         ...prev[key],
@@ -501,11 +463,40 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
     }));
   };
 
-  const handleGuardarAntecedentesPatologicosPersonalesFamiliares = () => {
+  const handleGuardarAntecedentesPatologicosPersonales = () => {
     onActualizarAntecedentes?.(
       pacienteId,
       'antecedentesPatologicosPersonalesFamiliares',
-      antecedentesPatologicosPersonalesFamiliares,
+      {
+        ...antecedentesPatologicosPersonales,
+        familiares: { respuesta: familiaresNotas.length > 0 ? 'si' : '', notas: familiaresNotas },
+      },
+    );
+  };
+
+  // Familiares (tipo lista)
+  const handleAddFamiliar = () => {
+    if (nuevoFamiliar.trim()) {
+      setFamiliaresNotas([...familiaresNotas, nuevoFamiliar.trim()]);
+      setNuevoFamiliar('');
+    }
+  };
+  const handleRemoveFamiliar = (index: number) => {
+    setFamiliaresNotas(familiaresNotas.filter((_, i) => i !== index));
+  };
+  const handleKeyPressFamiliar = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleAddFamiliar();
+    }
+  };
+  const handleGuardarAntecedentesPatologicosFamiliares = () => {
+    onActualizarAntecedentes?.(
+      pacienteId,
+      'antecedentesPatologicosPersonalesFamiliares',
+      {
+        ...antecedentesPatologicosPersonales,
+        familiares: { respuesta: familiaresNotas.length > 0 ? 'si' : '', notas: familiaresNotas },
+      },
     );
   };
 
@@ -549,10 +540,10 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
       </div>
 
       <Accordion type="single" collapsible className="space-y-2">
-        {/* Antecedentes Patológicos Personales y Familiares */}
-        <AccordionItem value="antecedentes-patologicos-personales-familiares" className="border rounded-lg px-4 bg-orange-50">
+        {/* Antecedentes Patológicos Personales */}
+        <AccordionItem value="antecedentes-patologicos-personales" className="border rounded-lg px-4 bg-orange-50">
           <AccordionTrigger className="hover:no-underline">
-            <h3 className="text-gray-900">Antecedentes patológicos personales y familiares</h3>
+            <h3 className="text-gray-900">Antecedentes patológicos personales</h3>
           </AccordionTrigger>
           <AccordionContent>
             <div className="pt-2 space-y-3">
@@ -563,9 +554,9 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
                       {item.numero}. {item.label}
                     </Label>
                     <RadioGroup
-                      value={antecedentesPatologicosPersonalesFamiliares[item.key].respuesta}
+                      value={antecedentesPatologicosPersonales[item.key].respuesta}
                       onValueChange={(value: string) =>
-                        handleChangeAntecedentesPatologicosPersonalesFamiliares(item.key, 'respuesta', value)
+                        handleChangeAntecedentesPatologicosPersonales(item.key, 'respuesta', value)
                       }
                       className="flex gap-4"
                     >
@@ -582,9 +573,9 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
                   <div>
                     <Label className="text-xs text-gray-600 mb-1 block">Notas</Label>
                     <Textarea
-                      value={antecedentesPatologicosPersonalesFamiliares[item.key].notas}
+                      value={antecedentesPatologicosPersonales[item.key].notas}
                       onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                        handleChangeAntecedentesPatologicosPersonalesFamiliares(item.key, 'notas', e.target.value)
+                        handleChangeAntecedentesPatologicosPersonales(item.key, 'notas', e.target.value)
                       }
                       placeholder={`Detalle para ${item.label.toLowerCase()}...`}
                       className="min-h-[70px] text-sm"
@@ -592,10 +583,79 @@ export function AntecedentesView({ pacienteId, pacienteNombre, antecedentes, onA
                   </div>
                 </div>
               ))}
-
               <div className="pt-4 border-t mt-4">
                 <Button
-                  onClick={handleGuardarAntecedentesPatologicosPersonalesFamiliares}
+                  onClick={handleGuardarAntecedentesPatologicosPersonales}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Save className="size-4 mr-2" />
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* Antecedentes Patológicos Familiares */}
+        <AccordionItem value="antecedentes-patologicos-familiares" className="border rounded-lg px-4 bg-orange-50">
+          <AccordionTrigger className="hover:no-underline">
+            <h3 className="text-gray-900">Antecedentes patológicos familiares</h3>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="pt-2 space-y-3">
+              {/* Campo para agregar nuevo antecedente familiar */}
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="Escribir antecedente familiar..."
+                  value={nuevoFamiliar}
+                  onChange={(e) => setNuevoFamiliar(e.target.value)}
+                  onKeyPress={handleKeyPressFamiliar}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleAddFamiliar}
+                  disabled={!nuevoFamiliar.trim()}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Plus className="size-4 mr-1" />
+                  Agregar
+                </Button>
+              </div>
+
+              {/* Listado de antecedentes familiares */}
+              {familiaresNotas.length > 0 ? (
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600">Antecedentes familiares registrados:</Label>
+                  <div className="space-y-2">
+                    {familiaresNotas.map((familiar, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
+                      >
+                        <span className="text-sm text-gray-900">{familiar}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveFamiliar(index)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-100"
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm py-2">No hay antecedentes familiares registrados</p>
+              )}
+
+              {/* Botón de Guardar */}
+              <div className="pt-4 border-t mt-4">
+                <Button
+                  onClick={handleGuardarAntecedentesPatologicosFamiliares}
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700"
                 >

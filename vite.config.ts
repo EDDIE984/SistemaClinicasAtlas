@@ -1,9 +1,16 @@
 
-  import { defineConfig } from 'vite';
+  import { defineConfig, loadEnv } from 'vite';
   import react from '@vitejs/plugin-react-swc';
   import path from 'path';
 
-  export default defineConfig({
+  export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, process.cwd(), '');
+    const cedulaApiBaseUrl = env.CEDULA_API_BASE_URL || 'http://nessoftfact-001-site6.atempurl.com/api/ConsultasDatos/ConsultaCedulaV2';
+    const cedulaApiKey = env.CEDULA_API_KEY || '';
+    const wasenderApiToken = env.WASENDERAPI_TOKEN || '';
+    const cedulaApi = new URL(cedulaApiBaseUrl);
+
+    return {
     plugins: [react()],
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
@@ -58,5 +65,32 @@
     server: {
       port: 3000,
       open: true,
+      proxy: {
+        '/api/consulta-cedula': {
+          target: cedulaApi.origin,
+          changeOrigin: true,
+          rewrite: (requestPath) => {
+            const [, query = ''] = requestPath.split('?');
+            const params = new URLSearchParams(query);
+            params.set('Apikey', cedulaApiKey);
+            return `${cedulaApi.pathname}?${params.toString()}`;
+          },
+        },
+        '/api/send-whatsapp': {
+          target: 'https://wasenderapi.com',
+          changeOrigin: true,
+          secure: true,
+          rewrite: () => '/api/send-message',
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              if (wasenderApiToken) {
+                proxyReq.setHeader('Authorization', `Bearer ${wasenderApiToken}`);
+              }
+              proxyReq.setHeader('Content-Type', 'application/json');
+            });
+          },
+        },
+      },
     },
+  };
   });

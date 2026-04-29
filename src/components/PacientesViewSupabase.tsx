@@ -6,8 +6,8 @@ import { AlertasSignosVitalesPanel } from './AlertasSignosVitalesPanel';
 import { RANGOS_SIGNOS_VITALES } from '../lib/pacientesService';
 import { getArchivosByPaciente, createArchivoMedico, deleteArchivoMedico, getAntecedentesByPaciente, saveAntecedente } from '../lib/pacientesService';
 import { getCitasByPaciente, getCitasByUsuarioYFechas, getCitasBySucursalYFechas, formatearFecha, formatearHora, getColorEstado, marcarCitaCompletada, updateCita, type CitaCompleta } from '../lib/citasService';
-import { actualizarConsultaMedica, crearConsultaMedica, getConsultaMedicaByCita, type ConsultaMedica } from '../lib/consultasService.ts';
-import { createInterconsulta, getInterconsultasByConsulta, deleteInterconsulta } from '../lib/interconsultaService';
+import { actualizarConsultaMedica, crearConsultaMedica, getConsultaMedicaByCita, getOrAssignNumeroReceta, type ConsultaMedica } from '../lib/consultasService.ts';
+import { createInterconsulta, getInterconsultasByConsulta, deleteInterconsulta, getInterconsultaByCita, updateEstadoInterconsulta } from '../lib/interconsultaService';
 import type { InterconsultaCompleta } from '../lib/supabaseTypes';
 import { getAllEspecialidades, type Especialidad } from '../lib/configuracionesService';
 import { createPedidoLaboratorio, getExamenesLaboratorioActivos, getPedidoLaboratorioByCita, type ExamenLaboratorio, type PedidoLaboratorioCompleto } from '../lib/laboratorioService';
@@ -173,22 +173,19 @@ const EXAMEN_FISICO_SEGMENTOS = [
 
 const buildExamenFisicoResumen = ({
   segmentos,
-  nota,
+  notasPorSegmento,
 }: {
   segmentos: string[];
-  nota?: string;
+  notasPorSegmento: Record<string, string>;
 }): string => {
-  const partes: string[] = [];
+  if (segmentos.length === 0) return '';
 
-  if (segmentos.length > 0) {
-    partes.push(`SEGMENTOS: ${segmentos.join(', ')}`);
-  }
+  const lineas = segmentos.map((seg) => {
+    const obs = notasPorSegmento[seg]?.trim();
+    return obs ? `${seg}: ${obs.toUpperCase()}` : seg;
+  });
 
-  if (nota?.trim()) {
-    partes.push(`NOTA: ${nota.trim().toUpperCase()}`);
-  }
-
-  return partes.join('\n');
+  return `SEGMENTOS:\n${lineas.map((l) => `- ${l}`).join('\n')}`;
 };
 
 const buildRecetaResumen = ({
@@ -228,6 +225,26 @@ const solicitudImagenTieneContenido = (form: ReturnType<typeof createEmptySolici
   ].some((valor) => valor.trim().length > 0);
 };
 
+const getInterconsultaEstadoLabel = (estado: InterconsultaCompleta['estado']): string => {
+  const labels: Record<InterconsultaCompleta['estado'], string> = {
+    PENDIENTE_AGENDAR: 'PENDIENTE AGENDAR',
+    AGENDADA: 'AGENDADA',
+    ATENDIDO: 'ATENDIDO',
+    RECHAZADA: 'RECHAZADA',
+  };
+  return labels[estado] || estado;
+};
+
+const getInterconsultaEstadoClass = (estado: InterconsultaCompleta['estado']): string => {
+  const classes: Record<InterconsultaCompleta['estado'], string> = {
+    PENDIENTE_AGENDAR: 'bg-yellow-100 text-yellow-800',
+    AGENDADA: 'bg-blue-100 text-blue-800',
+    ATENDIDO: 'bg-green-100 text-green-800',
+    RECHAZADA: 'bg-red-100 text-red-800',
+  };
+  return classes[estado] || 'bg-gray-100 text-gray-700';
+};
+
 const ANTECEDENTES_PPF_KEYS = [
   'clinicos',
   'traumatologicos',
@@ -245,6 +262,28 @@ const tieneAntecedentesPatologicosCompletos = (antecedentes: any): boolean => {
     const respuesta = bloque?.[key]?.respuesta;
     return respuesta === 'si' || respuesta === 'no';
   });
+};
+
+const tieneAntecedentesPersonalesCompletos = (antecedentes: any): boolean => {
+  const bloque = antecedentes?.antecedentesPatologicosPersonalesFamiliares;
+  if (!bloque || typeof bloque !== 'object') return false;
+  const personalesKeys = ['clinicos', 'traumatologicos', 'pediatricos', 'quirurgicos', 'otros'] as const;
+  return personalesKeys.every((key) => {
+    const respuesta = bloque?.[key]?.respuesta;
+    return respuesta === 'si' || respuesta === 'no';
+  });
+};
+
+const tieneFamiliaresCompletos = (antecedentes: any): boolean => {
+  const bloque = antecedentes?.antecedentesPatologicosPersonalesFamiliares;
+  if (!bloque || typeof bloque !== 'object') return false;
+  const familiares = bloque.familiares;
+  return Array.isArray(familiares?.notas) && familiares.notas.length > 0;
+};
+
+const tieneAlergiasRegistradas = (antecedentes: any): boolean => {
+  const alergias = antecedentes?.alergias;
+  return Array.isArray(alergias) && alergias.filter((a: unknown) => typeof a === 'string' && (a as string).trim() !== '').length > 0;
 };
 
 type DiagnosticoCie10 = {
@@ -331,6 +370,7 @@ const buildPedidoLaboratorioResumen = ({
 
 interface PacientesViewProps {
   currentUser?: {
+    name?: string;
     email: string;
     tipo_usuario?: string;
   } | null;
@@ -534,6 +574,7 @@ export function PacientesViewSupabase({
   const [isLoadingDetalleConsulta, setIsLoadingDetalleConsulta] = useState(false);
   const [solicitudImagenDetalle, setSolicitudImagenDetalle] = useState<SolicitudImagen | null>(null);
   const [pedidoLaboratorioDetalle, setPedidoLaboratorioDetalle] = useState<PedidoLaboratorioCompleto | null>(null);
+  const [interconsultasDetalle, setInterconsultasDetalle] = useState<InterconsultaCompleta[]>([]);
   const [isLaboratorioDialogOpen, setIsLaboratorioDialogOpen] = useState(false);
   const [isLoadingLaboratorio, setIsLoadingLaboratorio] = useState(false);
   const [isLoadingMedicosLaboratorio, setIsLoadingMedicosLaboratorio] = useState(false);
@@ -588,7 +629,6 @@ export function PacientesViewSupabase({
   const [isLoadingInterconsultas, setIsLoadingInterconsultas] = useState(false);
   const [isSavingInterconsulta, setIsSavingInterconsulta] = useState(false);
   const [especialidadesInterconsulta, setEspecialidadesInterconsulta] = useState<Especialidad[]>([]);
-  const [medicosParaInterconsulta, setMedicosParaInterconsulta] = useState<Array<{ id_usuario: number; nombre: string; apellido: string }>>([]);
   // ──────────────────────────────────────────────────────────────────────────
 
   // ── Agenda en pantalla Pacientes (médico y enfermera) ────────────────────
@@ -673,8 +713,12 @@ export function PacientesViewSupabase({
 
   // Consultar datos de registro civil al perder foco en cédula
   const handleBlurCedula = async () => {
-    const cedula = newPatient.cedula;
-    if (!cedula || cedula.length < 10) return;
+    const cedula = newPatient.cedula.trim();
+    if (!cedula) return;
+    if (cedula.length < 10) {
+      toast.warning('Ingrese una cédula de al menos 10 dígitos para consultar datos');
+      return;
+    }
 
     setIsSearchingCedula(true);
     try {
@@ -689,9 +733,12 @@ export function PacientesViewSupabase({
           direccion: datos.direccion || prev.direccion
         }));
         toast.success('Datos encontrados y cargados');
+      } else {
+        toast.warning('No se encontraron datos para la cédula ingresada');
       }
     } catch (error) {
       console.error('Error al consultar cédula:', error);
+      toast.error(error instanceof Error ? error.message : 'No se pudo consultar la API de cédula');
     } finally {
       setIsSearchingCedula(false);
     }
@@ -724,7 +771,7 @@ export function PacientesViewSupabase({
   const [sucursalSeleccionada, setSucursalSeleccionada] = useState<number | null>(null);
   const [sucursales, setSucursales] = useState<any[]>([]);
   const [examenFisicoSeleccionados, setExamenFisicoSeleccionados] = useState<string[]>([]);
-  const [notaExamenFisico, setNotaExamenFisico] = useState('');
+  const [notasExamenFisico, setNotasExamenFisico] = useState<Record<string, string>>({});
   const [solicitudImagenForm, setSolicitudImagenForm] = useState(createEmptySolicitudImagenForm);
   const [solicitudImagenActual, setSolicitudImagenActual] = useState<SolicitudImagen | null>(null);
 
@@ -755,7 +802,7 @@ export function PacientesViewSupabase({
 
   const resumenExamenFisico = buildExamenFisicoResumen({
     segmentos: examenFisicoSeleccionados,
-    nota: notaExamenFisico,
+    notasPorSegmento: notasExamenFisico,
   });
 
   const resumenReceta = buildRecetaResumen({
@@ -959,17 +1006,8 @@ export function PacientesViewSupabase({
 
     const cargarDatosInterconsulta = async () => {
       try {
-        const [especialidades, { data: medicos }] = await Promise.all([
-          getAllEspecialidades(),
-          supabase
-            .from('usuario')
-            .select('id_usuario, nombre, apellido')
-            .eq('tipo_usuario', 'medico')
-            .eq('estado', 'activo')
-            .order('apellido'),
-        ]);
+        const especialidades = await getAllEspecialidades();
         setEspecialidadesInterconsulta(especialidades.filter((e) => e.estado === 'activo'));
-        setMedicosParaInterconsulta((medicos as any[]) || []);
       } catch (error) {
         console.error('❌ Error al cargar datos para interconsulta:', error);
       }
@@ -1009,6 +1047,11 @@ export function PacientesViewSupabase({
   }, [isConsultaScreenOpen, citaIdParaConsulta, citaIdInicial]);
 
   const handleAgregarInterconsulta = async () => {
+    if (interconsultasActuales.length > 0) {
+      toast.error('Esta cita médica ya tiene una interconsulta registrada');
+      return;
+    }
+
     if (!interconsultaForm.motivo.trim()) {
       toast.error('El motivo de la interconsulta es requerido');
       return;
@@ -1033,15 +1076,15 @@ export function PacientesViewSupabase({
         id_paciente: selectedPatientId,
         id_usuario_solicitante: idUsuarioActual,
         tipo_destino: interconsultaForm.tipo_destino,
-        id_usuario_destino: interconsultaForm.tipo_destino === 'interno' ? interconsultaForm.id_usuario_destino : null,
+        id_usuario_destino: null,
         id_especialidad_destino: interconsultaForm.tipo_destino === 'interno' ? interconsultaForm.id_especialidad_destino : null,
         especialidad_destino_texto: interconsultaForm.tipo_destino === 'externo' ? interconsultaForm.especialidad_destino_texto || null : null,
-        medico_destino_externo: interconsultaForm.tipo_destino === 'externo' ? interconsultaForm.medico_destino_externo || null : null,
+        medico_destino_externo: null,
         motivo: interconsultaForm.motivo,
         resumen_clinico: interconsultaForm.resumen_clinico || null,
         urgencia: interconsultaForm.urgencia,
         fecha_limite: interconsultaForm.fecha_limite || null,
-        estado: 'pendiente' as const,
+        estado: 'PENDIENTE_AGENDAR' as const,
         id_cita_generada: null,
       };
 
@@ -1067,6 +1110,80 @@ export function PacientesViewSupabase({
     } catch (error) {
       console.error('❌ Error al agregar interconsulta:', error);
       toast.error('Error al registrar la interconsulta');
+    } finally {
+      setIsSavingInterconsulta(false);
+    }
+  };
+
+  const handleImprimirInterconsultaDesdeConsulta = async () => {
+    const interconsultaExistente = interconsultasActuales[0];
+    if (interconsultaExistente) {
+      handleImprimirInterconsulta(interconsultaExistente);
+      return;
+    }
+
+    const interconsultaConFormulario = Boolean(interconsultaForm.motivo.trim());
+
+    if (!interconsultaConFormulario) {
+      toast.error('Complete el motivo de la interconsulta para imprimir');
+      return;
+    }
+
+    const idCita = citaIdParaConsulta || citaIdInicial;
+    if (!idCita || !selectedPatientId) {
+      toast.error('No hay una consulta activa');
+      return;
+    }
+
+    const consulta = await getConsultaMedicaByCita(idCita);
+    if (!consulta) {
+      toast.error('Guarde la consulta primero antes de imprimir la interconsulta');
+      return;
+    }
+
+    setIsSavingInterconsulta(true);
+    try {
+      const datos = {
+        id_consulta_medica: consulta.id_consulta_medica,
+        id_paciente: selectedPatientId,
+        id_usuario_solicitante: idUsuarioActual,
+        tipo_destino: interconsultaForm.tipo_destino,
+        id_usuario_destino: null,
+        id_especialidad_destino: interconsultaForm.tipo_destino === 'interno' ? interconsultaForm.id_especialidad_destino : null,
+        especialidad_destino_texto: interconsultaForm.tipo_destino === 'externo' ? interconsultaForm.especialidad_destino_texto || null : null,
+        medico_destino_externo: null,
+        motivo: interconsultaForm.motivo,
+        resumen_clinico: interconsultaForm.resumen_clinico || null,
+        urgencia: interconsultaForm.urgencia,
+        fecha_limite: interconsultaForm.fecha_limite || null,
+        estado: 'PENDIENTE_AGENDAR' as const,
+        id_cita_generada: null,
+      };
+
+      const resultado = await createInterconsulta(datos);
+      if (!resultado) {
+        toast.error('No se pudo registrar la interconsulta para imprimir');
+        return;
+      }
+
+      const lista = await getInterconsultasByConsulta(consulta.id_consulta_medica);
+      setInterconsultasActuales(lista);
+      const interconsultaGuardada = lista.find((ic) => ic.id_interconsulta === resultado.id_interconsulta);
+      handleImprimirInterconsulta(interconsultaGuardada || ({
+        ...resultado,
+        especialidad: interconsultaForm.tipo_destino === 'interno'
+          ? {
+              id_especialidad: interconsultaForm.id_especialidad_destino || 0,
+              nombre: especialidadesInterconsulta.find(
+                (e) => e.id_especialidad === interconsultaForm.id_especialidad_destino
+              )?.nombre || '',
+            }
+          : null,
+      } as InterconsultaCompleta));
+      toast.success('Interconsulta registrada para impresión');
+    } catch (error) {
+      console.error('❌ Error al imprimir interconsulta:', error);
+      toast.error('Error al imprimir la interconsulta');
     } finally {
       setIsSavingInterconsulta(false);
     }
@@ -1642,8 +1759,18 @@ export function PacientesViewSupabase({
       return;
     }
 
-    if (!tieneAntecedentesPatologicosCompletos(antecedentesData)) {
-      toast.error('Complete y guarde "Antecedentes patológicos personales y familiares" antes de iniciar la consulta');
+    if (!tieneAntecedentesPersonalesCompletos(antecedentesData)) {
+      toast.error('Complete los antecedentes patológicos personales (clínicos, traumatológicos, pediátricos, quirúrgicos y otros) antes de iniciar la consulta');
+      return;
+    }
+
+    if (!tieneFamiliaresCompletos(antecedentesData)) {
+      toast.error('Complete los antecedentes patológicos familiares antes de iniciar la consulta. Si no hay antecedentes, ingrese "Sin antecedentes familiares"');
+      return;
+    }
+
+    if (!tieneAlergiasRegistradas(antecedentesData)) {
+      toast.error('Registre las alergias del paciente antes de iniciar la consulta. Si no presenta alergias, ingrese "Sin alergias registradas"');
       return;
     }
 
@@ -1654,7 +1781,7 @@ export function PacientesViewSupabase({
     if (!mantenerBorrador) {
       setConsultaForm(createEmptyConsultaForm());
       setExamenFisicoSeleccionados([]);
-      setNotaExamenFisico('');
+      setNotasExamenFisico({});
       setSolicitudImagenForm(createEmptySolicitudImagenForm());
       setSolicitudImagenActual(null);
       setCodigoCie10Input('');
@@ -1680,6 +1807,7 @@ export function PacientesViewSupabase({
     if (!isVerConsultaDialogOpen || !consultaSeleccionada?.id_cita) {
       setSolicitudImagenDetalle(null);
       setPedidoLaboratorioDetalle(null);
+      setInterconsultasDetalle([]);
       return;
     }
 
@@ -1688,14 +1816,16 @@ export function PacientesViewSupabase({
     const cargarDetalleRelacionado = async () => {
       setIsLoadingDetalleConsulta(true);
       try {
-        const [imagen, laboratorio] = await Promise.all([
+        const [imagen, laboratorio, interconsultas] = await Promise.all([
           getSolicitudImagenByCita(consultaSeleccionada.id_cita),
           getPedidoLaboratorioByCita(consultaSeleccionada.id_cita),
+          getInterconsultasByConsulta(consultaSeleccionada.id_consulta_medica),
         ]);
 
         if (!activo) return;
         setSolicitudImagenDetalle(imagen);
         setPedidoLaboratorioDetalle(laboratorio);
+        setInterconsultasDetalle(interconsultas);
       } catch (error) {
         console.error('❌ Error al cargar detalle completo de la consulta:', error);
       } finally {
@@ -1796,13 +1926,17 @@ export function PacientesViewSupabase({
     }
   };
 
-  // Agregar diagnóstico por código CIE-10
+  // Agregar diagnóstico por código CIE-10 o descripción clínica
   const handleAgregarDiagnosticoIA = async () => {
-    const codigo = codigoCie10Input.trim().toUpperCase().replace(/\s+/g, '');
-    if (!codigo) {
-      toast.error('Ingrese un código CIE-10');
+    const input = codigoCie10Input.trim();
+    if (!input) {
+      toast.error('Ingrese un código CIE-10 o una descripción clínica');
       return;
     }
+
+    // Detecta si el usuario ingresó un código o una descripción
+    const esCodigo = /^[A-Z][0-9]{2}(\.[0-9A-Z]{0,4})?$/i.test(input.replace(/\s+/g, ''));
+    const query = esCodigo ? input.toUpperCase().replace(/\s+/g, '') : input;
 
     setIsLoadingDiagnosticoIA(true);
 
@@ -1829,14 +1963,16 @@ export function PacientesViewSupabase({
                 {
                   role: 'system',
                   content: `Eres un asistente médico experto en clasificación diagnóstica CIE-10.
-Responde ÚNICAMENTE con JSON válido sin markdown, con esta estructura exacta:
+El médico puede ingresar un código CIE-10 (ej: J30.9) o una descripción clínica/síntoma (ej: dolor abdominal).
+Responde ÚNICAMENTE con JSON válido sin markdown:
 {"diagnostico":{"codigo":"X00.0","nombre":"Nombre CIE-10","descripcion":"Descripción clínica breve"}}
-Si el código no existe, responde exactamente:
-{"error":"Código CIE-10 no encontrado"}`
+Si no puedes resolverlo, responde: {"error":"Mensaje de error"}`
                 },
                 {
                   role: 'user',
-                  content: `Código CIE-10 ingresado por el médico: ${codigo}`
+                  content: esCodigo
+                    ? `Código CIE-10: ${query}`
+                    : `Descripción clínica ingresada por el médico: ${query}`
                 }
               ]
             })
@@ -1866,7 +2002,7 @@ Si el código no existe, responde exactamente:
           const res = await fetch('/api/diagnostico-ia', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ codigoCie10: codigo }),
+            body: JSON.stringify({ query }),
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) {
@@ -1876,7 +2012,8 @@ Si el código no existe, responde exactamente:
           diagnosticoIA = data.diagnostico || null;
         }
       } catch (apiError) {
-        const referenciaLocal = DIAGNOSTICOS_CIE10_REFERENCIA[codigo];
+        // Fallback al catálogo local solo si el input era un código conocido
+        const referenciaLocal = esCodigo ? DIAGNOSTICOS_CIE10_REFERENCIA[query] : null;
         if (referenciaLocal) {
           diagnosticoIA = referenciaLocal;
           if (import.meta.env.DEV) {
@@ -1928,6 +2065,12 @@ Si el código no existe, responde exactamente:
     // Validar que el motivo de consulta esté completo
     if (!consultaForm.motivo_consulta.trim()) {
       toast.error('El motivo de consulta es obligatorio');
+      return;
+    }
+
+    // Validar que la receta médica esté ingresada
+    if (!consultaForm.receta_rp.trim() && !consultaForm.receta_indicaciones.trim()) {
+      toast.error('La receta médica es obligatoria. Complete el campo Rp o Indicaciones antes de guardar.');
       return;
     }
 
@@ -2061,6 +2204,11 @@ Si el código no existe, responde exactamente:
           if (!marcada) {
             console.error('⚠️ La consulta se guardó pero no se pudo actualizar el estado de la cita a "atendida"');
           }
+          // Si la cita proviene de una interconsulta, marcarla como ATENDIDO
+          const interconsulta = await getInterconsultaByCita(idCitaParaConsulta);
+          if (interconsulta && interconsulta.estado !== 'ATENDIDO') {
+            await updateEstadoInterconsulta(interconsulta.id_interconsulta, 'ATENDIDO');
+          }
         }
 
         // Recargar las citas del paciente
@@ -2084,7 +2232,7 @@ Si el código no existe, responde exactamente:
         // Limpiar formulario
         setConsultaForm(createEmptyConsultaForm());
         setExamenFisicoSeleccionados([]);
-        setNotaExamenFisico('');
+        setNotasExamenFisico({});
         setSolicitudImagenForm(createEmptySolicitudImagenForm());
         setSolicitudImagenActual(null);
         setCodigoCie10Input('');
@@ -2272,6 +2420,121 @@ Si el código no existe, responde exactamente:
     imprimir();
   };
 
+  const handleImprimirInterconsulta = (
+    interconsultaData: InterconsultaCompleta,
+    pacienteData: Paciente | null = pacienteSeleccionado,
+  ) => {
+    if (!pacienteData) {
+      toast.error('No hay paciente seleccionado para imprimir');
+      return;
+    }
+
+    const nombrePaciente = `${pacienteData.nombres} ${pacienteData.apellidos}`.trim() || 'PACIENTE SIN NOMBRE';
+    const edadPaciente = `${calcularEdad(pacienteData.fecha_nacimiento)}`;
+    const numeroInterconsulta = interconsultaData.numero_interconsulta
+      ? String(interconsultaData.numero_interconsulta).padStart(7, '0')
+      : '';
+    const especialidadCatalogo = interconsultaData.id_especialidad_destino
+      ? especialidadesInterconsulta.find((e) => e.id_especialidad === interconsultaData.id_especialidad_destino)?.nombre
+      : '';
+    const especialidadDestino = interconsultaData.tipo_destino === 'interno'
+      ? interconsultaData.especialidad?.nombre || especialidadCatalogo || ''
+      : interconsultaData.especialidad_destino_texto || '';
+    const fechaSolicitud = interconsultaData.created_at
+      ? formatDateLocal(new Date(interconsultaData.created_at))
+      : formatDateLocal(new Date());
+
+    const contenido = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title></title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Georgia, 'Times New Roman', serif; margin: 18px; color: #3f3f46; }
+    .doc { border: 1px solid #e4e4e7; padding: 14px 18px 22px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #d4d4d8; padding-bottom: 10px; margin-bottom: 16px; }
+    .titulo { font-style: italic; font-size: 42px; letter-spacing: 0.4px; color: #71717a; margin: 0; line-height: 1.05; }
+    .numero { color: #3f3f46; font-size: 34px; margin-left: 14px; font-weight: 700; }
+    .logo { width: 200px; object-fit: contain; }
+    .fila { display: flex; gap: 16px; margin: 12px 0; }
+    .campo { flex: 1; }
+    .label { font-style: italic; font-size: 26px; color: #71717a; margin-right: 8px; }
+    .linea { border-bottom: 1px solid #c4c4c7; min-height: 38px; padding: 4px 0 2px; font-size: 23px; color: #27272a; white-space: pre-wrap; }
+    .linea.inline { display: inline-block; width: calc(100% - 165px); vertical-align: bottom; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .linea.corta { min-width: 170px; }
+    .fila-datos { display: flex; gap: 16px; margin: 12px 0; }
+    .campo-fecha { max-width: 320px; }
+    .campo-edad { max-width: 220px; }
+    @page { margin: 8mm; }
+    @media print { body { margin: 0; } .doc { border: none; padding: 8px 10px; } }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="header">
+      <div>
+        <span class="titulo">INTERCONSULTA</span>
+        ${numeroInterconsulta ? `<span class="numero">N° ${escapeHtml(numeroInterconsulta)}</span>` : ''}
+      </div>
+      <img src="${logoClinicaAtlas}" alt="Clinicas Atlas" class="logo" />
+    </div>
+
+    <div class="fila">
+      <div class="campo">
+        <span class="label">Nombre:</span>
+        <span class="linea inline">${escapeHtml(nombrePaciente)}</span>
+      </div>
+    </div>
+
+    <div class="fila-datos">
+      <div class="campo campo-fecha">
+        <span class="label">Fecha:</span>
+        <span class="linea inline corta">${escapeHtml(fechaSolicitud)}</span>
+      </div>
+      <div class="campo campo-edad">
+        <span class="label">Edad:</span>
+        <span class="linea inline corta">${escapeHtml(edadPaciente)}</span>
+      </div>
+    </div>
+
+    <div class="fila"><div class="campo"><span class="label">Especialidad destino:</span><div class="linea">${escapeHtml(especialidadDestino)}</div></div></div>
+    <div class="fila"><div class="campo"><span class="label">Motivo:</span><div class="linea">${escapeHtml(interconsultaData.motivo || '')}</div></div></div>
+    <div class="fila"><div class="campo"><span class="label">Resumen Clinico:</span><div class="linea">${escapeHtml(interconsultaData.resumen_clinico || '')}</div></div></div>
+
+    <div class="fila">
+      <div class="campo"><span class="label">Urgencia:</span><div class="linea">${escapeHtml(interconsultaData.urgencia === 'urgente' ? 'URGENTE' : 'NORMAL')}</div></div>
+      <div class="campo"><span class="label">Estado:</span><div class="linea">${escapeHtml(getInterconsultaEstadoLabel(interconsultaData.estado))}</div></div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const printWindow = window.open('', '_blank', 'width=1200,height=900');
+    if (!printWindow) {
+      toast.error('No se pudo abrir la ventana de impresión. Verifica el bloqueador de popups.');
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(contenido);
+    printWindow.document.close();
+
+    const imprimir = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    const logo = printWindow.document.querySelector('img.logo') as HTMLImageElement | null;
+    if (logo && !logo.complete) {
+      logo.onload = imprimir;
+      logo.onerror = imprimir;
+      return;
+    }
+
+    imprimir();
+  };
+
   const handleImprimirReceta = async (
     consultaData: ConsultaMedica | null = null,
     pacienteData: Paciente | null = pacienteSeleccionado,
@@ -2295,8 +2558,21 @@ Si el código no existe, responde exactamente:
     const codigosCie = !consultaData && diagnosticosCie10.length > 0
       ? diagnosticosCie10.map((d) => d.codigo).join(', ')
       : (diagnosticoTexto.match(/[A-Z]\d{2}(?:\.\d+)?/g) || []).join(', ');
-    const numeroCita = consultaData?.id_cita || citaIdParaConsulta || citaIdInicial || citaConsultaActual?.id_cita || null;
     const alergiasTexto = alergiasDesdeAntecedentesTexto;
+
+    // Obtener o asignar número de receta independiente
+    let idConsultaMedica: number | null = consultaData?.id_consulta_medica ?? null;
+    if (!idConsultaMedica) {
+      const idCita = citaIdParaConsulta || citaIdInicial || citaConsultaActual?.id_cita;
+      if (idCita) {
+        const consultaDB = await getConsultaMedicaByCita(idCita);
+        idConsultaMedica = consultaDB?.id_consulta_medica ?? null;
+      }
+    }
+    let numeroReceta: number | null = null;
+    if (idConsultaMedica) {
+      numeroReceta = await getOrAssignNumeroReceta(idConsultaMedica);
+    }
     const rpTexto = recetaRp.trim().toUpperCase();
     const indicacionesTexto = recetaIndicaciones.trim().toUpperCase();
     try {
@@ -2471,8 +2747,8 @@ Si el código no existe, responde exactamente:
         drawFieldLine(ageStart, currentY, ageLabel, edadTexto, rightEdge);
         currentY -= 24;
 
-        if (numeroCita) {
-          drawFieldLine(startX, currentY, 'Cita N°:', String(numeroCita), rightEdge);
+        if (numeroReceta) {
+          drawFieldLine(startX, currentY, 'No.Receta:', String(numeroReceta), rightEdge);
           currentY -= 24;
         }
 
@@ -2609,11 +2885,30 @@ Si el código no existe, responde exactamente:
     const medicoResponsable = pedidoData?.medico_asignacion?.usuario
       ? `${pedidoData.medico_asignacion.usuario.nombre} ${pedidoData.medico_asignacion.usuario.apellido}`
       : borradorData?.medicoNombre || (pedidoData ? `ID Usuario Sucursal ${pedidoData.id_usuario_sucursal_medico}` : 'NO ASIGNADO');
-    const examenesTexto = (pedidoData
-      ? pedidoData.detalle.map((detalle) => detalle.examen_laboratorio?.nombre || `Examen #${detalle.id_examen_laboratorio}`)
-      : examenesBorrador.map((examen) => examen.nombre)
-    )
-      .map((nombre) => `<li>${escapeHtml(nombre)}</li>`)
+    // Si hay exámenes en borradorData (llamada desde consulta), usarlos siempre —
+    // representan la selección actual en UI. Solo usar pedidoData.detalle cuando
+    // se imprime desde "Ver detalles" (sin borradorData).
+    const examenesAgrupados: Record<string, string[]> = examenesBorrador.length > 0
+      ? examenesBorrador.reduce((acc, examen) => {
+          const cat = examen.categoria || 'OTROS';
+          if (!acc[cat]) acc[cat] = [];
+          acc[cat].push(examen.nombre);
+          return acc;
+        }, {} as Record<string, string[]>)
+      : (pedidoData?.detalle ?? []).reduce((acc, det) => {
+          const cat = det.examen_laboratorio?.categoria || 'OTROS';
+          const nombre = det.examen_laboratorio?.nombre || `Examen #${det.id_examen_laboratorio}`;
+          if (!acc[cat]) acc[cat] = [];
+          acc[cat].push(nombre);
+          return acc;
+        }, {} as Record<string, string[]>);
+
+    const examenesTexto = Object.entries(examenesAgrupados)
+      .map(([cat, nombres]) => `
+        <div class="grupo">
+          <div class="grupo-titulo">${escapeHtml(cat)}</div>
+          <ul>${nombres.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
+        </div>`)
       .join('');
 
     const numeroPedido = pedidoData
@@ -2643,8 +2938,11 @@ Si el código no existe, responde exactamente:
     .card { border: 1px solid #d4d4d8; border-radius: 10px; padding: 12px; }
     .label { font-size: 13px; font-weight: 700; color: #52525b; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
     .value { font-size: 17px; color: #18181b; white-space: pre-wrap; }
-    ul { margin: 8px 0 0; padding-left: 20px; }
-    li { font-size: 17px; margin: 4px 0; }
+    ul { margin: 4px 0 0; padding-left: 20px; }
+    li { font-size: 15px; margin: 3px 0; }
+    .grupo { margin-bottom: 10px; }
+    .grupo:last-child { margin-bottom: 0; }
+    .grupo-titulo { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #71717a; border-bottom: 1px solid #e4e4e7; padding-bottom: 3px; margin-bottom: 4px; }
     @page { margin: 8mm; }
     @media print { body { margin: 0; } .doc { border: none; padding: 8px 10px; } }
   </style>
@@ -2665,8 +2963,8 @@ Si el código no existe, responde exactamente:
       <div class="card"><div class="label">Médico</div><div class="value">${escapeHtml(medicoResponsable)}</div></div>
     </div>
     <div class="card">
-      <div class="label">Catálogo de exámenes</div>
-      <ul>${examenesTexto}</ul>
+      <div class="label">Exámenes solicitados</div>
+      ${examenesTexto}
     </div>
     <div class="card" style="margin-top: 14px;">
       <div class="label">Observaciones del pedido</div>
@@ -2702,6 +3000,357 @@ Si el código no existe, responde exactamente:
   };
 
   const pacienteSeleccionado = selectedPatientId ? pacientes.find((p: Paciente) => p.id_paciente === selectedPatientId) : null;
+
+  const handleImprimirFormularioConsultaExterna = (cita: CitaCompleta, consulta: ConsultaMedica | undefined) => {
+    const pac = pacienteSeleccionado;
+    if (!pac) { toast.error('No hay paciente seleccionado'); return; }
+
+    const signo = signosVitales[0] || null;
+    const ant = antecedentesData;
+
+    const e = (v: unknown): string => {
+      if (v === null || v === undefined) return '';
+      return String(v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    };
+
+    const apellidosParts = (pac.apellidos || '').trim().split(/\s+/);
+    const primerApellido = apellidosParts[0] || '';
+    const segundoApellido = apellidosParts.slice(1).join(' ');
+    const nombresParts = (pac.nombres || '').trim().split(/\s+/);
+    const primerNombre = nombresParts[0] || '';
+    const segundoNombre = nombresParts.slice(1).join(' ');
+
+    const edadAnios = pac.fecha_nacimiento ? calcularEdad(pac.fecha_nacimiento) : '';
+    const fechaCita = cita.fecha_cita ? cita.fecha_cita.slice(0, 10) : '';
+    const horaCita = cita.hora_inicio ? cita.hora_inicio.slice(0, 5) : '';
+    const medicoNombre = `${cita.usuario_sucursal.usuario.nombre} ${cita.usuario_sucursal.usuario.apellido}`;
+    const especialidad = cita.usuario_sucursal.especialidad || 'Médico General';
+
+    const presionArterial = signo ? `${signo.presion_sistolica ?? ''}/${signo.presion_diastolica ?? ''}` : '';
+    const pulso = signo?.frecuencia_cardiaca ?? '';
+    const frecResp = signo?.frecuencia_respiratoria ?? '';
+    const pulsioximetria = signo?.saturacion_oxigeno ?? '';
+    const peso = signo?.peso_kg ?? '';
+    const talla = signo?.estatura_cm ?? '';
+    const glucemia = signo?.glucosa_mg_dl ?? '';
+    const perimetroCefalico = signo?.perimetro_cefalico_cm ?? '';
+    const glasgowOcular = signo?.glasgow_ocular ?? '';
+    const glasgowVerbal = signo?.glasgow_verbal ?? '';
+    const glasgowMotora = signo?.glasgow_motora ?? '';
+    const reaccionPupilar = signo?.reaccion_pupilar ?? '';
+
+    const alergias = Array.isArray(ant?.alergias) ? ant.alergias.join(', ') : '';
+    const ppf = ant?.antecedentesPatologicosPersonalesFamiliares || {};
+    const fmtPpf = (key: string) => {
+      const item = ppf[key];
+      if (!item) return '';
+      const resp = item.respuesta === 'si' ? 'Sí' : item.respuesta === 'no' ? 'No' : '';
+      return [resp, item.notas || ''].filter(Boolean).join(': ');
+    };
+    const familiaresRaw = ppf.familiares;
+    const familiares = Array.isArray(familiaresRaw)
+      ? familiaresRaw.join(', ')
+      : (familiaresRaw && typeof familiaresRaw === 'object' && (familiaresRaw as any).notas ? (familiaresRaw as any).notas : '');
+    const medicamentos = Array.isArray(ant?.medicamentos) ? ant.medicamentos.join(', ') : '';
+    const noPatol = ant?.antecedentesNoPatologicos || {};
+    const habitos = [
+      noPatol.tabaquismo ? `Tabaquismo: ${noPatol.tabaquismo}` : '',
+      noPatol.alcoholismo ? `Alcoholismo: ${noPatol.alcoholismo}` : '',
+      noPatol.drogas ? `Drogas: ${noPatol.drogas}` : '',
+      noPatol.actividadFisica ? `Act. Física: ${noPatol.actividadFisica}` : '',
+    ].filter(Boolean).join(' | ');
+    const gineco = (() => {
+      const g = ant?.antecedentesGineco;
+      if (!g) return '';
+      const parts: string[] = [];
+      if (g.menarquia) parts.push(`Menarquia: ${g.menarquia}`);
+      if (g.fechaUltimaMenstruacion) parts.push(`FUM: ${g.fechaUltimaMenstruacion}`);
+      if (g.metodoAnticonceptivo) parts.push(`MAC: ${g.metodoAnticonceptivo}`);
+      return parts.join(' | ');
+    })();
+
+    const seguroPrincipal = (pac.seguro_salud_principal || '').toUpperCase();
+    const seguroCheck = (key: string) => seguroPrincipal.includes(key.toUpperCase()) ? '&#x2713;' : '&#x25a1;';
+    const ecRaw = (pac.estado_civil || '').toUpperCase();
+    const ecMap: Record<string, string> = { 'SOLTERO': 'SOL', 'CASADO': 'CAS', 'DIVORCIADO': 'DIV', 'VIUDO': 'VIU', 'UNION LIBRE': 'U-H', 'UNIÓN LIBRE': 'U-H', 'NO APLICA': 'NA' };
+    const ecAbrev = Object.keys(ecMap).find(k => ecRaw.includes(k)) ? ecMap[Object.keys(ecMap).find(k => ecRaw.includes(k))!] : ecRaw;
+    const ecCheck = (abrev: string) => ecAbrev === abrev ? '&#x2713;' : '&#x25a1;';
+    const llegadaRaw = (pac.forma_llegada || '').toUpperCase();
+    const llegadaCheck = (val: string) => llegadaRaw.includes(val.toUpperCase()) ? '&#x2713;' : '&#x25a1;';
+
+    const diagRaw = consulta?.diagnostico || '';
+    const diagLines = diagRaw.split('\n').map((l: string) => l.trim()).filter(Boolean);
+    const mid = Math.ceil(diagLines.length / 2);
+    const diagPresuntivo = diagLines.slice(0, mid).join('\n');
+    const diagDefinitivo = diagLines.slice(mid).join('\n') || diagRaw;
+
+    const recetaLines = (consulta?.receta_medica || '').split('\n').filter(Boolean);
+    const recetaRows = recetaLines.map((line: string) =>
+      `<tr><td class="value">${e(line)}</td><td></td><td></td><td></td><td></td></tr>`).join('');
+    const recetaExtra = Array.from({ length: Math.max(4 - recetaLines.length, 0) }, () =>
+      '<tr><td style="min-height:12px">&nbsp;</td><td></td><td></td><td></td><td></td></tr>').join('');
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<title>Formulario Consulta Externa</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; color: #000; background: #fff; }
+.page { width: 210mm; margin: 0 auto; padding: 4mm 5mm; }
+table { width: 100%; border-collapse: collapse; }
+td, th { border: 1px solid #555; padding: 1.5px 3px; vertical-align: top; }
+.sh { background: #c8ddf5; font-weight: bold; font-size: 8pt; padding: 2px 4px; border: 1px solid #555; margin-top: 1px; display: block; }
+.lb { font-size: 6.5pt; color: #333; font-weight: bold; }
+.val { font-size: 8pt; color: #000; min-height: 11px; }
+.ml { white-space: pre-wrap; min-height: 32px; }
+@page { size: A4; margin: 6mm; }
+@media print { body { margin: 0; } .page { width: 100%; padding: 0; } }
+</style>
+</head>
+<body><div class="page">
+
+<table style="margin-bottom:2px"><tr>
+  <td style="width:35%;border:1px solid #555;padding:3px 6px">
+    <div style="font-size:11pt;font-weight:bold;color:#1a4e8f">Cl&#237;nicas ATLAS</div>
+    <div style="font-size:7pt;color:#555">Sistema de Salud</div>
+  </td>
+  <td style="width:40%;border:1px solid #555;padding:3px;text-align:center">
+    <div style="font-size:10pt;font-weight:bold">HISTORIA CL&#205;NICA &#218;NICA</div>
+    <div style="font-size:7.5pt">CONSULTA EXTERNA</div>
+  </td>
+  <td style="width:25%;border:1px solid #555;padding:3px;font-size:6.5pt;text-align:right">SNS-MSP/HCU-form.008/2021</td>
+</tr></table>
+
+<div class="sh">A. DATOS DEL ESTABLECIMIENTO</div>
+<table><tr>
+  <td style="width:30%"><div class="lb">INSTITUCIÓN DEL SISTEMA</div><div class="val">Cl&#237;nica Atlas</div></td>
+  <td style="width:15%"><div class="lb">UNIC&#211;DIGO</div><div class="val"></div></td>
+  <td style="width:25%"><div class="lb">ESTABLECIMIENTO DE SALUD</div><div class="val">Cl&#237;nica Atlas</div></td>
+  <td style="width:20%"><div class="lb">N&#218;MERO DE HISTORIA CL&#205;NICA &#218;NICA</div><div class="val">${e(pac.cedula)}</div></td>
+  <td style="width:10%"><div class="lb">N&#218;MERO DE ARCHIVO</div><div class="val">${e(String(pac.id_paciente))}</div></td>
+</tr></table>
+
+<div class="sh">B. REGISTRO DE ADMISI&#211;N</div>
+<table>
+<tr>
+  <td colspan="3"><div class="lb">FECHA DE ADMISI&#211;N (aaaa-mm-dd)</div><div class="val">${e(fechaCita)}</div></td>
+  <td colspan="3"><div class="lb">NOMBRE Y APELLIDO DEL ADMISIONISTA</div><div class="val">${e(pac.nombre_admisionista || '')}</div></td>
+  <td colspan="2"><div class="lb">HISTORIA CL&#205;NICA EN EL ESTABLECIMIENTO</div><div class="val" style="font-size:7pt">SI: ${pac.historia_clinica_establecimiento ? '&#x2713;' : '&#x25a1;'} &nbsp; NO: ${!pac.historia_clinica_establecimiento ? '&#x2713;' : '&#x25a1;'}</div></td>
+</tr>
+<tr>
+  <td colspan="2"><div class="lb">PRIMER APELLIDO</div><div class="val">${e(primerApellido)}</div></td>
+  <td colspan="2"><div class="lb">SEGUNDO APELLIDO</div><div class="val">${e(segundoApellido)}</div></td>
+  <td colspan="2"><div class="lb">PRIMER NOMBRE</div><div class="val">${e(primerNombre)}</div></td>
+  <td><div class="lb">SEGUNDO NOMBRE</div><div class="val">${e(segundoNombre)}</div></td>
+  <td><div class="lb">TIPO DOC. IDENTIFICACI&#211;N</div><div class="val" style="font-size:7pt">CC/CI: ${(pac.tipo_documento_identificacion||'').toUpperCase().includes('CI')||!(pac.tipo_documento_identificacion) ? '&#x2713;' : '&#x25a1;'} PAS: ${(pac.tipo_documento_identificacion||'').toUpperCase().includes('PAS') ? '&#x2713;' : '&#x25a1;'} CARN&#201;: ${(pac.tipo_documento_identificacion||'').toUpperCase().includes('CARN') ? '&#x2713;' : '&#x25a1;'} S/D: &#x25a1;</div></td>
+</tr>
+<tr>
+  <td colspan="2"><div class="lb">ESTADO CIVIL</div><div class="val" style="font-size:7pt">SOL:${ecCheck('SOL')} CAS:${ecCheck('CAS')} DIV:${ecCheck('DIV')} VIU:${ecCheck('VIU')} U-H:${ecCheck('U-H')} NA:${ecCheck('NA')}</div></td>
+  <td><div class="lb">SEXO</div><div class="val">${e(pac.sexo === 'M' ? 'Masculino' : pac.sexo === 'F' ? 'Femenino' : pac.sexo || '')}</div></td>
+  <td><div class="lb">N&#176; TEL&#201;FONO FIJO</div><div class="val">${e(pac.telefono_fijo || '')}</div></td>
+  <td colspan="2"><div class="lb">N&#176; TEL&#201;FONO CELULAR</div><div class="val">${e(pac.telefono || '')}</div></td>
+  <td colspan="2"><div class="lb">FECHA DE NACIMIENTO (aaaa-mm-dd)</div><div class="val">${e((pac.fecha_nacimiento || '').slice(0, 10))}</div></td>
+</tr>
+<tr>
+  <td colspan="2"><div class="lb">LUGAR DE NACIMIENTO</div><div class="val">${e(pac.lugar_nacimiento || '')}</div></td>
+  <td><div class="lb">NACIONALIDAD</div><div class="val">${e(pac.nacionalidad || '')}</div></td>
+  <td><div class="lb">EDAD</div><div class="val" style="font-size:7pt">H: &nbsp; D: &nbsp; M: &nbsp; A: ${e(String(edadAnios))}</div></td>
+  <td><div class="lb">CONDICI&#211;N EDAD</div><div class="val">${e(pac.condicion_edad || '')}</div></td>
+  <td colspan="2"><div class="lb">GRUPO PRIORITARIO</div><div class="val" style="font-size:7pt">SI: &#x25a1; &nbsp; NO: &#x25a1;</div></td>
+  <td><div class="lb">ESPECIFIQUE</div><div class="val">${e(pac.grupo_prioritario_especifique || '')}</div></td>
+</tr>
+<tr>
+  <td colspan="2"><div class="lb">AUTOIDENTIFICACI&#211;N &#201;TNICA</div><div class="val">${e(pac.autoidentificacion_etnica || '')}</div></td>
+  <td colspan="2"><div class="lb">NACIONALIDAD &#201;TNICA</div><div class="val">${e(pac.nacionalidad_etnica || '')}</div></td>
+  <td colspan="2"><div class="lb">*PUEBLOS</div><div class="val">${e(pac.pueblo || '')}</div></td>
+  <td colspan="2"><div class="lb">NIVEL DE EDUCACI&#211;N</div><div class="val">${e(pac.nivel_educacion || '')}</div></td>
+</tr>
+<tr>
+  <td colspan="2"><div class="lb">ESTADO DEL NIVEL DE EDUCACI&#211;N</div><div class="val">${e(pac.estado_nivel_educacion || '')}</div></td>
+  <td colspan="2"><div class="lb">TIPO DE EMPRESA DE TRABAJO</div><div class="val">${e(pac.tipo_empresa_trabajo || '')}</div></td>
+  <td colspan="2"><div class="lb">OCUPACI&#211;N / PROFESI&#211;N</div><div class="val">${e(pac.ocupacion_profesion || '')}</div></td>
+  <td colspan="2"><div class="lb">SEGURO SALUD PRINCIPAL</div><div class="val" style="font-size:7pt">IESS-G:${seguroCheck('IESS-G')} IESS-C:${seguroCheck('IESS-C')} ISSPOL:${seguroCheck('ISSPOL')} ISSFA:${seguroCheck('ISSFA')} PRIV:${seguroCheck('PRIV')} NING:${seguroCheck('NING')}</div></td>
+</tr>
+<tr>
+  <td colspan="2"><div class="lb">PROVINCIA</div><div class="val">${e(pac.provincia || '')}</div></td>
+  <td colspan="2"><div class="lb">CANT&#211;N</div><div class="val">${e(pac.canton || '')}</div></td>
+  <td colspan="2"><div class="lb">PARROQUIA</div><div class="val">${e(pac.parroquia || '')}</div></td>
+  <td colspan="2"><div class="lb">BARRIO O SECTOR</div><div class="val">${e(pac.barrio_sector || '')}</div></td>
+</tr>
+<tr>
+  <td colspan="3"><div class="lb">CALLE PRINCIPAL</div><div class="val">${e(pac.calle_principal || '')}</div></td>
+  <td colspan="3"><div class="lb">CALLE SECUNDARIA</div><div class="val">${e(pac.calle_secundaria || '')}</div></td>
+  <td colspan="2"><div class="lb">REFERENCIA</div><div class="val">${e(pac.referencia_domicilio || '')}</div></td>
+</tr>
+<tr>
+  <td colspan="3"><div class="lb">EN CASO NECESARIO LLAMAR A:</div><div class="val">${e(pac.contacto_emergencia_nombre || '')}</div></td>
+  <td colspan="2"><div class="lb">PARENTESCO</div><div class="val">${e(pac.contacto_emergencia_parentesco || '')}</div></td>
+  <td colspan="2"><div class="lb">DIRECCI&#211;N</div><div class="val">${e(pac.contacto_emergencia_direccion || '')}</div></td>
+  <td><div class="lb">N&#176; TEL&#201;FONO</div><div class="val">${e(pac.contacto_emergencia_telefono || '')}</div></td>
+</tr>
+<tr>
+  <td colspan="2"><div class="lb">FORMA DE LLEGADA</div><div class="val" style="font-size:7pt">AMBULATORIO:${llegadaCheck('AMBULATORIO')} AMBULANCIA:${llegadaCheck('AMBULANC')} OTRO TRANSPORTE:${llegadaRaw && !llegadaRaw.includes('AMBULAT') && !llegadaRaw.includes('AMBULANC') && llegadaRaw ? '&#x2713;' : '&#x25a1;'}</div></td>
+  <td colspan="3"><div class="lb">FUENTE DE INFORMACI&#211;N</div><div class="val">${e(pac.fuente_informacion || '')}</div></td>
+  <td colspan="2"><div class="lb">INSTITUCI&#211;N O PERSONA QUE ENTREGA AL PACIENTE</div><div class="val">${e(pac.institucion_entrega_paciente || '')}</div></td>
+  <td><div class="lb">N&#176; TEL&#201;FONO</div><div class="val">${e(pac.telefono_institucion_entrega || '')}</div></td>
+</tr>
+</table>
+
+<div class="sh">C. INICIO DE ATENCI&#211;N</div>
+<table><tr>
+  <td style="width:18%"><div class="lb">FECHA (aaaa-mm-dd)</div><div class="val">${e(fechaCita)}</div></td>
+  <td style="width:12%"><div class="lb">HORA (hh:mm)</div><div class="val">${e(horaCita)}</div></td>
+  <td style="width:35%"><div class="lb">CONDICI&#211;N DE LLEGADA</div><div class="val" style="font-size:7pt">ESTABLE: &#x25a1; &nbsp; INESTABLE: &#x25a1; &nbsp; FALLECIDO: &#x25a1;</div></td>
+  <td style="width:35%"><div class="lb">MOTIVO DE ATENCI&#211;N</div><div class="val">${e(cita.motivo_consulta || '')}</div></td>
+</tr></table>
+
+<div class="sh">E. ANTECEDENTES PATOL&#211;GICOS PERSONALES Y FAMILIARES</div>
+<table>
+<tr>
+  <td style="width:20%"><div class="lb">1. AL&#201;RGICOS</div><div class="val ml" style="min-height:26px">${e(alergias)}</div></td>
+  <td style="width:20%"><div class="lb">3. GINECOL&#211;GICOS</div><div class="val ml" style="min-height:26px">${e(gineco)}</div></td>
+  <td style="width:20%"><div class="lb">5. PEDI&#193;TRICOS</div><div class="val ml" style="min-height:26px">${e(fmtPpf('pediatricos'))}</div></td>
+  <td style="width:20%"><div class="lb">7. FARMACOL&#211;GICOS</div><div class="val ml" style="min-height:26px">${e(medicamentos)}</div></td>
+  <td style="width:20%"><div class="lb">9. FAMILIARES</div><div class="val ml" style="min-height:26px">${e(familiares)}</div></td>
+</tr>
+<tr>
+  <td><div class="lb">2. CL&#205;NICOS</div><div class="val ml" style="min-height:26px">${e(fmtPpf('clinicos'))}</div></td>
+  <td><div class="lb">4. TRAUM ATOL&#211;GICOS</div><div class="val ml" style="min-height:26px">${e(fmtPpf('traumatologicos'))}</div></td>
+  <td><div class="lb">6. QUIR&#218;RGICOS</div><div class="val ml" style="min-height:26px">${e(fmtPpf('quirurgicos'))}</div></td>
+  <td><div class="lb">8. H&#193;BITOS</div><div class="val ml" style="min-height:26px">${e(habitos)}</div></td>
+  <td><div class="lb">10. OTROS</div><div class="val ml" style="min-height:26px">${e(fmtPpf('otros'))}</div></td>
+</tr>
+</table>
+
+<div class="sh">F. ENFERMEDAD O PROBLEMA ACTUAL <span style="font-size:6.5pt;font-weight:normal">(Cronolog&#237;a - Localizaci&#243;n - Caracter&#237;sticas - Intensidad - Frecuencia - Factores Agravantes)</span></div>
+<table><tr><td><div class="val ml" style="min-height:50px">${e(consulta?.historial_clinico || '')}</div></td></tr></table>
+
+<div class="sh">G. CONSTANTES VITALES Y ANTROPOMETR&#205;A</div>
+<table>
+<tr>
+  <td><div class="lb">PRESI&#211;N ARTERIAL (mmHg)</div><div class="val">${e(presionArterial)}</div></td>
+  <td><div class="lb">PULSO / min</div><div class="val">${e(String(pulso))}</div></td>
+  <td><div class="lb">FREC. RESPIRATORIA / min</div><div class="val">${e(String(frecResp))}</div></td>
+  <td><div class="lb">PULSIOXIMETR&#205;A (%)</div><div class="val">${e(String(pulsioximetria))}</div></td>
+  <td><div class="lb">PESO (kg)</div><div class="val">${e(String(peso))}</div></td>
+  <td><div class="lb">TALLA (cm)</div><div class="val">${e(String(talla))}</div></td>
+  <td><div class="lb">GLUCEMIA CAPILAR (mg/dl)</div><div class="val">${e(String(glucemia))}</div></td>
+  <td><div class="lb">PER&#205;METRO CEF&#193;LICO (cm)</div><div class="val">${e(String(perimetroCefalico))}</div></td>
+</tr>
+<tr>
+  <td colspan="3"><div class="lb">GLASGOW INICIAL</div><div class="val" style="font-size:7pt">OCULAR (4): ${e(String(glasgowOcular))} &nbsp; VERBAL (5): ${e(String(glasgowVerbal))} &nbsp; MOTORA (6): ${e(String(glasgowMotora))}</div></td>
+  <td colspan="2"><div class="lb">REACCI&#211;N PUPILAR</div><div class="val">${e(String(reaccionPupilar))}</div></td>
+  <td colspan="3"><div class="lb">S/N CONSTANTES VITALES</div><div class="val"></div></td>
+</tr>
+</table>
+
+<div class="sh">H. EXAMEN F&#205;SICO</div>
+<table>
+<tr>
+  <td style="width:20%"><div class="lb">1. PIEL - FANERAS</div><div class="val" style="min-height:12px"></div></td>
+  <td style="width:20%"><div class="lb">4. O&#205;DOS</div><div class="val" style="min-height:12px"></div></td>
+  <td style="width:20%"><div class="lb">7. ORO FARINGE</div><div class="val" style="min-height:12px"></div></td>
+  <td style="width:20%"><div class="lb">10. T&#211;RAX</div><div class="val" style="min-height:12px"></div></td>
+  <td style="width:20%"><div class="lb">13. INGLE-PERIN&#201;</div><div class="val" style="min-height:12px"></div></td>
+</tr>
+<tr>
+  <td><div class="lb">2. CABEZA</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">5. NARIZ</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">8. CUELLO</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">11. ABDOMEN</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">14. MIEMBROS SUPERIORES</div><div class="val" style="min-height:12px"></div></td>
+</tr>
+<tr>
+  <td><div class="lb">3. OJOS</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">6. BOCA</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">9. AXILAS - MAMAS</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">12. COLUMNA VERTEBRAL</div><div class="val" style="min-height:12px"></div></td>
+  <td><div class="lb">15. MIEMBROS INFERIORES</div><div class="val" style="min-height:12px"></div></td>
+</tr>
+<tr>
+  <td colspan="5"><div class="lb">OBSERVACIONES EXAMEN F&#205;SICO</div><div class="val ml" style="min-height:28px">${e(consulta?.pedido_examenes || '')}</div></td>
+</tr>
+</table>
+
+<table style="margin-top:1px"><tr>
+<td style="width:50%;vertical-align:top">
+  <div class="sh">L. DIAGN&#211;STICOS PRESUNTIVOS</div>
+  <table>
+    <tr><td><div class="lb">1.</div><div class="val ml" style="min-height:14px">${e(diagPresuntivo)}</div></td></tr>
+    <tr><td><div class="lb">2.</div><div class="val" style="min-height:12px"></div></td></tr>
+    <tr><td><div class="lb">3.</div><div class="val" style="min-height:12px"></div></td></tr>
+  </table>
+</td>
+<td style="width:50%;vertical-align:top">
+  <div class="sh">M. DIAGN&#211;STICOS DEFINITIVOS</div>
+  <table>
+    <tr><td><div class="lb">1.</div><div class="val ml" style="min-height:14px">${e(diagDefinitivo)}</div></td></tr>
+    <tr><td><div class="lb">2.</div><div class="val" style="min-height:12px"></div></td></tr>
+    <tr><td><div class="lb">3.</div><div class="val" style="min-height:12px"></div></td></tr>
+  </table>
+</td>
+</tr></table>
+
+<div class="sh">N. PLAN DE TRATAMIENTO</div>
+<table>
+<tr>
+  <th style="width:45%">MEDICAMENTOS</th>
+  <th style="width:10%">V&#205;A</th>
+  <th style="width:15%">DOSIS</th>
+  <th style="width:15%">POSOLOG&#205;A</th>
+  <th style="width:15%">D&#205;AS</th>
+</tr>
+${recetaRows}${recetaExtra}
+<tr><td colspan="5"><div class="lb">OBSERVACIONES / INDICACIONES</div><div class="val ml" style="min-height:20px">${e(consulta?.receta_indicaciones || consulta?.observaciones || '')}</div></td></tr>
+</table>
+
+<div class="sh">O. CONDICI&#211;N AL EGRESO</div>
+<table>
+<tr>
+  <td><div class="lb">VIVO</div><div class="val">&#x25a1;</div></td>
+  <td><div class="lb">ESTABLE</div><div class="val">&#x25a1;</div></td>
+  <td><div class="lb">INESTABLE</div><div class="val">&#x25a1;</div></td>
+  <td><div class="lb">FALLECIDO</div><div class="val">&#x25a1;</div></td>
+  <td><div class="lb">ALTA DEFINITIVA</div><div class="val">&#x25a1;</div></td>
+  <td><div class="lb">CONSULTA EXTERNA</div><div class="val">&#x2713;</div></td>
+  <td><div class="lb">OBSERVACI&#211;N</div><div class="val">&#x25a1;</div></td>
+  <td><div class="lb">D&#205;AS DE REPOSO</div><div class="val"></div></td>
+</tr>
+<tr>
+  <td><div class="lb">HOSPITALIZACI&#211;N</div><div class="val">${consulta?.pedido_hospitalizacion ? '&#x2713;' : '&#x25a1;'}</div></td>
+  <td colspan="2"><div class="lb">REFERENCIA</div><div class="val">&#x25a1;</div></td>
+  <td colspan="2"><div class="lb">REFERENCIA INVERSA</div><div class="val">&#x25a1;</div></td>
+  <td colspan="2"><div class="lb">DERIVACI&#211;N</div><div class="val">&#x25a1;</div></td>
+  <td><div class="lb">ESTABLECIMIENTO</div><div class="val"></div></td>
+</tr>
+<tr><td colspan="8"><div class="lb">OBSERVACIONES</div><div class="val ml" style="min-height:16px">${e(consulta?.observaciones || '')}</div></td></tr>
+</table>
+
+<div class="sh">P. DATOS DEL PROFESIONAL RESPONSABLE</div>
+<table><tr>
+  <td style="width:15%"><div class="lb">FECHA (aaaa-mm-dd)</div><div class="val">${e(fechaCita)}</div></td>
+  <td style="width:10%"><div class="lb">HORA (hh:mm)</div><div class="val">${e(horaCita)}</div></td>
+  <td style="width:35%"><div class="lb">NOMBRE COMPLETO</div><div class="val">${e(medicoNombre)}</div></td>
+  <td style="width:20%"><div class="lb">ESPECIALIDAD</div><div class="val">${e(especialidad)}</div></td>
+  <td style="width:20%"><div class="lb">FIRMA Y SELLO</div><div class="val" style="min-height:32px"></div></td>
+</tr></table>
+
+<div style="margin-top:6px;text-align:right;font-size:6.5pt;color:#555">SNS-MSP/HCU-form.008/2021</div>
+
+</div></body></html>`;
+
+    const win = window.open('', '_blank', 'width=900,height=1100');
+    if (!win) { toast.error('No se pudo abrir la ventana de impresión. Verifica el bloqueador de popups.'); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => { win.focus(); win.print(); }, 400);
+  };
+
   const signoActual = selectedPatientId ? getSignoVitalActual(selectedPatientId) : null;
   const currentIndex = selectedPatientId ? (signosVitalesIndex[selectedPatientId] || 0) : 0;
 
@@ -3260,6 +3909,20 @@ Si el código no existe, responde exactamente:
                                   <FileText className="size-3 mr-2" />
                                   Ver Detalles
                                 </Button>
+
+                                {/* Botón Formulario de Consulta Externa — solo citas atendidas */}
+                                {cita.estado_cita === 'atendida' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() => handleImprimirFormularioConsultaExterna(cita, consulta)}
+                                    title="Imprimir formulario SNS-MSP/HCU-form.008/2021"
+                                  >
+                                    <Printer className="size-3 mr-2" />
+                                    Formulario de Consulta Externa
+                                  </Button>
+                                )}
                               </div>
                             </CardContent>
                           </Card>
@@ -4086,20 +4749,70 @@ Si el código no existe, responde exactamente:
               />
             </div>
 
+            {/* Examen Físico */}
+            <div className="space-y-3 rounded-lg border border-orange-200 bg-orange-50 p-4">
+              <div>
+                <Label className="text-sm font-medium text-orange-900">Examen Físico</Label>
+                <p className="text-xs text-orange-700 mt-1">
+                  Marque los segmentos evaluados durante la exploración física.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {EXAMEN_FISICO_SEGMENTOS.map((segmento) => {
+                  const checked = examenFisicoSeleccionados.includes(segmento);
+
+                  return (
+                    <div
+                      key={segmento}
+                      className={`rounded-md border bg-white p-2 text-xs transition-colors ${checked ? 'border-orange-400' : 'border-orange-200'}`}
+                    >
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(value: boolean | 'indeterminate') => {
+                            setExamenFisicoSeleccionados((prev) =>
+                              value === true ? [...prev, segmento] : prev.filter((item) => item !== segmento)
+                            );
+                          }}
+                        />
+                        <span className="font-medium">{segmento}</span>
+                      </label>
+                      {checked && (
+                        <Textarea
+                          value={notasExamenFisico[segmento] || ''}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                            setNotasExamenFisico((prev) => ({ ...prev, [segmento]: e.target.value }))
+                          }
+                          placeholder={`Observaciones de ${segmento.toLowerCase()}...`}
+                          className="mt-2 min-h-[56px] bg-orange-50 text-xs"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-md border border-orange-200 bg-white p-2 text-xs text-orange-900">
+                {consultaForm.pedido_examenes || 'SIN EXAMEN FISICO REGISTRADO'}
+              </div>
+            </div>
+
             {/* Diagnóstico IA por código CIE-10 */}
             <div className="space-y-3 border border-purple-200 rounded-lg p-4 bg-purple-50">
               <div className="space-y-2">
                 <Label htmlFor="codigoCie10" className="text-sm font-medium text-purple-900 flex items-center gap-2">
                   <Brain className="size-4" />
-                  Código CIE-10
+                  Código CIE-10 o descripción clínica
                 </Label>
                 <div className="flex gap-2">
                   <Input
                     id="codigoCie10"
                     value={codigoCie10Input}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCodigoCie10Input(e.target.value.toUpperCase())}
-                    placeholder="EJ: J30.9"
-                    className="text-sm uppercase bg-white"
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCodigoCie10Input(e.target.value)}
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') handleAgregarDiagnosticoIA(); }}
+                    placeholder="Ej: J30.9  ó  dolor abdominal"
+                    className="text-sm bg-white"
                   />
                   <Button
                     type="button"
@@ -4168,56 +4881,62 @@ Si el código no existe, responde exactamente:
               </div>
             </div>
 
-            {/* Examen Físico */}
+            {/* Gestión de Laboratorio */}
             <div className="space-y-3 rounded-lg border border-orange-200 bg-orange-50 p-4">
-              <div>
-                <Label className="text-sm font-medium text-orange-900">Examen Físico</Label>
-                <p className="text-xs text-orange-700 mt-1">
-                  Marque los segmentos evaluados durante la exploración física.
-                </p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label className="text-sm font-medium text-orange-900">Gestión de Laboratorio</Label>
+                  <p className="text-xs text-orange-700 mt-1">
+                    Seleccione médico y exámenes desde el catálogo de laboratorio.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
+                    onClick={() => handleImprimirPedidoLaboratorio(
+                      pedidoLaboratorioActual,
+                      pacienteSeleccionado,
+                      {
+                        examenes: examenesLaboratorioSeleccionadosData,
+                        medicoNombre: medicoLaboratorioActual?.usuario
+                          ? `${medicoLaboratorioActual.usuario.nombre} ${medicoLaboratorioActual.usuario.apellido}`
+                          : undefined,
+                        observaciones: observacionesLaboratorio,
+                      }
+                    )}
+                    disabled={!pedidoLaboratorioActual && examenesLaboratorioSeleccionadosData.length === 0}
+                  >
+                    <Printer className="size-4 mr-2" />
+                    Imprimir gestión
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
+                    onClick={() => setIsLaboratorioDialogOpen(true)}
+                  >
+                    <Plus className="size-4 mr-2" />
+                    Gestionar laboratorio
+                  </Button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {EXAMEN_FISICO_SEGMENTOS.map((segmento) => {
-                  const checked = examenFisicoSeleccionados.includes(segmento);
-
-                  return (
-                    <label
-                      key={segmento}
-                      className="flex items-start gap-2 rounded-md border border-orange-200 bg-white p-2 text-xs cursor-pointer hover:border-orange-300"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(value) => {
-                          setExamenFisicoSeleccionados((prev) => {
-                            if (value === true) {
-                              return [...prev, segmento];
-                            }
-                            return prev.filter((item) => item !== segmento);
-                          });
-                        }}
-                      />
-                      <span>{segmento}</span>
-                    </label>
-                  );
-                })}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notaExamenFisico" className="text-xs font-medium text-orange-900">
-                  Nota adicional
-                </Label>
-                <Textarea
-                  id="notaExamenFisico"
-                  value={notaExamenFisico}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotaExamenFisico(e.target.value)}
-                  placeholder="Describa hallazgos del examen fisico..."
-                  className="min-h-[72px] bg-white text-xs"
-                />
-              </div>
-
-              <div className="rounded-md border border-orange-200 bg-white p-2 text-xs text-orange-900">
-                {consultaForm.pedido_examenes || 'SIN EXAMEN FISICO REGISTRADO'}
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
+                  {examenesLaboratorioSeleccionadosData.length} examen(es) seleccionado(s)
+                </Badge>
+                {medicoLaboratorioActual?.usuario && (
+                  <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
+                    Médico: {medicoLaboratorioActual.usuario.nombre} {medicoLaboratorioActual.usuario.apellido}
+                  </Badge>
+                )}
+                {pedidoLaboratorioActual && (
+                  <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
+                    Pedido #{pedidoLaboratorioActual.numero_pedido_laboratorio}
+                  </Badge>
+                )}
               </div>
             </div>
 
@@ -4329,65 +5048,6 @@ Si el código no existe, responde exactamente:
 
             </div>
 
-            {/* Gestión de Laboratorio */}
-            <div className="space-y-3 rounded-lg border border-orange-200 bg-orange-50 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <Label className="text-sm font-medium text-orange-900">Gestión de Laboratorio</Label>
-                  <p className="text-xs text-orange-700 mt-1">
-                    Seleccione médico y exámenes desde el catálogo de laboratorio.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
-                    onClick={() => handleImprimirPedidoLaboratorio(
-                      pedidoLaboratorioActual,
-                      pacienteSeleccionado,
-                      {
-                        examenes: examenesLaboratorioSeleccionadosData,
-                        medicoNombre: medicoLaboratorioActual?.usuario
-                          ? `${medicoLaboratorioActual.usuario.nombre} ${medicoLaboratorioActual.usuario.apellido}`
-                          : undefined,
-                        observaciones: observacionesLaboratorio,
-                      }
-                    )}
-                    disabled={!pedidoLaboratorioActual && examenesLaboratorioSeleccionadosData.length === 0}
-                  >
-                    <Printer className="size-4 mr-2" />
-                    Imprimir gestión
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
-                    onClick={() => setIsLaboratorioDialogOpen(true)}
-                  >
-                    <Plus className="size-4 mr-2" />
-                    Gestionar laboratorio
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
-                  {examenesLaboratorioSeleccionadosData.length} examen(es) seleccionado(s)
-                </Badge>
-                {medicoLaboratorioActual?.usuario && (
-                  <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
-                    Médico: {medicoLaboratorioActual.usuario.nombre} {medicoLaboratorioActual.usuario.apellido}
-                  </Badge>
-                )}
-                {pedidoLaboratorioActual && (
-                  <Badge variant="outline" className="bg-white border-orange-300 text-orange-800">
-                    Pedido #{pedidoLaboratorioActual.numero_pedido_laboratorio}
-                  </Badge>
-                )}
-              </div>
-            </div>
-
             {/* Fecha de Seguimiento */}
             <div className="space-y-2">
               <Label htmlFor="fechaSeguimiento" className="text-sm">Próxima Consulta / Fecha de Seguimiento</Label>
@@ -4414,9 +5074,37 @@ Si el código no existe, responde exactamente:
 
             {/* Interconsulta */}
             <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50 p-4">
-              <div className="flex items-center gap-2">
-                <ArrowLeftRight className="size-4 text-purple-700" />
-                <Label className="text-sm font-medium text-purple-900">Interconsulta</Label>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <ArrowLeftRight className="size-4 text-purple-700" />
+                  <div>
+                    <Label className="text-sm font-medium text-purple-900">Interconsulta</Label>
+                    <p className="text-xs text-purple-700 mt-1">
+                      Registre e imprima la solicitud de interconsulta con número secuencial.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {interconsultasActuales[0]?.numero_interconsulta && (
+                    <Badge variant="outline" className="bg-white border-purple-300 text-purple-800">
+                      N° {String(interconsultasActuales[0].numero_interconsulta).padStart(7, '0')}
+                    </Badge>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-purple-300 bg-white text-purple-800 hover:bg-purple-100"
+                    onClick={handleImprimirInterconsultaDesdeConsulta}
+                    disabled={isSavingInterconsulta}
+                  >
+                    {isSavingInterconsulta ? (
+                      <Loader2 className="size-4 mr-2 animate-spin" />
+                    ) : (
+                      <Printer className="size-4 mr-2" />
+                    )}
+                    Imprimir
+                  </Button>
+                </div>
               </div>
 
               {/* Formulario nueva interconsulta */}
@@ -4486,35 +5174,6 @@ Si el código no existe, responde exactamente:
                   )}
                 </div>
 
-                {/* Médico destino */}
-                <div className="space-y-1">
-                  <Label className="text-xs text-gray-600">Médico destino</Label>
-                  {interconsultaForm.tipo_destino === 'interno' ? (
-                    <Select
-                      value={interconsultaForm.id_usuario_destino?.toString() ?? ''}
-                      onValueChange={(v) => setInterconsultaForm({ ...interconsultaForm, id_usuario_destino: parseInt(v) })}
-                    >
-                      <SelectTrigger className="text-sm">
-                        <SelectValue placeholder="Seleccione médico" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {medicosParaInterconsulta.map((m) => (
-                          <SelectItem key={m.id_usuario} value={m.id_usuario.toString()}>
-                            {m.apellido} {m.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={interconsultaForm.medico_destino_externo}
-                      onChange={(e) => setInterconsultaForm({ ...interconsultaForm, medico_destino_externo: e.target.value })}
-                      placeholder="Nombre del médico externo (opcional)..."
-                      className="text-sm"
-                    />
-                  )}
-                </div>
-
                 {/* Fecha límite */}
                 <div className="space-y-1">
                   <Label className="text-xs text-gray-600">Fecha límite deseada (opcional)</Label>
@@ -4551,7 +5210,7 @@ Si el código no existe, responde exactamente:
                 <Button
                   type="button"
                   onClick={handleAgregarInterconsulta}
-                  disabled={isSavingInterconsulta || !interconsultaForm.motivo.trim()}
+                  disabled={isSavingInterconsulta || !interconsultaForm.motivo.trim() || interconsultasActuales.length > 0}
                   className="w-full bg-purple-700 text-white hover:bg-purple-800"
                 >
                   {isSavingInterconsulta ? (
@@ -4574,35 +5233,46 @@ Si el código no existe, responde exactamente:
                   <p className="text-xs font-medium text-purple-800">Interconsultas registradas:</p>
                   {interconsultasActuales.map((ic) => {
                     const destino = ic.tipo_destino === 'interno'
-                      ? `${ic.usuario_destino?.apellido ?? ''} ${ic.usuario_destino?.nombre ?? ''} · ${ic.especialidad?.nombre ?? 'Sin especialidad'}`
-                      : `${ic.medico_destino_externo ? ic.medico_destino_externo + ' · ' : ''}${ic.especialidad_destino_texto ?? 'Externo'}`;
-                    const estadoColors: Record<string, string> = {
-                      pendiente: 'bg-yellow-100 text-yellow-800',
-                      en_proceso: 'bg-blue-100 text-blue-800',
-                      atendida: 'bg-green-100 text-green-800',
-                      cancelada: 'bg-red-100 text-red-800',
-                    };
+                      ? (ic.especialidad?.nombre ?? 'Sin especialidad')
+                      : (ic.especialidad_destino_texto ?? 'Externo');
                     return (
                       <div key={ic.id_interconsulta} className="flex items-start justify-between gap-2 rounded border border-purple-100 bg-purple-50 p-2 text-xs">
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${estadoColors[ic.estado]}`}>{ic.estado.replace('_', ' ')}</span>
+                            {ic.numero_interconsulta && (
+                              <span className="rounded bg-white px-1.5 py-0.5 text-xs font-medium text-purple-700">
+                                N° {String(ic.numero_interconsulta).padStart(7, '0')}
+                              </span>
+                            )}
+                            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${getInterconsultaEstadoClass(ic.estado)}`}>
+                              {getInterconsultaEstadoLabel(ic.estado)}
+                            </span>
                             {ic.urgencia === 'urgente' && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">URGENTE</span>}
                             <span className="font-medium text-gray-800">{destino}</span>
                           </div>
                           <p className="text-gray-600">{ic.motivo}</p>
                           {ic.fecha_limite && <p className="text-gray-500">Límite: {new Date(ic.fecha_limite + 'T00:00:00').toLocaleDateString('es-ES')}</p>}
                         </div>
-                        {ic.estado === 'pendiente' && (
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleEliminarInterconsulta(ic.id_interconsulta)}
-                            className="text-red-400 hover:text-red-600 mt-0.5"
-                            title="Eliminar interconsulta"
+                            onClick={() => handleImprimirInterconsulta(ic)}
+                            className="text-purple-500 hover:text-purple-700 mt-0.5"
+                            title="Imprimir interconsulta"
                           >
-                            <Trash2 className="size-3.5" />
+                            <Printer className="size-3.5" />
                           </button>
-                        )}
+                          {ic.estado === 'PENDIENTE_AGENDAR' && (
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarInterconsulta(ic.id_interconsulta)}
+                              className="text-red-400 hover:text-red-600 mt-0.5"
+                              title="Eliminar interconsulta"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -4811,20 +5481,28 @@ Si el código no existe, responde exactamente:
           {consultaSeleccionada && (
             <div className="space-y-6">
               {/* Información del médico */}
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <h4 className="font-medium text-blue-900 mb-2">Información del Médico</h4>
-                <div className="text-sm text-blue-800">
-                  <p><strong>ID Médico:</strong> {consultaSeleccionada.id_usuario}</p>
-                  <p><strong>Fecha de Consulta:</strong> {new Date(consultaSeleccionada.fecha_consulta).toLocaleDateString('es-ES', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}</p>
-                </div>
-              </div>
+              {(() => {
+                const citaCons = citasPaciente.find(c => c.id_cita === consultaSeleccionada.id_cita);
+                const usu = citaCons?.usuario_sucursal?.usuario as any;
+                const medicoNombre = usu ? `${usu.nombre} ${usu.apellido}` : `Médico ID ${consultaSeleccionada.id_usuario}`;
+                const especialidad = citaCons?.usuario_sucursal?.especialidad;
+                return (
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h4 className="font-medium text-blue-900 mb-2">Información del Médico</h4>
+                    <div className="text-sm text-blue-800 space-y-1">
+                      <p><strong>Médico:</strong> {medicoNombre}{especialidad ? ` — ${especialidad}` : ''}</p>
+                      <p><strong>Fecha de Consulta:</strong> {new Date(consultaSeleccionada.fecha_consulta).toLocaleDateString('es-ES', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}</p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {isLoadingDetalleConsulta && (
                 <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -5056,6 +5734,45 @@ Si el código no existe, responde exactamente:
                 </div>
               )}
 
+              {/* Interconsultas */}
+              {interconsultasDetalle.length > 0 && (
+                <div className="space-y-3 rounded-lg border border-purple-200 bg-purple-50 p-4">
+                  <Label className="text-sm font-medium text-purple-900">
+                    Interconsultas ({interconsultasDetalle.length})
+                  </Label>
+                  <div className="space-y-3">
+                    {interconsultasDetalle.map((ic) => (
+                      <div key={ic.id_interconsulta} className="rounded-md border border-purple-200 bg-white p-3 text-sm space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ic.urgencia === 'urgente' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                            {ic.urgencia === 'urgente' ? 'URGENTE' : 'Normal'}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${getInterconsultaEstadoClass(ic.estado)}`}>
+                            {getInterconsultaEstadoLabel(ic.estado)}
+                          </span>
+                          <span className="text-xs text-gray-500 ml-auto">
+                            {ic.tipo_destino === 'interno' ? 'Interconsulta interna' : 'Interconsulta externa'}
+                          </span>
+                        </div>
+                        {ic.tipo_destino === 'externo' && (
+                          <p><span className="font-medium text-purple-800">Destino:</span> {ic.especialidad_destino_texto || '—'}</p>
+                        )}
+                        {(ic.especialidad?.nombre || ic.especialidad_destino_texto) && (
+                          <p><span className="font-medium text-purple-800">Especialidad:</span> {ic.especialidad?.nombre || ic.especialidad_destino_texto}</p>
+                        )}
+                        <p><span className="font-medium text-purple-800">Motivo:</span> {ic.motivo}</p>
+                        {ic.resumen_clinico && (
+                          <p><span className="font-medium text-purple-800">Resumen clínico:</span> {ic.resumen_clinico}</p>
+                        )}
+                        {ic.fecha_limite && (
+                          <p><span className="font-medium text-purple-800">Fecha límite:</span> {new Date(ic.fecha_limite + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Observaciones */}
               {consultaSeleccionada.observaciones && (
                 <div className="space-y-2">
@@ -5130,6 +5847,7 @@ Si el código no existe, responde exactamente:
           idUsuarioActual={idUsuarioActual}
           citaEditar={citaParaEditar}
           tipoUsuario={currentUser?.tipo_usuario}
+          currentUserName={currentUser?.name}
         />
       )}
 

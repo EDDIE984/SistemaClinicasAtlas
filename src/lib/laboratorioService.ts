@@ -146,7 +146,27 @@ export async function createPedidoLaboratorio(input: CrearPedidoLaboratorioInput
 
     const pedidoExistente = await getPedidoLaboratorioByCita(input.id_cita);
     if (pedidoExistente) {
-      return pedidoExistente;
+      // Actualizar observaciones y reemplazar detalle completo
+      await supabaseAdmin
+        .from('pedido_laboratorio')
+        .update({ observaciones: input.observaciones ?? null })
+        .eq('id_pedido_laboratorio', pedidoExistente.id_pedido_laboratorio);
+
+      await supabaseAdmin
+        .from('pedido_laboratorio_detalle')
+        .delete()
+        .eq('id_pedido_laboratorio', pedidoExistente.id_pedido_laboratorio);
+
+      await supabaseAdmin
+        .from('pedido_laboratorio_detalle')
+        .insert(
+          examenesUnicos.map((idExamen) => ({
+            id_pedido_laboratorio: pedidoExistente.id_pedido_laboratorio,
+            id_examen_laboratorio: idExamen,
+          }))
+        );
+
+      return getPedidoLaboratorioByCita(input.id_cita);
     }
 
     const { data: pedidoData, error: pedidoError } = await supabaseAdmin

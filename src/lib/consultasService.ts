@@ -16,6 +16,7 @@ export interface ConsultaMedica {
   observaciones: string | null;
   fecha_seguimiento: string | null;
   pedido_hospitalizacion: string | null;
+  numero_receta?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -115,6 +116,27 @@ export async function actualizarConsultaMedica(
     return data;
   } catch (error) {
     console.error('❌ Error inesperado al actualizar consulta médica:', error);
+    return null;
+  }
+}
+
+/**
+ * Obtiene o asigna el número de receta para una consulta.
+ * Si ya tiene número, lo devuelve. Si no, genera el siguiente de la secuencia y lo persiste.
+ */
+export async function getOrAssignNumeroReceta(idConsultaMedica: number): Promise<number | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .rpc('get_or_assign_numero_receta', { p_id_consulta: idConsultaMedica });
+
+    if (error) {
+      console.error('❌ Error al obtener/asignar número de receta:', error);
+      return null;
+    }
+
+    return data as number;
+  } catch (error) {
+    console.error('❌ Error inesperado al obtener/asignar número de receta:', error);
     return null;
   }
 }

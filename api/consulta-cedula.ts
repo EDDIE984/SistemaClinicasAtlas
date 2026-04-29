@@ -5,13 +5,29 @@ export default async function handler(
     request: VercelRequest,
     response: VercelResponse
 ) {
-    const { Cedula, Apikey } = request.query;
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
 
-    if (!Cedula || !Apikey) {
-        return response.status(400).json({ error: 'Faltan parámetros: Cedula y Apikey son requeridos.' });
+    if (request.method === 'OPTIONS') {
+        return response.status(204).end();
     }
 
-    const targetUrl = `http://nessoftfact-001-site6.atempurl.com/api/ConsultasDatos/ConsultaCedulaV2?Cedula=${Cedula}&Apikey=${Apikey}`;
+    const { Cedula } = request.query;
+    const cedula = Array.isArray(Cedula) ? Cedula[0] : Cedula;
+    const apiBaseUrl = process.env.CEDULA_API_BASE_URL;
+    const apiKey = process.env.CEDULA_API_KEY;
+
+    if (!cedula) {
+        return response.status(400).json({ error: 'Falta parámetro requerido: Cedula.' });
+    }
+
+    if (!apiBaseUrl || !apiKey) {
+        return response.status(500).json({
+            error: 'Servicio de consulta de cédula no configurado. Configure CEDULA_API_BASE_URL y CEDULA_API_KEY.'
+        });
+    }
+
+    const targetUrl = `${apiBaseUrl}?Cedula=${encodeURIComponent(cedula)}&Apikey=${encodeURIComponent(apiKey)}`;
 
     try {
         const apiResponse = await fetch(targetUrl, {
@@ -31,10 +47,6 @@ export default async function handler(
         }
 
         const data = await apiResponse.json();
-
-        // Configurar cabeceras de CORS para permitir peticiones desde el frontend en producción
-        response.setHeader('Access-Control-Allow-Origin', '*');
-        response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
 
         return response.status(200).json(data);
     } catch (error) {

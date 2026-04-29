@@ -1,6 +1,3 @@
-import { supabase } from './supabase';
-import { toast } from 'sonner';
-
 export interface DatosRegistroCivil {
     cedula: string;
     nombre: string;
@@ -26,29 +23,18 @@ export interface PersonaMapeada {
     fecha_nacimiento: string;
     sexo: 'M' | 'F' | 'Otro';
     direccion: string;
+    estado_civil: string;
+    nacionalidad: string;
+    lugar_nacimiento: string;
+    nivel_educacion: string;
+    ocupacion_profesion: string;
+    provincia: string;
+    canton: string;
+    parroquia: string;
+    barrio_sector: string;
+    calle_principal: string;
+    referencia_domicilio: string;
 }
-
-// Obtener API Key de la tabla rubros
-const getApiKey = async (): Promise<string | null> => {
-    try {
-        const { data, error } = await supabase
-            .from('rubros')
-            .select('valor_texto')
-            .eq('id', 1)
-            .single() as any;
-
-        if (error) {
-            console.error('Error al obtener API Key de rubros:', error);
-            return null;
-        }
-
-        const key = data?.valor_texto || null;
-        return key;
-    } catch (error) {
-        console.error('Error inesperado al obtener API Key:', error);
-        return null;
-    }
-};
 
 // Parsear nombre completo (Asumiendo formato: APELLIDO1 APELLIDO2 NOMBRE1 NOMBRE2)
 const parsearNombre = (nombreCompleto: string): { nombres: string, apellidos: string } => {
@@ -92,19 +78,32 @@ const parsearGenero = (genero: string): 'M' | 'F' | 'Otro' => {
     return 'Otro';
 };
 
+const parsearEstadoCivil = (estadoCivil: string): string => {
+    const estado = (estadoCivil || '').toUpperCase();
+    if (estado.includes('SOLTER')) return 'SOL';
+    if (estado.includes('CASAD')) return 'CAS';
+    if (estado.includes('DIVORCI')) return 'DIV';
+    if (estado.includes('VIUD')) return 'VIU';
+    if (estado.includes('UNION') || estado.includes('UNIÓN')) return 'U';
+    return '';
+};
+
+const parsearUbicacion = (ubicacion: string): { provincia: string; canton: string; parroquia: string } => {
+    const partes = (ubicacion || '').split('/').map((parte) => parte.trim()).filter(Boolean);
+    return {
+        provincia: partes[0] || '',
+        canton: partes[1] || '',
+        parroquia: partes[2] || '',
+    };
+};
+
 // Función principal para consultar cédula
 export const consultarCedulaRegistroCivil = async (cedula: string): Promise<PersonaMapeada | null> => {
     if (!cedula || cedula.length < 10) return null;
 
     try {
-        const apiKey = await getApiKey();
-        if (!apiKey) {
-            console.warn('No se encontró API Key para consulta de registro civil');
-            return null;
-        }
-
-        // Usar el nuevo proxy serverless interno de Vercel para evitar errores CORS y 403
-        const proxyUrl = `/api/consulta-cedula?Cedula=${cedula}&Apikey=${apiKey}`;
+        // Usar proxy serverless interno para evitar CORS y mantener el API key fuera del navegador.
+        const proxyUrl = `/api/consulta-cedula?Cedula=${encodeURIComponent(cedula)}`;
 
         console.log('Fetching via Internal Proxy:', proxyUrl);
 
@@ -113,8 +112,14 @@ export const consultarCedulaRegistroCivil = async (cedula: string): Promise<Pers
         console.log('Response status:', response.status);
 
         if (!response.ok) {
-            console.error('Error en respuesta de API Registro Civil:', response.statusText);
-            return null;
+            let detalle = response.statusText;
+            try {
+                const errorData = await response.json();
+                detalle = errorData?.error || errorData?.details || detalle;
+            } catch {
+                // Mantener statusText si el cuerpo no es JSON.
+            }
+            throw new Error(`No se pudo consultar la API de cédula (${response.status}): ${detalle}`);
         }
 
         const data: any = await response.json();
@@ -124,6 +129,11 @@ export const consultarCedulaRegistroCivil = async (cedula: string): Promise<Pers
         const nombreCompleto = data.nombre || data.Nombre;
         const fechaNacimiento = data.fechaNacimiento || data.FechaNacimiento;
         const genero = data.genero || data.Genero;
+        const estadoCivil = data.estadoCivil || data.EstadoCivil;
+        const nacionalidad = data.nacionalidad || data.Nacionalidad;
+        const lugarNacimiento = data.lugarNacimiento || data.LugarNacimiento;
+        const instruccion = data.instruccion || data.Instruccion;
+        const profesion = data.profesion || data.Profesion;
         const lugarDomicilio = data.lugarDomicilio || data.LugarDomicilio;
         const calleDomicilio = data.calleDomicilio || data.CalleDomicilio;
         const numeracionDomicilio = data.numeracionDomicilio || data.NumeracionDomicilio;
@@ -139,19 +149,29 @@ export const consultarCedulaRegistroCivil = async (cedula: string): Promise<Pers
         // Construir dirección
         const direccionPartes = [lugarDomicilio, calleDomicilio, numeracionDomicilio].filter(Boolean);
         const direccion = direccionPartes.join(', ');
-
-        toast.success('¡Datos recuperados exitosamente!');
+        const residencia = parsearUbicacion(lugarDomicilio);
 
         return {
             nombres,
             apellidos,
             fecha_nacimiento: parsearFecha(fechaNacimiento),
             sexo: parsearGenero(genero),
-            direccion
+            direccion,
+            estado_civil: parsearEstadoCivil(estadoCivil),
+            nacionalidad: nacionalidad || '',
+            lugar_nacimiento: lugarNacimiento || '',
+            nivel_educacion: instruccion || '',
+            ocupacion_profesion: profesion || '',
+            provincia: residencia.provincia,
+            canton: residencia.canton,
+            parroquia: residencia.parroquia,
+            barrio_sector: residencia.parroquia,
+            calle_principal: calleDomicilio || '',
+            referencia_domicilio: numeracionDomicilio || ''
         };
 
     } catch (error) {
         console.error('Error al consultar registro civil:', error);
-        return null;
+        throw error;
     }
 };

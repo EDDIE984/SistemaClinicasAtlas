@@ -1,5 +1,5 @@
 // Modal para agendar citas integrado con Supabase
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -13,6 +13,7 @@ import { Plus, Search, Pencil, Edit, Loader2, FileText, Calendar, Clock, X, XCir
 import { getAllPacientes } from '../lib/pacientesService';
 import { getAsignacionesCompletasByUsuario, getSucursalesByCompania, getMedicosBySucursal, type AsignacionCompleta } from '../lib/authService';
 import { createCita, updateCita, generarHorariosDisponibles, canModificarCita, type CitaCompleta } from '../lib/citasService';
+import { asignarCitaInterconsulta } from '../lib/interconsultaService';
 import { updatePaciente } from '../lib/pacientesService'; // Import updatePaciente
 import { consultarCedulaRegistroCivil } from '../lib/registroCivilService'; // Import automatic ID lookup
 import { getAllEspecialidades, type Especialidad, getAllAseguradoras, type Aseguradora } from '../lib/configuracionesService'; // Import getAllEspecialidades and insurers
@@ -25,10 +26,60 @@ interface AgendarCitaModalProps {
   idUsuarioActual: number | null;
   citaEditar?: CitaCompleta | null;
   tipoUsuario?: string;
+  currentUserName?: string;
+  headerActions?: ReactNode;
+  idInterconsulta?: number | null;
 }
 
-export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUsuarioActual, citaEditar, tipoUsuario }: AgendarCitaModalProps) {
+const getNuevoPacienteInicial = () => ({
+  nombres: '',
+  apellidos: '',
+  cedula: '',
+  fecha_nacimiento: '',
+  sexo: 'M' as 'M' | 'F' | 'Otro',
+  telefono: '',
+  email: '',
+  direccion: '',
+  id_sucursal: null as number | null,
+  nombre_sucursal: '',
+  nombre_admisionista: '',
+  historia_clinica_establecimiento: '',
+  tipo_documento_identificacion: 'CC/CI',
+  estado_civil: '',
+  telefono_fijo: '',
+  lugar_nacimiento: '',
+  nacionalidad: '',
+  condicion_edad: '',
+  grupo_prioritario: '',
+  grupo_prioritario_especifique: '',
+  autoidentificacion_etnica: '',
+  nacionalidad_etnica: '',
+  pueblo: '',
+  nivel_educacion: '',
+  estado_nivel_educacion: '',
+  tipo_empresa_trabajo: '',
+  ocupacion_profesion: '',
+  seguro_salud_principal: '',
+  provincia: '',
+  canton: '',
+  parroquia: '',
+  barrio_sector: '',
+  calle_principal: '',
+  calle_secundaria: '',
+  referencia_domicilio: '',
+  contacto_emergencia_nombre: '',
+  contacto_emergencia_parentesco: '',
+  contacto_emergencia_direccion: '',
+  contacto_emergencia_telefono: '',
+  forma_llegada: '',
+  fuente_informacion: '',
+  institucion_entrega_paciente: '',
+  telefono_institucion_entrega: ''
+});
+
+export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUsuarioActual, citaEditar, tipoUsuario, currentUserName, headerActions, idInterconsulta }: AgendarCitaModalProps) {
   const [windowState, setWindowState] = useState<'normal' | 'minimized'>('normal');
+  const nombreAdmisionistaActual = currentUserName || localStorage.getItem('currentUserName') || '';
 
   useEffect(() => {
     if (isOpen && windowState === 'minimized') {
@@ -48,18 +99,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
   const [pacientes, setPacientes] = useState<any[]>([]);
 
   // Estado para nuevo paciente
-  const [nuevoPaciente, setNuevoPaciente] = useState({
-    nombres: '',
-    apellidos: '',
-    cedula: '',
-    fecha_nacimiento: '',
-    sexo: 'M',
-    telefono: '',
-    email: '',
-    direccion: '',
-    id_sucursal: null as number | null,
-    nombre_sucursal: '' // Para mostrar el nombre
-  });
+  const [nuevoPaciente, setNuevoPaciente] = useState(getNuevoPacienteInicial());
 
   // Paso 2: Detalles de la cita
   const [selectedAsignacion, setSelectedAsignacion] = useState('');
@@ -87,6 +127,16 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
   // Estado para edición de paciente
   const [isEditingPatient, setIsEditingPatient] = useState(false);
+
+  const setSucursalNuevoPaciente = (sucursal: any) => {
+    setNuevoPaciente(prev => ({
+      ...prev,
+      id_sucursal: sucursal.id_sucursal,
+      nombre_sucursal: sucursal.compania?.nombre
+        ? `${sucursal.compania.nombre} - ${sucursal.nombre}`
+        : sucursal.nombre
+    }));
+  };
 
   // Cargar pacientes
   useEffect(() => {
@@ -162,6 +212,35 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
       }
     }
   }, [step, asignaciones]);
+
+  useEffect(() => {
+    if (step !== 'nuevoPaciente') return;
+
+    setNuevoPaciente(prev => ({
+      ...prev,
+      nombre_admisionista: nombreAdmisionistaActual.toUpperCase()
+    }));
+
+    const cargarSucursalesNuevoPaciente = async () => {
+      const companiaId = localStorage.getItem('currentCompaniaId');
+      if (!companiaId) return;
+
+      const data = await getSucursalesByCompania(parseInt(companiaId));
+      setSucursalesDisponibles(data);
+
+      const sucursalActualId = localStorage.getItem('currentSucursalId');
+      const sucursalActual = sucursalActualId
+        ? data.find((s: any) => s.id_sucursal.toString() === sucursalActualId)
+        : null;
+      const sucursalPorDefecto = sucursalActual || data[0];
+
+      if (sucursalPorDefecto) {
+        setSucursalNuevoPaciente(sucursalPorDefecto);
+      }
+    };
+
+    cargarSucursalesNuevoPaciente();
+  }, [step, nombreAdmisionistaActual]);
 
   const loadPacientes = async () => {
     // Obtener id_compania desde localStorage para filtrar
@@ -450,8 +529,12 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
   // Consultar datos de registro civil al perder foco en cédula
   const handleBlurCedula = async () => {
-    const cedula = nuevoPaciente.cedula;
-    if (!cedula || cedula.length < 10) return;
+    const cedula = nuevoPaciente.cedula.trim();
+    if (!cedula) return;
+    if (cedula.length < 10) {
+      toast.warning('Ingrese una cédula de al menos 10 dígitos para consultar datos');
+      return;
+    }
 
     setIsSearchingCedula(true);
     try {
@@ -463,12 +546,26 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
           apellidos: datos.apellidos || prev.apellidos,
           fecha_nacimiento: datos.fecha_nacimiento || prev.fecha_nacimiento,
           sexo: datos.sexo,
-          direccion: datos.direccion || prev.direccion
+          direccion: datos.direccion || prev.direccion,
+          estado_civil: datos.estado_civil || prev.estado_civil,
+          nacionalidad: datos.nacionalidad || prev.nacionalidad,
+          lugar_nacimiento: datos.lugar_nacimiento || prev.lugar_nacimiento,
+          nivel_educacion: datos.nivel_educacion || prev.nivel_educacion,
+          ocupacion_profesion: datos.ocupacion_profesion || prev.ocupacion_profesion,
+          provincia: datos.provincia || prev.provincia,
+          canton: datos.canton || prev.canton,
+          parroquia: datos.parroquia || prev.parroquia,
+          barrio_sector: datos.barrio_sector || prev.barrio_sector,
+          calle_principal: datos.calle_principal || prev.calle_principal,
+          referencia_domicilio: datos.referencia_domicilio || prev.referencia_domicilio
         }));
         toast.success('Datos encontrados y cargados');
+      } else {
+        toast.warning('No se encontraron datos para la cédula ingresada');
       }
     } catch (error) {
       console.error('Error al consultar cédula:', error);
+      toast.error(error instanceof Error ? error.message : 'No se pudo consultar la API de cédula');
     } finally {
       setIsSearchingCedula(false);
     }
@@ -480,6 +577,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
     if (pacienteData) {
       setNuevoPaciente({
+        ...getNuevoPacienteInicial(),
         nombres: pacienteData.nombres,
         apellidos: pacienteData.apellidos,
         cedula: pacienteData.cedula,
@@ -488,8 +586,39 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
         telefono: pacienteData.telefono || '',
         email: pacienteData.email || '',
         direccion: pacienteData.direccion || '',
-        id_sucursal: null,
-        nombre_sucursal: ''
+        nombre_admisionista: pacienteData.nombre_admisionista || '',
+        historia_clinica_establecimiento: pacienteData.historia_clinica_establecimiento || '',
+        tipo_documento_identificacion: pacienteData.tipo_documento_identificacion || 'CC/CI',
+        estado_civil: pacienteData.estado_civil || '',
+        telefono_fijo: pacienteData.telefono_fijo || '',
+        lugar_nacimiento: pacienteData.lugar_nacimiento || '',
+        nacionalidad: pacienteData.nacionalidad || '',
+        condicion_edad: pacienteData.condicion_edad || '',
+        grupo_prioritario: pacienteData.grupo_prioritario || '',
+        grupo_prioritario_especifique: pacienteData.grupo_prioritario_especifique || '',
+        autoidentificacion_etnica: pacienteData.autoidentificacion_etnica || '',
+        nacionalidad_etnica: pacienteData.nacionalidad_etnica || '',
+        pueblo: pacienteData.pueblo || '',
+        nivel_educacion: pacienteData.nivel_educacion || '',
+        estado_nivel_educacion: pacienteData.estado_nivel_educacion || '',
+        tipo_empresa_trabajo: pacienteData.tipo_empresa_trabajo || '',
+        ocupacion_profesion: pacienteData.ocupacion_profesion || '',
+        seguro_salud_principal: pacienteData.seguro_salud_principal || '',
+        provincia: pacienteData.provincia || '',
+        canton: pacienteData.canton || '',
+        parroquia: pacienteData.parroquia || '',
+        barrio_sector: pacienteData.barrio_sector || '',
+        calle_principal: pacienteData.calle_principal || '',
+        calle_secundaria: pacienteData.calle_secundaria || '',
+        referencia_domicilio: pacienteData.referencia_domicilio || '',
+        contacto_emergencia_nombre: pacienteData.contacto_emergencia_nombre || '',
+        contacto_emergencia_parentesco: pacienteData.contacto_emergencia_parentesco || '',
+        contacto_emergencia_direccion: pacienteData.contacto_emergencia_direccion || '',
+        contacto_emergencia_telefono: pacienteData.contacto_emergencia_telefono || '',
+        forma_llegada: pacienteData.forma_llegada || '',
+        fuente_informacion: pacienteData.fuente_informacion || '',
+        institucion_entrega_paciente: pacienteData.institucion_entrega_paciente || '',
+        telefono_institucion_entrega: pacienteData.telefono_institucion_entrega || ''
       });
       setIsEditingPatient(true);
       setStep('nuevoPaciente');
@@ -541,11 +670,45 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
           nombres: nuevoPaciente.nombres,
           apellidos: nuevoPaciente.apellidos,
           cedula: nuevoPaciente.cedula,
+          id_sucursal: nuevoPaciente.id_sucursal,
           fecha_nacimiento: nuevoPaciente.fecha_nacimiento,
           sexo: nuevoPaciente.sexo as 'M' | 'F' | 'Otro',
           telefono: nuevoPaciente.telefono || null,
           email: nuevoPaciente.email || null,
           direccion: nuevoPaciente.direccion || null,
+          nombre_admisionista: nuevoPaciente.nombre_admisionista || null,
+          historia_clinica_establecimiento: nuevoPaciente.historia_clinica_establecimiento || null,
+          tipo_documento_identificacion: nuevoPaciente.tipo_documento_identificacion || null,
+          estado_civil: nuevoPaciente.estado_civil || null,
+          telefono_fijo: nuevoPaciente.telefono_fijo || null,
+          lugar_nacimiento: nuevoPaciente.lugar_nacimiento || null,
+          nacionalidad: nuevoPaciente.nacionalidad || null,
+          condicion_edad: nuevoPaciente.condicion_edad || null,
+          grupo_prioritario: nuevoPaciente.grupo_prioritario || null,
+          grupo_prioritario_especifique: nuevoPaciente.grupo_prioritario_especifique || null,
+          autoidentificacion_etnica: nuevoPaciente.autoidentificacion_etnica || null,
+          nacionalidad_etnica: nuevoPaciente.nacionalidad_etnica || null,
+          pueblo: nuevoPaciente.pueblo || null,
+          nivel_educacion: nuevoPaciente.nivel_educacion || null,
+          estado_nivel_educacion: nuevoPaciente.estado_nivel_educacion || null,
+          tipo_empresa_trabajo: nuevoPaciente.tipo_empresa_trabajo || null,
+          ocupacion_profesion: nuevoPaciente.ocupacion_profesion || null,
+          seguro_salud_principal: nuevoPaciente.seguro_salud_principal || null,
+          provincia: nuevoPaciente.provincia || null,
+          canton: nuevoPaciente.canton || null,
+          parroquia: nuevoPaciente.parroquia || null,
+          barrio_sector: nuevoPaciente.barrio_sector || null,
+          calle_principal: nuevoPaciente.calle_principal || null,
+          calle_secundaria: nuevoPaciente.calle_secundaria || null,
+          referencia_domicilio: nuevoPaciente.referencia_domicilio || null,
+          contacto_emergencia_nombre: nuevoPaciente.contacto_emergencia_nombre || null,
+          contacto_emergencia_parentesco: nuevoPaciente.contacto_emergencia_parentesco || null,
+          contacto_emergencia_direccion: nuevoPaciente.contacto_emergencia_direccion || null,
+          contacto_emergencia_telefono: nuevoPaciente.contacto_emergencia_telefono || null,
+          forma_llegada: nuevoPaciente.forma_llegada || null,
+          fuente_informacion: nuevoPaciente.fuente_informacion || null,
+          institucion_entrega_paciente: nuevoPaciente.institucion_entrega_paciente || null,
+          telefono_institucion_entrega: nuevoPaciente.telefono_institucion_entrega || null,
         });
 
         if (success) {
@@ -562,6 +725,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
         // CREAR PACIENTE
         const pacienteCreado = await createPaciente({
           id_compania: parseInt(companiaId),
+          id_sucursal: nuevoPaciente.id_sucursal,
           nombres: nuevoPaciente.nombres,
           apellidos: nuevoPaciente.apellidos,
           cedula: nuevoPaciente.cedula,
@@ -570,7 +734,40 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
           telefono: nuevoPaciente.telefono || null,
           email: nuevoPaciente.email || null,
           direccion: nuevoPaciente.direccion || null,
-          fecha_registro: new Date().toISOString().split('T')[0]
+          fecha_registro: new Date().toISOString().split('T')[0],
+          nombre_admisionista: nuevoPaciente.nombre_admisionista || null,
+          historia_clinica_establecimiento: nuevoPaciente.historia_clinica_establecimiento || null,
+          tipo_documento_identificacion: nuevoPaciente.tipo_documento_identificacion || null,
+          estado_civil: nuevoPaciente.estado_civil || null,
+          telefono_fijo: nuevoPaciente.telefono_fijo || null,
+          lugar_nacimiento: nuevoPaciente.lugar_nacimiento || null,
+          nacionalidad: nuevoPaciente.nacionalidad || null,
+          condicion_edad: nuevoPaciente.condicion_edad || null,
+          grupo_prioritario: nuevoPaciente.grupo_prioritario || null,
+          grupo_prioritario_especifique: nuevoPaciente.grupo_prioritario_especifique || null,
+          autoidentificacion_etnica: nuevoPaciente.autoidentificacion_etnica || null,
+          nacionalidad_etnica: nuevoPaciente.nacionalidad_etnica || null,
+          pueblo: nuevoPaciente.pueblo || null,
+          nivel_educacion: nuevoPaciente.nivel_educacion || null,
+          estado_nivel_educacion: nuevoPaciente.estado_nivel_educacion || null,
+          tipo_empresa_trabajo: nuevoPaciente.tipo_empresa_trabajo || null,
+          ocupacion_profesion: nuevoPaciente.ocupacion_profesion || null,
+          seguro_salud_principal: nuevoPaciente.seguro_salud_principal || null,
+          provincia: nuevoPaciente.provincia || null,
+          canton: nuevoPaciente.canton || null,
+          parroquia: nuevoPaciente.parroquia || null,
+          barrio_sector: nuevoPaciente.barrio_sector || null,
+          calle_principal: nuevoPaciente.calle_principal || null,
+          calle_secundaria: nuevoPaciente.calle_secundaria || null,
+          referencia_domicilio: nuevoPaciente.referencia_domicilio || null,
+          contacto_emergencia_nombre: nuevoPaciente.contacto_emergencia_nombre || null,
+          contacto_emergencia_parentesco: nuevoPaciente.contacto_emergencia_parentesco || null,
+          contacto_emergencia_direccion: nuevoPaciente.contacto_emergencia_direccion || null,
+          contacto_emergencia_telefono: nuevoPaciente.contacto_emergencia_telefono || null,
+          forma_llegada: nuevoPaciente.forma_llegada || null,
+          fuente_informacion: nuevoPaciente.fuente_informacion || null,
+          institucion_entrega_paciente: nuevoPaciente.institucion_entrega_paciente || null,
+          telefono_institucion_entrega: nuevoPaciente.telefono_institucion_entrega || null
         });
 
         if (pacienteCreado) {
@@ -584,18 +781,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
           setSelectedPacienteId(pacienteCreado.id_paciente.toString());
 
           // Limpiar formulario y volver
-          setNuevoPaciente({
-            nombres: '',
-            apellidos: '',
-            cedula: '',
-            fecha_nacimiento: '',
-            sexo: 'M',
-            telefono: '',
-            email: '',
-            direccion: '',
-            id_sucursal: null,
-            nombre_sucursal: ''
-          });
+          setNuevoPaciente(getNuevoPacienteInicial());
 
           // Si se creó, usualmente volvemos a selección o vamos a detalles?
           // El flujo original iba a 'paciente' (selección), podemos mantenerlo o ir a detalles
@@ -606,7 +792,11 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
       }
     } catch (error) {
       console.error('Error al guardar paciente:', error);
-      toast.error('Error al guardar el paciente');
+      if (error instanceof Error && error.message === 'CEDULA_DUPLICADA') {
+        toast.error(`Ya existe un paciente con la cédula ${nuevoPaciente.cedula}`);
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Error al guardar el paciente');
+      }
     }
 
     setIsLoading(false);
@@ -758,10 +948,14 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
           estado_cita: 'agendada',
           precio_cita: precio,
           id_aseguradora: parseInt(idAseguradora),
-          referencia: referencia
+          referencia: referencia,
+          ...(idInterconsulta ? { id_interconsulta: idInterconsulta } : {}),
         });
 
         if (nuevaCita) {
+          if (idInterconsulta) {
+            await asignarCitaInterconsulta(idInterconsulta, nuevaCita.id_cita);
+          }
           toast.success('Cita agendada exitosamente');
           onCitaAgendada();
           handleClose();
@@ -792,18 +986,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
     setTipoCita('consulta');
     setMotivoConsulta('');
     setReferencia('');
-    setNuevoPaciente({
-      nombres: '',
-      apellidos: '',
-      cedula: '',
-      fecha_nacimiento: '',
-      sexo: 'M',
-      telefono: '',
-      email: '',
-      direccion: '',
-      id_sucursal: null,
-      nombre_sucursal: ''
-    });
+    setNuevoPaciente(getNuevoPacienteInicial());
     setIsModificacionPermitida(true);
     onClose();
   };
@@ -811,7 +994,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
   return (
     <>
       <Dialog open={isOpen && windowState !== 'minimized'} onOpenChange={handleClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[98vw] sm:!max-w-[98vw] xl:!max-w-[1536px] max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader className="relative">
             <div className="absolute left-0 top-0 -translate-y-1">
               <Button
@@ -834,6 +1017,11 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
               {step === 'nuevoPaciente' && 'Complete los datos del nuevo paciente'}
               {step === 'detalles' && (modoEdicion ? 'Modifique los datos de la cita médica' : 'Complete la información de la cita médica')}
             </DialogDescription>
+            {headerActions && (
+              <div className="absolute right-8 top-0 flex items-center gap-2">
+                {headerActions}
+              </div>
+            )}
           </DialogHeader>
 
           {step === 'paciente' ? (
@@ -895,16 +1083,41 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
             </div>
           ) : step === 'nuevoPaciente' ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2 col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div className="space-y-2 sm:col-span-2">
                   <Label>Sucursal *</Label>
+                  <Select
+                    value={nuevoPaciente.id_sucursal ? nuevoPaciente.id_sucursal.toString() : ''}
+                    onValueChange={(value: string) => {
+                      const sucursal = sucursalesDisponibles.find((s: any) => s.id_sucursal.toString() === value);
+                      if (sucursal) setSucursalNuevoPaciente(sucursal);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione sucursal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sucursalesDisponibles.map((sucursal: any) => (
+                        <SelectItem key={sucursal.id_sucursal} value={sucursal.id_sucursal.toString()}>
+                          {sucursal.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Nombre y apellido del admisionista</Label>
                   <Input
-                    value={nuevoPaciente.nombre_sucursal}
+                    value={nuevoPaciente.nombre_admisionista}
                     disabled
-                    className="bg-gray-50 text-gray-600"
-                    placeholder="Cargando sucursal..."
+                    placeholder="USUARIO LOGEADO"
+                    className="uppercase bg-gray-50 text-gray-600"
                   />
-                  <p className="text-xs text-gray-500">Se asignará automáticamente a su sucursal actual</p>
+                </div>
+
+                <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Identificación</h3>
                 </div>
 
                 <div className="space-y-2">
@@ -921,7 +1134,41 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Nombres *</Label>
+                  <Label>Tipo de documento</Label>
+                  <Select
+                    value={nuevoPaciente.tipo_documento_identificacion}
+                    onValueChange={(value: string) => setNuevoPaciente({ ...nuevoPaciente, tipo_documento_identificacion: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CC/CI">CC/CI</SelectItem>
+                      <SelectItem value="PAS">Pasaporte</SelectItem>
+                      <SelectItem value="CARNE">Carné</SelectItem>
+                      <SelectItem value="SD">S/D</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Historia clínica en establecimiento</Label>
+                  <Select
+                    value={nuevoPaciente.historia_clinica_establecimiento}
+                    onValueChange={(value: string) => setNuevoPaciente({ ...nuevoPaciente, historia_clinica_establecimiento: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SI">Sí</SelectItem>
+                      <SelectItem value="NO">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Primer y segundo nombre *</Label>
                   <Input
                     value={nuevoPaciente.nombres}
                     onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, nombres: e.target.value.toUpperCase() })}
@@ -931,13 +1178,38 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Apellidos *</Label>
+                  <Label>Primer y segundo apellido *</Label>
                   <Input
                     value={nuevoPaciente.apellidos}
                     onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, apellidos: e.target.value.toUpperCase() })}
                     placeholder="Apellidos"
                     className="uppercase"
                   />
+                </div>
+
+                <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Datos personales</h3>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Estado civil</Label>
+                  <Select
+                    value={nuevoPaciente.estado_civil}
+                    onValueChange={(value: string) => setNuevoPaciente({ ...nuevoPaciente, estado_civil: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SOL">Soltero/a</SelectItem>
+                      <SelectItem value="CAS">Casado/a</SelectItem>
+                      <SelectItem value="DIV">Divorciado/a</SelectItem>
+                      <SelectItem value="VIU">Viudo/a</SelectItem>
+                      <SelectItem value="U">Unión libre</SelectItem>
+                      <SelectItem value="UH">Unión de hecho</SelectItem>
+                      <SelectItem value="NA">No aplica</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
@@ -967,6 +1239,24 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Teléfono celular * (Ej: +593984035410)</Label>
+                  <Input
+                    value={nuevoPaciente.telefono}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, telefono: e.target.value })}
+                    placeholder="+593984035410"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Teléfono fijo</Label>
+                  <Input
+                    value={nuevoPaciente.telefono_fijo}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, telefono_fijo: e.target.value })}
+                    placeholder="022000000"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label>Email *</Label>
                   <Input
                     type="email"
@@ -976,21 +1266,335 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
                     className="uppercase"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Teléfono * (Ej: +593984035410)</Label>
+                  <Label>Lugar de nacimiento</Label>
                   <Input
-                    value={nuevoPaciente.telefono}
-                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, telefono: e.target.value })}
-                    placeholder="+593984035410"
+                    value={nuevoPaciente.lugar_nacimiento}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, lugar_nacimiento: e.target.value.toUpperCase() })}
+                    placeholder="CIUDAD / PROVINCIA"
+                    className="uppercase"
                   />
                 </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Dirección *</Label>
+
+                <div className="space-y-2">
+                  <Label>Nacionalidad</Label>
+                  <Input
+                    value={nuevoPaciente.nacionalidad}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, nacionalidad: e.target.value.toUpperCase() })}
+                    placeholder="ECUATORIANA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Condición edad</Label>
+                  <Select
+                    value={nuevoPaciente.condicion_edad}
+                    onValueChange={(value: string) => setNuevoPaciente({ ...nuevoPaciente, condicion_edad: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="H">Hora</SelectItem>
+                      <SelectItem value="D">Día</SelectItem>
+                      <SelectItem value="M">Mes</SelectItem>
+                      <SelectItem value="A">Año</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Grupo prioritario</Label>
+                  <Select
+                    value={nuevoPaciente.grupo_prioritario}
+                    onValueChange={(value: string) => setNuevoPaciente({ ...nuevoPaciente, grupo_prioritario: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SI">Sí</SelectItem>
+                      <SelectItem value="NO">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Especifique grupo prioritario</Label>
+                  <Input
+                    value={nuevoPaciente.grupo_prioritario_especifique}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, grupo_prioritario_especifique: e.target.value.toUpperCase() })}
+                    placeholder="ADULTO MAYOR, EMBARAZO, DISCAPACIDAD..."
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Etnia, educación y trabajo</h3>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Autoidentificación étnica</Label>
+                  <Input
+                    value={nuevoPaciente.autoidentificacion_etnica}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, autoidentificacion_etnica: e.target.value.toUpperCase() })}
+                    placeholder="MESTIZO/A"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Nacionalidad étnica</Label>
+                  <Input
+                    value={nuevoPaciente.nacionalidad_etnica}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, nacionalidad_etnica: e.target.value.toUpperCase() })}
+                    placeholder="NACIONALIDAD ÉTNICA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Pueblo</Label>
+                  <Input
+                    value={nuevoPaciente.pueblo}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, pueblo: e.target.value.toUpperCase() })}
+                    placeholder="PUEBLO"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Nivel de educación</Label>
+                  <Input
+                    value={nuevoPaciente.nivel_educacion}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, nivel_educacion: e.target.value.toUpperCase() })}
+                    placeholder="BÁSICA, BACHILLERATO, SUPERIOR..."
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Estado del nivel de educación</Label>
+                  <Input
+                    value={nuevoPaciente.estado_nivel_educacion}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, estado_nivel_educacion: e.target.value.toUpperCase() })}
+                    placeholder="COMPLETO / INCOMPLETO"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tipo de empresa de trabajo</Label>
+                  <Input
+                    value={nuevoPaciente.tipo_empresa_trabajo}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, tipo_empresa_trabajo: e.target.value.toUpperCase() })}
+                    placeholder="PÚBLICA / PRIVADA / NINGUNA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Ocupación / profesión</Label>
+                  <Input
+                    value={nuevoPaciente.ocupacion_profesion}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, ocupacion_profesion: e.target.value.toUpperCase() })}
+                    placeholder="OCUPACIÓN O PROFESIÓN"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Seguro salud principal</Label>
+                  <Select
+                    value={nuevoPaciente.seguro_salud_principal}
+                    onValueChange={(value: string) => setNuevoPaciente({ ...nuevoPaciente, seguro_salud_principal: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="IESS-G">IESS-G</SelectItem>
+                      <SelectItem value="IESS-C">IESS-C</SelectItem>
+                      <SelectItem value="ISSPOL">ISSPOL</SelectItem>
+                      <SelectItem value="ISSFA">ISSFA</SelectItem>
+                      <SelectItem value="PRIV">Privado</SelectItem>
+                      <SelectItem value="NING">Ninguno</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Residencia</h3>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Provincia</Label>
+                  <Input
+                    value={nuevoPaciente.provincia}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, provincia: e.target.value.toUpperCase() })}
+                    placeholder="PROVINCIA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Cantón</Label>
+                  <Input
+                    value={nuevoPaciente.canton}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, canton: e.target.value.toUpperCase() })}
+                    placeholder="CANTÓN"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Parroquia</Label>
+                  <Input
+                    value={nuevoPaciente.parroquia}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, parroquia: e.target.value.toUpperCase() })}
+                    placeholder="PARROQUIA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Barrio o sector</Label>
+                  <Input
+                    value={nuevoPaciente.barrio_sector}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, barrio_sector: e.target.value.toUpperCase() })}
+                    placeholder="BARRIO O SECTOR"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Calle principal</Label>
+                  <Input
+                    value={nuevoPaciente.calle_principal}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, calle_principal: e.target.value.toUpperCase() })}
+                    placeholder="CALLE PRINCIPAL"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Calle secundaria</Label>
+                  <Input
+                    value={nuevoPaciente.calle_secundaria}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, calle_secundaria: e.target.value.toUpperCase() })}
+                    placeholder="CALLE SECUNDARIA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Referencia domicilio</Label>
+                  <Input
+                    value={nuevoPaciente.referencia_domicilio}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, referencia_domicilio: e.target.value.toUpperCase() })}
+                    placeholder="REFERENCIA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2 sm:col-span-2 xl:col-span-4">
+                  <Label>Dirección completa *</Label>
                   <Input
                     value={nuevoPaciente.direccion}
                     onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, direccion: e.target.value.toUpperCase() })}
                     placeholder="DIRECCIÓN COMPLETA"
                     className="uppercase"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Contacto y llegada</h3>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>En caso necesario llamar a</Label>
+                  <Input
+                    value={nuevoPaciente.contacto_emergencia_nombre}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, contacto_emergencia_nombre: e.target.value.toUpperCase() })}
+                    placeholder="NOMBRE COMPLETO"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Parentesco</Label>
+                  <Input
+                    value={nuevoPaciente.contacto_emergencia_parentesco}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, contacto_emergencia_parentesco: e.target.value.toUpperCase() })}
+                    placeholder="PARENTESCO"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Dirección contacto</Label>
+                  <Input
+                    value={nuevoPaciente.contacto_emergencia_direccion}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, contacto_emergencia_direccion: e.target.value.toUpperCase() })}
+                    placeholder="DIRECCIÓN"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Teléfono contacto</Label>
+                  <Input
+                    value={nuevoPaciente.contacto_emergencia_telefono}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, contacto_emergencia_telefono: e.target.value })}
+                    placeholder="+593..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Forma de llegada</Label>
+                  <Select
+                    value={nuevoPaciente.forma_llegada}
+                    onValueChange={(value: string) => setNuevoPaciente({ ...nuevoPaciente, forma_llegada: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AMBULATORIO">Ambulatorio</SelectItem>
+                      <SelectItem value="AMBULANCIA">Ambulancia</SelectItem>
+                      <SelectItem value="OTRO_TRANSPORTE">Otro transporte</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Fuente de información</Label>
+                  <Input
+                    value={nuevoPaciente.fuente_informacion}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, fuente_informacion: e.target.value.toUpperCase() })}
+                    placeholder="PACIENTE / FAMILIAR / OTRO"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Institución o persona que entrega</Label>
+                  <Input
+                    value={nuevoPaciente.institucion_entrega_paciente}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, institucion_entrega_paciente: e.target.value.toUpperCase() })}
+                    placeholder="INSTITUCIÓN / PERSONA"
+                    className="uppercase"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Teléfono institución/persona</Label>
+                  <Input
+                    value={nuevoPaciente.telefono_institucion_entrega}
+                    onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, telefono_institucion_entrega: e.target.value })}
+                    placeholder="+593..."
                   />
                 </div>
               </div>
