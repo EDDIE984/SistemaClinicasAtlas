@@ -53,10 +53,25 @@ export interface Consultorio {
 }
 
 // ========================================
+// INTERFACES - SERVICIOS
+// ========================================
+
+export interface Servicio {
+  id_servicio: number;
+  id_sucursal: number;
+  descripcion: string;
+  area: string;
+  estado: 'activo' | 'inactivo';
+  created_at?: string;
+  updated_at?: string;
+  sucursal?: Sucursal;
+}
+
+// ========================================
 // INTERFACES - USUARIOS
 // ========================================
 
-export type TipoUsuario = 'medico' | 'administrativo' | 'enfermera' | 'secretaria';
+export type TipoUsuario = 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN';
 
 export interface Usuario {
   id_usuario: number;
@@ -81,6 +96,7 @@ export interface UsuarioSucursal {
   id_usuario_sucursal: number;
   id_usuario: number;
   id_sucursal: number;
+  id_servicio?: number | null;
   id_especialidad: number | null;
   especialidad: string | null; // Deprecated
   cargo: string | null;
@@ -89,6 +105,7 @@ export interface UsuarioSucursal {
   updated_at?: string;
   usuario?: Usuario;
   sucursal?: Sucursal;
+  servicio?: Servicio;
   especialidad_data?: Especialidad;
 }
 
@@ -491,6 +508,124 @@ export async function deleteConsultorio(idConsultorio: number): Promise<boolean>
 }
 
 // ========================================
+// FUNCIONES - SERVICIOS
+// ========================================
+
+export async function getAllServicios(): Promise<Servicio[]> {
+  try {
+    console.log('🧾 Obteniendo servicios...');
+    const { data, error } = await (supabaseAdmin
+      .from('servicio') as any)
+      .select(`
+        *,
+        sucursal:sucursal!inner(
+          *,
+          compania:compania(*)
+        )
+      `)
+      .order('area', { ascending: true })
+      .order('descripcion', { ascending: true });
+
+    if (error) {
+      console.error('❌ Error al obtener servicios:', error);
+      return [];
+    }
+
+    console.log(`✅ Se encontraron ${data?.length || 0} servicios`);
+    return data as any || [];
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return [];
+  }
+}
+
+export async function getServiciosBySucursal(idSucursal: number): Promise<Servicio[]> {
+  try {
+    console.log('🧾 Obteniendo servicios de sucursal:', idSucursal);
+    const { data, error } = await (supabaseAdmin
+      .from('servicio') as any)
+      .select('*')
+      .eq('id_sucursal', idSucursal)
+      .order('area', { ascending: true })
+      .order('descripcion', { ascending: true });
+
+    if (error) {
+      console.error('❌ Error al obtener servicios:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return [];
+  }
+}
+
+export async function createServicio(servicio: Omit<Servicio, 'id_servicio' | 'created_at'>): Promise<Servicio | null> {
+  try {
+    console.log('➕ Creando servicio:', servicio.descripcion);
+    const { data, error } = await (supabaseAdmin
+      .from('servicio') as any)
+      .insert(servicio as any)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ Error al crear servicio:', error);
+      return null;
+    }
+
+    console.log('✅ Servicio creado exitosamente');
+    return data;
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return null;
+  }
+}
+
+export async function updateServicio(idServicio: number, updates: Partial<Servicio>): Promise<boolean> {
+  try {
+    console.log('✏️ Actualizando servicio ID:', idServicio);
+    const { error } = await (supabaseAdmin
+      .from('servicio') as any)
+      .update(updates as any)
+      .eq('id_servicio', idServicio);
+
+    if (error) {
+      console.error('❌ Error al actualizar servicio:', error);
+      return false;
+    }
+
+    console.log('✅ Servicio actualizado exitosamente');
+    return true;
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return false;
+  }
+}
+
+export async function deleteServicio(idServicio: number): Promise<boolean> {
+  try {
+    console.log('🗑️ Eliminando servicio ID:', idServicio);
+    const { error } = await (supabaseAdmin
+      .from('servicio') as any)
+      .delete()
+      .eq('id_servicio', idServicio);
+
+    if (error) {
+      console.error('❌ Error al eliminar servicio:', error);
+      return false;
+    }
+
+    console.log('✅ Servicio eliminado exitosamente');
+    return true;
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return false;
+  }
+}
+
+// ========================================
 // FUNCIONES - ESPECIALIDADES
 // ========================================
 
@@ -734,7 +869,7 @@ export async function deleteUsuario(idUsuario: number): Promise<boolean> {
 export async function getAllUsuarioSucursales(): Promise<UsuarioSucursal[]> {
   try {
     console.log('🔗 Obteniendo asignaciones usuario-sucursal...');
-    const { data, error } = await (supabaseAdmin
+    let { data, error } = await (supabaseAdmin
       .from('usuario_sucursal') as any)
       .select(`
         *,
@@ -743,13 +878,33 @@ export async function getAllUsuarioSucursales(): Promise<UsuarioSucursal[]> {
           *,
           compania:compania(*)
         ),
+        servicio:servicio(*),
         especialidad_data:especialidad(*)
       `)
       .order('id_usuario_sucursal', { ascending: false });
 
     if (error) {
-      console.error('❌ Error al obtener asignaciones:', error);
-      return [];
+      console.warn('⚠️ Error al obtener asignaciones con servicio, reintentando sin relación servicio:', error);
+      const fallback = await (supabaseAdmin
+        .from('usuario_sucursal') as any)
+        .select(`
+          *,
+          usuario:usuario!inner(*),
+          sucursal:sucursal!inner(
+            *,
+            compania:compania(*)
+          ),
+          especialidad_data:especialidad(*)
+        `)
+        .order('id_usuario_sucursal', { ascending: false });
+
+      data = fallback.data;
+      error = fallback.error;
+
+      if (error) {
+        console.error('❌ Error al obtener asignaciones:', error);
+        return [];
+      }
     }
 
     console.log(`✅ Se encontraron ${data?.length || 0} asignaciones`);
@@ -763,18 +918,34 @@ export async function getAllUsuarioSucursales(): Promise<UsuarioSucursal[]> {
 export async function getUsuarioSucursalesByUsuario(idUsuario: number): Promise<UsuarioSucursal[]> {
   try {
     console.log('🔗 Obteniendo asignaciones del usuario:', idUsuario);
-    const { data, error } = await (supabaseAdmin
+    let { data, error } = await (supabaseAdmin
       .from('usuario_sucursal') as any)
       .select(`
         *,
         sucursal:sucursal!inner(*),
+        servicio:servicio(*),
         especialidad_data:especialidad(*)
       `)
       .eq('id_usuario', idUsuario);
 
     if (error) {
-      console.error('❌ Error al obtener asignaciones:', error);
-      return [];
+      console.warn('⚠️ Error al obtener asignaciones del usuario con servicio, reintentando sin relación servicio:', error);
+      const fallback = await (supabaseAdmin
+        .from('usuario_sucursal') as any)
+        .select(`
+          *,
+          sucursal:sucursal!inner(*),
+          especialidad_data:especialidad(*)
+        `)
+        .eq('id_usuario', idUsuario);
+
+      data = fallback.data;
+      error = fallback.error;
+
+      if (error) {
+        console.error('❌ Error al obtener asignaciones:', error);
+        return [];
+      }
     }
 
     return data as any || [];
@@ -825,6 +996,21 @@ export async function updateUsuarioSucursal(idUsuarioSucursal: number, updates: 
     console.error('❌ Error inesperado:', error);
     return false;
   }
+}
+
+export async function updateUsuarioSucursalOrThrow(idUsuarioSucursal: number, updates: Partial<UsuarioSucursal>): Promise<void> {
+  console.log('✏️ Actualizando asignación ID:', idUsuarioSucursal);
+  const { error } = await (supabaseAdmin
+    .from('usuario_sucursal') as any)
+    .update(updates as any)
+    .eq('id_usuario_sucursal', idUsuarioSucursal);
+
+  if (error) {
+    console.error('❌ Error al actualizar asignación:', error);
+    throw new Error(error.message || 'Error al actualizar la asignación');
+  }
+
+  console.log('✅ Asignación actualizada exitosamente');
 }
 
 export async function deleteUsuarioSucursal(idUsuarioSucursal: number): Promise<boolean> {
@@ -1183,7 +1369,9 @@ export function formatearTipoUsuario(tipo: TipoUsuario): string {
     medico: 'Médico',
     administrativo: 'Administrativo',
     enfermera: 'Enfermera',
-    secretaria: 'Secretaria'
+    secretaria: 'Secretaria',
+    USUARIO_IMANGE: 'Usuario Imagen',
+    GESTOR_IMAGEN: 'Gestor Imagen'
   };
   return tipos[tipo] || tipo;
 }
@@ -1371,5 +1559,205 @@ export async function getMedicosSuplentesYRespaldoBySucursal(
   } catch (error) {
     console.error('❌ Error al obtener médicos suplentes y respaldo:', error);
     return [];
+  }
+}
+
+// ========================================
+// INTERFACES - HORARIO SERVICIO
+// ========================================
+
+export interface HorarioServicio {
+  id_horario_servicio: number;
+  id_servicio: number;
+  dia_semana: number; // 1=Lunes, 2=Martes, ..., 7=Domingo
+  hora_inicio: string;
+  hora_fin: string;
+  duracion_consulta: number; // minutos
+  capacidad: number; // pacientes simultáneos por slot
+  estado: 'activo' | 'inactivo';
+  created_at?: string;
+  updated_at?: string;
+  servicio?: Servicio;
+}
+
+export interface CitaServicio {
+  id_cita_servicio: number;
+  id_horario_servicio: number;
+  id_servicio: number;
+  id_paciente: number;
+  id_sucursal: number;
+  fecha_cita: string;
+  hora_inicio: string;
+  hora_fin: string;
+  motivo?: string;
+  estado_cita: 'agendada' | 'confirmada' | 'en_atencion' | 'atendida' | 'cancelada' | 'no_asistio';
+  precio_cita?: number;
+  forma_pago?: 'efectivo' | 'tarjeta' | 'transferencia' | 'seguro';
+  estado_pago?: 'pendiente' | 'pagado' | 'parcial';
+  notas_cita?: string;
+  medico_solicitante?: string;
+  numero_registro_medico?: string;
+  fecha_confirmada?: string | null;
+  fecha_inicio_atencion?: string | null;
+  fecha_atendida?: string | null;
+  fecha_cancelada?: string | null;
+  fecha_no_asistio?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  servicio?: Servicio;
+  horario_servicio?: HorarioServicio;
+}
+
+export interface CitaServicioCompleta extends CitaServicio {
+  servicio: Servicio & { sucursal?: Sucursal };
+  paciente: {
+    id_paciente: number;
+    nombres: string;
+    apellidos: string;
+    cedula: string;
+    telefono: string | null;
+    email: string | null;
+    direccion: string | null;
+  };
+  sucursal: Sucursal;
+  horario_servicio: HorarioServicio;
+}
+
+// ========================================
+// FUNCIONES - HORARIO SERVICIO
+// ========================================
+
+export async function getAllHorariosServicio(): Promise<HorarioServicio[]> {
+  try {
+    const { data, error } = await (supabaseAdmin
+      .from('horario_servicio') as any)
+      .select('*, servicio(id_servicio, descripcion, area, id_sucursal)')
+      .order('dia_semana', { ascending: true })
+      .order('hora_inicio', { ascending: true });
+
+    if (error) {
+      console.error('❌ Error al obtener todos los horarios de servicios:', error);
+      return [];
+    }
+
+    return data as HorarioServicio[] || [];
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return [];
+  }
+}
+
+export async function getHorariosByServicio(idServicio: number): Promise<HorarioServicio[]> {
+  try {
+    console.log('📅 Obteniendo horarios del servicio:', idServicio);
+    const { data, error } = await (supabaseAdmin
+      .from('horario_servicio') as any)
+      .select('*, servicio(id_servicio, descripcion, area, id_sucursal)')
+      .eq('id_servicio', idServicio)
+      .order('dia_semana', { ascending: true })
+      .order('hora_inicio', { ascending: true });
+
+    if (error) {
+      console.error('❌ Error al obtener horarios del servicio:', error);
+      return [];
+    }
+
+    console.log(`✅ Se encontraron ${data?.length || 0} horarios`);
+    return data as HorarioServicio[] || [];
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return [];
+  }
+}
+
+export async function getHorariosBySucursal(idSucursal: number): Promise<HorarioServicio[]> {
+  try {
+    console.log('📅 Obteniendo horarios de servicios por sucursal:', idSucursal);
+    const { data, error } = await (supabaseAdmin
+      .from('horario_servicio') as any)
+      .select('*, servicio!inner(id_servicio, descripcion, area, id_sucursal, estado)')
+      .eq('servicio.id_sucursal', idSucursal)
+      .order('dia_semana', { ascending: true })
+      .order('hora_inicio', { ascending: true });
+
+    if (error) {
+      console.error('❌ Error al obtener horarios por sucursal:', error);
+      return [];
+    }
+
+    console.log(`✅ Se encontraron ${data?.length || 0} horarios`);
+    return data as HorarioServicio[] || [];
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return [];
+  }
+}
+
+export async function createHorarioServicio(
+  horario: Omit<HorarioServicio, 'id_horario_servicio' | 'created_at' | 'updated_at' | 'servicio'>
+): Promise<HorarioServicio | null> {
+  try {
+    console.log('➕ Creando horario de servicio:', horario);
+    const { data, error } = await (supabaseAdmin
+      .from('horario_servicio') as any)
+      .insert(horario)
+      .select('*, servicio(id_servicio, descripcion, area, id_sucursal)')
+      .single();
+
+    if (error) {
+      console.error('❌ Error al crear horario de servicio:', error);
+      return null;
+    }
+
+    console.log('✅ Horario de servicio creado exitosamente:', data);
+    return data as HorarioServicio;
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return null;
+  }
+}
+
+export async function updateHorarioServicio(
+  idHorario: number,
+  updates: Partial<Omit<HorarioServicio, 'id_horario_servicio' | 'created_at' | 'updated_at' | 'servicio'>>
+): Promise<boolean> {
+  try {
+    console.log('✏️ Actualizando horario de servicio ID:', idHorario);
+    const { error } = await (supabaseAdmin
+      .from('horario_servicio') as any)
+      .update(updates)
+      .eq('id_horario_servicio', idHorario);
+
+    if (error) {
+      console.error('❌ Error al actualizar horario de servicio:', error);
+      return false;
+    }
+
+    console.log('✅ Horario de servicio actualizado exitosamente');
+    return true;
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return false;
+  }
+}
+
+export async function deleteHorarioServicio(idHorario: number): Promise<boolean> {
+  try {
+    console.log('🗑️ Eliminando horario de servicio ID:', idHorario);
+    const { error } = await (supabaseAdmin
+      .from('horario_servicio') as any)
+      .delete()
+      .eq('id_horario_servicio', idHorario);
+
+    if (error) {
+      console.error('❌ Error al eliminar horario de servicio:', error);
+      return false;
+    }
+
+    console.log('✅ Horario de servicio eliminado exitosamente');
+    return true;
+  } catch (error) {
+    console.error('❌ Error inesperado:', error);
+    return false;
   }
 }

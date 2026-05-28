@@ -22,11 +22,13 @@ import {
   Calendar,
   Building2,
   MapPin,
+  BriefcaseMedical,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getUsuarioByEmail,
   getAsignacionesCompletasByUsuario,
+  getOpcionesIngresoAdministrador,
   validateCredentials,
   type Usuario,
   type AsignacionCompleta,
@@ -55,6 +57,37 @@ export function Login({ onLogin }: LoginProps) {
   const [selectedAsignacion, setSelectedAsignacion] =
     useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const persistSession = (usuario: Usuario, asignacion: AsignacionCompleta) => {
+    localStorage.setItem("currentUserEmail", usuario.email);
+    localStorage.setItem(
+      "currentUserId",
+      usuario.id_usuario.toString(),
+    );
+    localStorage.setItem(
+      "currentUserName",
+      `${usuario.tipo_usuario === 'medico' ? 'Dr. ' : ''}${usuario.nombre} ${usuario.apellido}`,
+    );
+    localStorage.setItem(
+      "currentUsuarioSucursalId",
+      asignacion.id_usuario_sucursal.toString(),
+    );
+    localStorage.setItem(
+      "currentSucursalId",
+      asignacion.sucursal.id_sucursal.toString(),
+    );
+    localStorage.setItem(
+      "currentCompaniaId",
+      asignacion.compania.id_compania.toString(),
+    );
+    if (asignacion.id_servicio) {
+      localStorage.setItem("currentServicioId", asignacion.id_servicio.toString());
+    }
+    if (asignacion.servicio) {
+      localStorage.setItem("currentServicioArea", asignacion.servicio.area);
+      localStorage.setItem("currentServicioDescripcion", asignacion.servicio.descripcion);
+    }
+  };
 
   const handleSubmitCredentials = async (
     e: React.FormEvent,
@@ -97,38 +130,22 @@ export function Login({ onLogin }: LoginProps) {
         return;
       }
 
-      // Si tiene solo una asignación, ingresar directamente
-      if (asignacionesUsuario.length === 1) {
+      const opcionesIngreso = usuario.tipo_usuario === 'administrativo'
+        ? await getOpcionesIngresoAdministrador(usuario, asignacionesUsuario)
+        : asignacionesUsuario;
+
+      // Si tiene solo una asignación, ingresar directamente.
+      // Administrativos siempre pasan por selector para escoger el servicio de entrada.
+      if (opcionesIngreso.length === 1 && usuario.tipo_usuario !== 'administrativo') {
         toast.success("¡Bienvenido!");
-        // Guardar email en localStorage para cancelaciones
-        localStorage.setItem("currentUserEmail", email);
-        localStorage.setItem(
-          "currentUserId",
-          usuario.id_usuario.toString(),
-        );
-        localStorage.setItem(
-          "currentUserName",
-          `${usuario.tipo_usuario === 'medico' ? 'Dr. ' : ''}${usuario.nombre} ${usuario.apellido}`,
-        );
-        localStorage.setItem(
-          "currentUsuarioSucursalId",
-          asignacionesUsuario[0].id_usuario_sucursal.toString(),
-        );
-        localStorage.setItem(
-          "currentSucursalId",
-          asignacionesUsuario[0].sucursal.id_sucursal.toString(),
-        );
-        localStorage.setItem(
-          "currentCompaniaId",
-          asignacionesUsuario[0].compania.id_compania.toString(),
-        );
-        onLogin(usuario, asignacionesUsuario[0]);
+        persistSession(usuario, opcionesIngreso[0]);
+        onLogin(usuario, opcionesIngreso[0]);
         return;
       }
 
       // Si tiene múltiples asignaciones, mostrar selector
       setValidatedUser(usuario);
-      setAsignaciones(asignacionesUsuario);
+      setAsignaciones(opcionesIngreso);
       setStep("selection");
       setIsLoading(false);
     } catch (error) {
@@ -153,31 +170,7 @@ export function Login({ onLogin }: LoginProps) {
 
     if (asignacionSeleccionada) {
       toast.success("¡Bienvenido!");
-      // Guardar email en localStorage para cancelaciones
-      localStorage.setItem(
-        "currentUserEmail",
-        validatedUser.email,
-      );
-      localStorage.setItem(
-        "currentUserId",
-        validatedUser.id_usuario.toString(),
-      );
-      localStorage.setItem(
-        "currentUserName",
-        `${validatedUser.tipo_usuario === 'medico' ? 'Dr. ' : ''}${validatedUser.nombre} ${validatedUser.apellido}`,
-      );
-      localStorage.setItem(
-        "currentUsuarioSucursalId",
-        asignacionSeleccionada.id_usuario_sucursal.toString(),
-      );
-      localStorage.setItem(
-        "currentSucursalId",
-        asignacionSeleccionada.sucursal.id_sucursal.toString(),
-      );
-      localStorage.setItem(
-        "currentCompaniaId",
-        asignacionSeleccionada.compania.id_compania.toString(),
-      );
+      persistSession(validatedUser, asignacionSeleccionada);
       onLogin(validatedUser, asignacionSeleccionada);
     }
   };
@@ -206,7 +199,7 @@ export function Login({ onLogin }: LoginProps) {
           <CardDescription>
             {step === "credentials"
               ? "Ingresa tus credenciales para acceder al sistema"
-              : "Selecciona la compañía y sucursal"}
+              : "Selecciona la compañía, sucursal y servicio"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -274,13 +267,13 @@ export function Login({ onLogin }: LoginProps) {
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
                   Tienes acceso a {asignaciones.length}{" "}
-                  ubicaciones
+                  opciones de ingreso
                 </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="asignacion">
-                  Selecciona Compañía y Sucursal
+                  Selecciona Compañía, Sucursal y Servicio
                 </Label>
                 <Select
                   value={selectedAsignacion}
@@ -303,6 +296,15 @@ export function Login({ onLogin }: LoginProps) {
                           </span>
                           <MapPin className="size-4 text-green-600" />
                           <span>{asig.sucursal.nombre}</span>
+                          {asig.servicio && (
+                            <>
+                              <span className="text-gray-400">
+                                •
+                              </span>
+                              <BriefcaseMedical className="size-4 text-purple-600" />
+                              <span>{asig.servicio.descripcion}</span>
+                            </>
+                          )}
                         </div>
                       </SelectItem>
                     ))}
@@ -356,6 +358,19 @@ export function Login({ onLogin }: LoginProps) {
                                 Especialidad:
                               </span>{" "}
                               {asig.especialidad}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <BriefcaseMedical className="size-4 text-indigo-600 mt-0.5" />
+                          <div>
+                            <p className="text-sm">
+                              <span className="text-gray-600">
+                                Servicio:
+                              </span>{" "}
+                              {asig.servicio
+                                ? `${asig.servicio.descripcion} (${asig.servicio.area})`
+                                : "Sin servicio asignado"}
                             </p>
                           </div>
                         </div>

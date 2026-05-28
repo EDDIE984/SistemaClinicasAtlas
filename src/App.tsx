@@ -24,13 +24,27 @@ export default function App() {
     setSessionData(null);
   };
 
+  const isConsultaExterna = (asignacion?: AsignacionCompleta | null) => {
+    const servicio = asignacion?.servicio;
+    if (!servicio) return true;
+
+    const area = servicio.area.trim().toUpperCase();
+    const descripcion = servicio.descripcion.trim().toUpperCase();
+
+    return area === 'CONSULTA_EXTERNA' || descripcion === 'CONSULTA EXTERNA';
+  };
+
   // Preparar datos del usuario para el Dashboard
   const currentUser = sessionData ? {
     name: `${sessionData.usuario.tipo_usuario === 'medico' ? 'Dr. ' : ''}${sessionData.usuario.nombre} ${sessionData.usuario.apellido}`,
     email: sessionData.usuario.email,
     compania: sessionData.asignacion.compania.nombre,
+    id_sucursal: sessionData.asignacion.sucursal.id_sucursal,
     sucursal: sessionData.asignacion.sucursal.nombre,
+    id_servicio: sessionData.asignacion.servicio?.id_servicio,
     especialidad: sessionData.asignacion.especialidad,
+    servicio: sessionData.asignacion.servicio?.descripcion,
+    servicio_area: sessionData.asignacion.servicio?.area,
     tipo_usuario: sessionData.usuario.tipo_usuario
   } : null;
 

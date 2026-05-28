@@ -15,6 +15,11 @@ import {
   createConsultorio,
   updateConsultorio,
   deleteConsultorio,
+  getAllServicios,
+  getServiciosBySucursal,
+  createServicio,
+  updateServicio,
+  deleteServicio,
   getAllUsuarios,
   getUsuariosByTipo,
   createUsuario,
@@ -43,16 +48,25 @@ import {
   updatePlanificacion,
   deletePlanificacion,
   getMedicosSuplentesYRespaldoBySucursal,
+  getAllHorariosServicio,
+  getHorariosBySucursal,
+  getHorariosByServicio,
+  createHorarioServicio,
+  updateHorarioServicio,
+  deleteHorarioServicio,
   type Compania,
   type Sucursal,
   type Consultorio,
+  type Servicio,
   type Usuario,
   type TipoUsuario,
   type UsuarioSucursal,
   type PrecioBase,
   type AsignacionConsultorio,
   type Especialidad,
-  type PlanificacionHorario
+  type PlanificacionHorario,
+  type HorarioServicio,
+  type CitaServicio
 } from '../lib/configuracionesService';
 
 export type { PlanificacionHorario };
@@ -224,6 +238,62 @@ export function useConsultorios(idSucursal?: number) {
     agregarConsultorio,
     actualizarConsultorio,
     eliminarConsultorio
+  };
+}
+
+// ========================================
+// HOOK: SERVICIOS
+// ========================================
+
+export function useServicios(idSucursal?: number) {
+  const [servicios, setServicios] = useState<Servicio[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadServicios();
+  }, [idSucursal]);
+
+  const loadServicios = async () => {
+    setIsLoading(true);
+    const data = idSucursal
+      ? await getServiciosBySucursal(idSucursal)
+      : await getAllServicios();
+    setServicios(data);
+    setIsLoading(false);
+  };
+
+  const agregarServicio = async (servicio: Omit<Servicio, 'id_servicio' | 'created_at'>) => {
+    const nuevo = await createServicio(servicio);
+    if (nuevo) {
+      await loadServicios();
+      return nuevo;
+    }
+    return null;
+  };
+
+  const actualizarServicio = async (id: number, updates: Partial<Servicio>) => {
+    const success = await updateServicio(id, updates);
+    if (success) {
+      await loadServicios();
+    }
+    return success;
+  };
+
+  const eliminarServicio = async (id: number) => {
+    const success = await deleteServicio(id);
+    if (success) {
+      await loadServicios();
+    }
+    return success;
+  };
+
+  return {
+    servicios,
+    isLoading,
+    loadServicios,
+    agregarServicio,
+    actualizarServicio,
+    eliminarServicio
   };
 }
 
@@ -565,6 +635,62 @@ export function usePlanificacionHorario(
     eliminarPlanificacion
   };
 }
+
+// ========================================
+// HOOK: HORARIOS DE SERVICIOS
+// ========================================
+
+export function useHorariosServicio(idSucursal?: number, idServicio?: number) {
+  const [horarios, setHorarios] = useState<HorarioServicio[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadHorarios();
+  }, [idSucursal, idServicio]);
+
+  const loadHorarios = async () => {
+    setIsLoading(true);
+    let data: HorarioServicio[] = [];
+    if (idServicio) {
+      data = await getHorariosByServicio(idServicio);
+    } else if (idSucursal) {
+      data = await getHorariosBySucursal(idSucursal);
+    } else {
+      data = await getAllHorariosServicio();
+    }
+    setHorarios(data);
+    setIsLoading(false);
+  };
+
+  // Las operaciones solo ejecutan la mutación; el componente llama loadHorarios() al finalizar
+  const agregarHorario = async (
+    horario: Omit<HorarioServicio, 'id_horario_servicio' | 'created_at' | 'updated_at' | 'servicio'>
+  ) => {
+    return await createHorarioServicio(horario);
+  };
+
+  const actualizarHorario = async (
+    id: number,
+    updates: Partial<Omit<HorarioServicio, 'id_horario_servicio' | 'created_at' | 'updated_at' | 'servicio'>>
+  ) => {
+    return await updateHorarioServicio(id, updates);
+  };
+
+  const eliminarHorario = async (id: number) => {
+    return await deleteHorarioServicio(id);
+  };
+
+  return {
+    horarios,
+    isLoading,
+    loadHorarios,
+    agregarHorario,
+    actualizarHorario,
+    eliminarHorario
+  };
+}
+
+export type { HorarioServicio, CitaServicio };
 
 // Exportar funciones auxiliares
 export {

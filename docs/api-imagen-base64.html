@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Webservice /api/imagen-base64 — Clínicas Atlas</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }
+
+    .topbar { background: #1e40af; color: #fff; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    .topbar h1 { font-size: 1.2rem; font-weight: 700; }
+    .badge-get  { background: #16a34a; color: #fff; font-size: .7rem; font-weight: 700; padding: .2rem .55rem; border-radius: 4px; letter-spacing: .05em; }
+    .badge-post { background: #d97706; color: #fff; font-size: .7rem; font-weight: 700; padding: .2rem .55rem; border-radius: 4px; letter-spacing: .05em; }
+    .badge-err  { background: #dc2626; color: #fff; font-size: .7rem; font-weight: 700; padding: .2rem .55rem; border-radius: 4px; letter-spacing: .05em; }
+
+    main { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem 4rem; }
+
+    .toc { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+    .toc h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin-bottom: .75rem; }
+    .toc ol { padding-left: 1.2rem; }
+    .toc li { font-size: .9rem; margin-bottom: .3rem; }
+    .toc a { color: #1e40af; text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+
+    section { margin-bottom: 2.5rem; }
+    h2 { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; padding-bottom: .4rem; border-bottom: 2px solid #e2e8f0; }
+    h3 { font-size: 1rem; font-weight: 600; color: #334155; margin: 1.25rem 0 .5rem; }
+
+    .endpoint-box { display: flex; align-items: center; gap: .75rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+    .endpoint-url { font-family: 'Courier New', monospace; font-size: 1.05rem; font-weight: 600; color: #0f172a; }
+
+    p { margin-bottom: .75rem; color: #334155; }
+
+    .table-wrap { overflow-x: auto; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+    th { background: #f1f5f9; text-align: left; padding: .55rem .85rem; border: 1px solid #e2e8f0; font-weight: 600; color: #475569; }
+    td { padding: .55rem .85rem; border: 1px solid #e2e8f0; vertical-align: top; }
+    td code { background: #f1f5f9; padding: .1rem .3rem; border-radius: 3px; font-size: .82rem; }
+    tr:nth-child(even) td { background: #f8fafc; }
+
+    pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 1.25rem 1.5rem; overflow-x: auto; font-size: .83rem; line-height: 1.65; margin-bottom: 1rem; }
+    code { font-family: 'Courier New', Consolas, monospace; }
+    pre code { color: inherit; }
+
+    .kw  { color: #93c5fd; } /* keywords */
+    .str { color: #86efac; } /* strings */
+    .cmt { color: #64748b; } /* comments */
+    .nm  { color: #fde68a; } /* numbers */
+    .fn  { color: #f9a8d4; } /* function names */
+
+    .note { background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 0 8px 8px 0; padding: .85rem 1rem; margin-bottom: 1rem; font-size: .875rem; color: #1e40af; }
+    .warn { background: #fff7ed; border-left: 4px solid #f97316; border-radius: 0 8px 8px 0; padding: .85rem 1rem; margin-bottom: 1rem; font-size: .875rem; color: #9a3412; }
+
+    .status-row { display: flex; gap: .5rem; align-items: flex-start; margin-bottom: .75rem; }
+    .status-code { font-family: monospace; font-weight: 700; min-width: 40px; }
+    .s200 { color: #16a34a; }
+    .s400 { color: #d97706; }
+    .s413 { color: #d97706; }
+    .s405 { color: #dc2626; }
+    .s500 { color: #dc2626; }
+
+    .copy-btn { float: right; background: #334155; color: #e2e8f0; border: none; border-radius: 4px; padding: .25rem .65rem; font-size: .75rem; cursor: pointer; margin-top: -.25rem; }
+    .copy-btn:hover { background: #475569; }
+
+    footer { text-align: center; font-size: .8rem; color: #94a3b8; margin-top: 3rem; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="badge-post">POST</span>
+  <h1>/api/imagen-base64 — Documentación técnica</h1>
+</div>
+
+<main>
+
+  <div class="toc">
+    <h2>Contenido</h2>
+    <ol>
+      <li><a href="#descripcion">Descripción general</a></li>
+      <li><a href="#endpoint">Endpoint</a></li>
+      <li><a href="#request">Formato de la petición</a></li>
+      <li><a href="#response">Respuestas</a></li>
+      <li><a href="#ejemplo-js">Ejemplo: JavaScript / Fetch API</a></li>
+      <li><a href="#ejemplo-form">Ejemplo: Input de archivo en HTML</a></li>
+      <li><a href="#ejemplo-chatbot">Integración con el Chatbot</a></li>
+      <li><a href="#errores">Manejo de errores</a></li>
+      <li><a href="#notas">Notas de implementación</a></li>
+    </ol>
+  </div>
+
+  <!-- 1. Descripción -->
+  <section id="descripcion">
+    <h2>1. Descripción general</h2>
+    <p>
+      El webservice <strong>/api/imagen-base64</strong> recibe una imagen (como cadena <em>data URL</em> o base64 puro)
+      y la valida, normaliza y devuelve lista para almacenar en la base de datos o enviar a otro servicio.
+    </p>
+    <p>
+      Casos de uso principales:
+    </p>
+    <ul style="padding-left:1.4rem; color:#334155; font-size:.9rem; margin-bottom:.75rem;">
+      <li style="margin-bottom:.3rem;"><strong>Dashboard de Servicios</strong> — adjuntar fotografía del pedido médico al confirmar una cita de imagen o laboratorio.</li>
+      <li style="margin-bottom:.3rem;"><strong>Chatbot Atlas</strong> — recibir imágenes del paciente (resultados, pedidos) antes de derivar al agente.</li>
+      <li style="margin-bottom:.3rem;">Cualquier módulo que requiera conversión/validación de imágenes sin subir a almacenamiento externo.</li>
+    </ul>
+    <div class="note">
+      La imagen <strong>no se almacena</strong> en este endpoint. El API solo valida y normaliza. El guardado en base de datos ocurre en la operación posterior (ej. confirmar cita).
+    </div>
+  </section>
+
+  <!-- 2. Endpoint -->
+  <section id="endpoint">
+    <h2>2. Endpoint</h2>
+    <div class="endpoint-box">
+      <span class="badge-post">POST</span>
+      <span class="endpoint-url">/api/imagen-base64</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Parámetro HTTP</th><th>Valor</th></tr></thead>
+        <tbody>
+          <tr><td>Método</td><td><code>POST</code></td></tr>
+          <tr><td>Content-Type</td><td><code>application/json</code></td></tr>
+          <tr><td>Autenticación</td><td>Ninguna (uso interno — mismo dominio)</td></tr>
+          <tr><td>CORS</td><td>Habilitado (<code>Access-Control-Allow-Origin: *</code>)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. Request -->
+  <section id="request">
+    <h2>3. Formato de la petición</h2>
+    <h3>Body (JSON)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Descripción</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>data</code></td>
+            <td>string</td>
+            <td>Sí</td>
+            <td>
+              Imagen en formato <em>data URL</em> (<code>data:image/jpeg;base64,/9j/4AAQ...</code>)
+              o base64 puro sin prefijo. Se acepta cualquier subformato de imagen.
+            </td>
+          </tr>
+          <tr>
+            <td><code>mimeType</code></td>
+            <td>string</td>
+            <td>Sí</td>
+            <td>
+              Tipo MIME de la imagen, ej. <code>image/jpeg</code>, <code>image/png</code>, <code>image/webp</code>.
+              Debe empezar con <code>image/</code>; cualquier otro valor devuelve 400.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Ejemplo de body</h3>
+    <pre><code>{
+  <span class="str">"data"</span>: <span class="str">"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."</span>,
+  <span class="str">"mimeType"</span>: <span class="str">"image/jpeg"</span>
+}</code></pre>
+
+    <div class="note">
+      El campo <code>data</code> puede incluir o no el prefijo <code>data:image/...;base64,</code>.
+      El API lo detecta automáticamente y normaliza antes de calcular el tamaño.
+    </div>
+  </section>
+
+  <!-- 4. Respuestas -->
+  <section id="response">
+    <h2>4. Respuestas</h2>
+
+    <h3>Éxito — 200 OK</h3>
+    <pre><code>{
+  <span class="str">"base64"</span>: <span class="str">"data:image/jpeg;base64,/9j/4AAQ..."</span>,
+  <span class="str">"mimeType"</span>: <span class="str">"image/jpeg"</span>,
+  <span class="str">"tamanio_kb"</span>: <span class="nm">142</span>,
+  <span class="str">"valido"</span>: <span class="kw">true</span>
+}</code></pre>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Descripción</th></tr></thead>
+        <tbody>
+          <tr><td><code>base64</code></td><td>string</td><td>Data URL completa lista para usar en <code>&lt;img src&gt;</code> o guardar en BD.</td></tr>
+          <tr><td><code>mimeType</code></td><td>string</td><td>MIME validado tal como fue recibido.</td></tr>
+          <tr><td><code>tamanio_kb</code></td><td>number</td><td>Tamaño decodificado en kilobytes (redondeado).</td></tr>
+          <tr><td><code>valido</code></td><td>boolean</td><td>Siempre <code>true</code> en respuesta 200.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Errores</h3>
+    <div class="status-row"><span class="status-code s400">400</span><span>Tipo de archivo no permitido — el <code>mimeType</code> no comienza con <code>image/</code>.</span></div>
+    <div class="status-row"><span class="status-code s413">413</span><span>Imagen demasiado grande — el tamaño decodificado supera 5 MB.</span></div>
+    <div class="status-row"><span class="status-code s405">405</span><span>Método no permitido — se usó GET, PUT u otro en lugar de POST.</span></div>
+    <div class="status-row"><span class="status-code s500">500</span><span>Error interno — el body JSON estaba malformado o vacío.</span></div>
+
+    <pre><code><span class="cmt">// Ejemplo respuesta 400</span>
+{ <span class="str">"error"</span>: <span class="str">"Tipo de archivo no permitido. Solo se aceptan imágenes."</span> }
+
+<span class="cmt">// Ejemplo respuesta 413</span>
+{ <span class="str">"error"</span>: <span class="str">"Imagen demasiado grande (máx 5 MB)"</span> }</code></pre>
+  </section>
+
+  <!-- 5. Ejemplo JS -->
+  <section id="ejemplo-js">
+    <h2>5. Ejemplo: JavaScript / Fetch API</h2>
+    <p>Flujo completo desde la selección del archivo hasta guardar el base64 en el estado de React:</p>
+    <pre><code><span class="cmt">/**
+ * Convierte un File a base64 validado usando el webservice.
+ * @param {File} file  Archivo seleccionado por el usuario
+ * @returns {Promise&lt;{base64: string, tamanio_kb: number}&gt;}
+ */</span>
+<span class="kw">async function</span> <span class="fn">convertirImagenABase64</span>(file) {
+  <span class="cmt">// 1. Validar en cliente antes de enviar</span>
+  <span class="kw">if</span> (!file.type.startsWith(<span class="str">'image/'</span>)) {
+    <span class="kw">throw new</span> Error(<span class="str">'Solo se permiten imágenes'</span>);
+  }
+  <span class="kw">if</span> (file.size &gt; <span class="nm">5</span> * <span class="nm">1024</span> * <span class="nm">1024</span>) {
+    <span class="kw">throw new</span> Error(<span class="str">'La imagen no puede superar 5 MB'</span>);
+  }
+
+  <span class="cmt">// 2. Leer como data URL</span>
+  <span class="kw">const</span> dataUrl = <span class="kw">await new</span> Promise((resolve, reject) =&gt; {
+    <span class="kw">const</span> reader = <span class="kw">new</span> FileReader();
+    reader.onload  = e =&gt; resolve(e.target.result);
+    reader.onerror = () =&gt; reject(<span class="kw">new</span> Error(<span class="str">'Error al leer el archivo'</span>));
+    reader.readAsDataURL(file);
+  });
+
+  <span class="cmt">// 3. Llamar al webservice</span>
+  <span class="kw">const</span> resp = <span class="kw">await</span> fetch(<span class="str">'/api/imagen-base64'</span>, {
+    method: <span class="str">'POST'</span>,
+    headers: { <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span> },
+    body: JSON.stringify({ data: dataUrl, mimeType: file.type }),
+  });
+
+  <span class="kw">const</span> json = <span class="kw">await</span> resp.json();
+
+  <span class="kw">if</span> (!resp.ok) {
+    <span class="kw">throw new</span> Error(json.error || <span class="str">'Error al procesar la imagen'</span>);
+  }
+
+  <span class="cmt">// 4. json.base64 está listo para &lt;img src&gt; o guardar en BD</span>
+  <span class="kw">return</span> { base64: json.base64, tamanio_kb: json.tamanio_kb };
+}
+
+<span class="cmt">// ── Uso ──────────────────────────────────────────────────────</span>
+<span class="kw">const</span> input = document.querySelector(<span class="str">'input[type="file"]'</span>);
+
+input.addEventListener(<span class="str">'change'</span>, <span class="kw">async</span> (e) =&gt; {
+  <span class="kw">const</span> file = e.target.files[<span class="nm">0</span>];
+  <span class="kw">if</span> (!file) <span class="kw">return</span>;
+
+  <span class="kw">try</span> {
+    <span class="kw">const</span> { base64, tamanio_kb } = <span class="kw">await</span> convertirImagenABase64(file);
+    console.log(<span class="str">`Imagen lista (${tamanio_kb} KB)`</span>);
+    document.querySelector(<span class="str">'img#preview'</span>).src = base64;  <span class="cmt">// preview</span>
+    <span class="cmt">// Guardar base64 en tu estado para enviarlo al backend</span>
+  } <span class="kw">catch</span> (err) {
+    console.error(err.message);
+  }
+});</code></pre>
+  </section>
+
+  <!-- 6. Ejemplo formulario HTML -->
+  <section id="ejemplo-form">
+    <h2>6. Ejemplo: Input de archivo en HTML (sin framework)</h2>
+    <pre><code><span class="cmt">&lt;!-- Formulario mínimo --&gt;</span>
+&lt;input type=<span class="str">"file"</span> id=<span class="str">"fotoInput"</span> accept=<span class="str">"image/*"</span> /&gt;
+&lt;img id=<span class="str">"preview"</span> alt=<span class="str">"Vista previa"</span> style=<span class="str">"max-width:300px; display:none;"</span> /&gt;
+&lt;p id=<span class="str">"info"</span>&gt;&lt;/p&gt;
+
+&lt;script&gt;
+  document.getElementById(<span class="str">'fotoInput'</span>).addEventListener(<span class="str">'change'</span>, <span class="kw">async</span> (e) =&gt; {
+    <span class="kw">const</span> file = e.target.files[<span class="nm">0</span>];
+    <span class="kw">if</span> (!file) <span class="kw">return</span>;
+
+    <span class="kw">const</span> reader = <span class="kw">new</span> FileReader();
+    reader.onload = <span class="kw">async</span> (ev) =&gt; {
+      <span class="kw">const</span> resp = <span class="kw">await</span> fetch(<span class="str">'/api/imagen-base64'</span>, {
+        method: <span class="str">'POST'</span>,
+        headers: { <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span> },
+        body: JSON.stringify({
+          data:     ev.target.result,
+          mimeType: file.type,
+        }),
+      });
+      <span class="kw">const</span> json = <span class="kw">await</span> resp.json();
+      <span class="kw">if</span> (resp.ok) {
+        document.getElementById(<span class="str">'preview'</span>).src         = json.base64;
+        document.getElementById(<span class="str">'preview'</span>).style.display = <span class="str">'block'</span>;
+        document.getElementById(<span class="str">'info'</span>).textContent     =
+          <span class="str">`Tamaño: ${json.tamanio_kb} KB`</span>;
+        <span class="cmt">// Aquí guardas json.base64 para enviarlo con tu formulario</span>
+      } <span class="kw">else</span> {
+        alert(json.error);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+&lt;/script&gt;</code></pre>
+  </section>
+
+  <!-- 7. Chatbot -->
+  <section id="ejemplo-chatbot">
+    <h2>7. Integración con el Chatbot</h2>
+    <p>
+      El chatbot puede solicitar al usuario una fotografía (resultado de laboratorio, pedido médico, receta)
+      y procesarla con este mismo endpoint antes de enviarla al modelo de IA.
+    </p>
+    <pre><code><span class="cmt">// En ChatBotViewSupabase.tsx o chatbotService.ts</span>
+<span class="kw">export async function</span> <span class="fn">procesarImagenChatbot</span>(
+  file: File
+): Promise&lt;{ base64: <span class="kw">string</span>; tamanio_kb: <span class="kw">number</span> }&gt; {
+  <span class="kw">const</span> reader = <span class="kw">new</span> FileReader();
+
+  <span class="kw">const</span> dataUrl = <span class="kw">await new</span> Promise&lt;<span class="kw">string</span>&gt;((resolve, reject) =&gt; {
+    reader.onload  = e =&gt; resolve(e.target!.result <span class="kw">as string</span>);
+    reader.onerror = () =&gt; reject(<span class="kw">new</span> Error(<span class="str">'Error al leer imagen'</span>));
+    reader.readAsDataURL(file);
+  });
+
+  <span class="kw">const</span> resp = <span class="kw">await</span> fetch(<span class="str">'/api/imagen-base64'</span>, {
+    method: <span class="str">'POST'</span>,
+    headers: { <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span> },
+    body: JSON.stringify({ data: dataUrl, mimeType: file.type }),
+  });
+
+  <span class="kw">if</span> (!resp.ok) {
+    <span class="kw">const</span> { error } = <span class="kw">await</span> resp.json();
+    <span class="kw">throw new</span> Error(error);
+  }
+
+  <span class="kw">return</span> resp.json();
+}
+
+<span class="cmt">// Luego envías json.base64 a tu llamada a Claude / OpenAI como imagen:</span>
+<span class="cmt">// { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: rawBase64 } }</span></code></pre>
+
+    <div class="warn">
+      Al enviar a la API de Claude, el campo <code>data</code> debe ser el base64 <strong>sin</strong> el prefijo
+      <code>data:image/jpeg;base64,</code>. Extráelo con:<br/>
+      <code style="font-size:.82rem;">const rawBase64 = base64.split(',')[1];</code>
+    </div>
+  </section>
+
+  <!-- 8. Errores -->
+  <section id="errores">
+    <h2>8. Manejo de errores recomendado</h2>
+    <pre><code><span class="kw">async function</span> <span class="fn">subirFoto</span>(file: File) {
+  <span class="cmt">// Validación previa (evita round-trip innecesario)</span>
+  <span class="kw">if</span> (!file.type.startsWith(<span class="str">'image/'</span>))
+    <span class="kw">return</span> toast.error(<span class="str">'Solo se permiten imágenes (JPG, PNG, WEBP...)'</span>);
+
+  <span class="kw">if</span> (file.size &gt; <span class="nm">5</span> * <span class="nm">1024</span> * <span class="nm">1024</span>)
+    <span class="kw">return</span> toast.error(<span class="str">'La imagen supera el límite de 5 MB'</span>);
+
+  <span class="kw">try</span> {
+    <span class="cmt">// ... FileReader + fetch (ver sección 5) ...</span>
+    <span class="kw">const</span> json = <span class="kw">await</span> resp.json();
+    <span class="kw">if</span> (!resp.ok) <span class="kw">throw new</span> Error(json.error);
+    <span class="cmt">// ok — guardar json.base64</span>
+  } <span class="kw">catch</span> (err) {
+    <span class="kw">if</span> (err <span class="kw">instanceof</span> TypeError) {
+      <span class="cmt">// Error de red (sin conexión, CORS, etc.)</span>
+      toast.error(<span class="str">'No se pudo conectar con el servidor'</span>);
+    } <span class="kw">else</span> {
+      toast.error((err <span class="kw">as</span> Error).message);
+    }
+  }
+}</code></pre>
+  </section>
+
+  <!-- 9. Notas -->
+  <section id="notas">
+    <h2>9. Notas de implementación</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Aspecto</th><th>Detalle</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Límite de tamaño</td>
+            <td>5 MB decodificado. El base64 en tránsito es ~33 % más grande (~6.7 MB).</td>
+          </tr>
+          <tr>
+            <td>Tipos aceptados</td>
+            <td>Cualquier <code>image/*</code>: JPEG, PNG, WEBP, GIF, BMP, TIFF, etc.</td>
+          </tr>
+          <tr>
+            <td>Almacenamiento en BD</td>
+            <td>La columna <code>foto_pedido_base64</code> en <code>cita_servicio</code> es TEXT. No se incluye en el SELECT general — se carga <em>on-demand</em> con <code>getFotoPedido(id)</code>.</td>
+          </tr>
+          <tr>
+            <td>CORS</td>
+            <td>El endpoint devuelve <code>Access-Control-Allow-Origin: *</code>, útil si el chatbot o cliente externo necesita llamarlo directamente.</td>
+          </tr>
+          <tr>
+            <td>Idempotencia</td>
+            <td>El endpoint es puro (stateless): misma entrada → misma salida. Se puede llamar múltiples veces sin efectos secundarios.</td>
+          </tr>
+          <tr>
+            <td>Archivo del API</td>
+            <td><code>api/imagen-base64.ts</code> (Vercel serverless function). Rewrite configurado en <code>vercel.json</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <p>Clínicas Atlas — Sistema Médico &mdash; Documentación interna &mdash; <code>api/imagen-base64.ts</code></p>
+</footer>
+
+</body>
+</html>

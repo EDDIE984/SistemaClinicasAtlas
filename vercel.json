@@ -16,6 +16,10 @@
       "destination": "/api/send-whatsapp"
     },
     {
+      "source": "/api/imagen-base64",
+      "destination": "/api/imagen-base64"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

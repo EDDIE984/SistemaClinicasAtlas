@@ -17,7 +17,9 @@ import {
   MessageSquare,
   BarChart3,
   CalendarDays,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Stethoscope,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ChatBotView } from './ChatBotView';
@@ -31,6 +33,8 @@ import { ReportesViewSupabase } from './ReportesViewSupabase';
 import CitasDashboardSupabase from './CitasDashboardSupabase';
 import PlanificacionHorarioView from './PlanificacionHorarioView';
 import { ChatAI } from './ChatAI';
+import { AgendaServiciosView } from './AgendaServiciosView';
+import { DashboardServiciosView } from './DashboardServiciosView';
 // import logoClinica from "figma:asset/535c4fa3c95ae864b14ba302621119ba18d73bbc.png";
 const logoClinica = 'https://clinicas-atlas.com/wp-content/uploads/2024/11/clinicas-atlas-ecuador.png';
 
@@ -40,16 +44,32 @@ interface DashboardProps {
     name: string;
     email: string;
     compania?: string;
+    id_sucursal?: number;
     sucursal?: string;
+    id_servicio?: number;
     especialidad?: string;
+    servicio?: string;
+    servicio_area?: string;
     tipo_usuario?: string;
   } | null;
 }
 
-type MenuItem = 'pacientes' | 'agenda' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'configuraciones' | 'planificacion' | 'interconsultas';
+type MenuItem = 'pacientes' | 'agenda' | 'agenda-servicios' | 'dashboard-servicios' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'configuraciones' | 'planificacion' | 'interconsultas';
 
 export function Dashboard({ onLogout, currentUser }: DashboardProps) {
-  const [activeItem, setActiveItem] = useState<MenuItem>(currentUser?.tipo_usuario === 'medico' ? 'pacientes' : 'agenda');
+  const servicioArea = currentUser?.servicio_area?.trim().toUpperCase();
+  const servicioDescripcion = currentUser?.servicio?.trim().toUpperCase();
+  const esUsuarioServicio =
+    !!currentUser?.id_servicio &&
+    servicioArea !== 'CONSULTA_EXTERNA' &&
+    servicioDescripcion !== 'CONSULTA EXTERNA';
+
+  const [activeItem, setActiveItem] = useState<MenuItem>(
+    esUsuarioServicio ? 'agenda'
+    : currentUser?.tipo_usuario === 'medico' ? 'pacientes'
+    : currentUser?.tipo_usuario === 'GESTOR_IMAGEN' ? 'dashboard-servicios'
+    : 'agenda'
+  );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true); // Collapsed por defecto
@@ -61,6 +81,8 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
 
   const allMenuItems = [
     { id: 'agenda' as MenuItem, label: 'Agenda', icon: Calendar },
+    { id: 'dashboard-servicios' as MenuItem, label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'agenda-servicios' as MenuItem, label: 'Agenda Servicios', icon: Stethoscope },
     { id: 'citas' as MenuItem, label: 'Citas', icon: BarChart3 },
     { id: 'pacientes' as MenuItem, label: 'Pacientes', icon: Users },
     { id: 'cargos' as MenuItem, label: 'Cobros', icon: Briefcase },
@@ -73,6 +95,14 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
 
   // Filtrar items del menú según el tipo de usuario
   const menuItems = allMenuItems.filter(item => {
+    // Usuario de servicio: solo puede ver su agenda confirmada.
+    if (esUsuarioServicio) {
+      return item.id === 'agenda';
+    }
+    // GESTOR_IMAGEN: Dashboard y Agenda Servicios
+    if (currentUser?.tipo_usuario === 'GESTOR_IMAGEN') {
+      return item.id === 'dashboard-servicios' || item.id === 'agenda-servicios';
+    }
     // Si es secretaria: Agenda, Citas, Planificación e Interconsultas
     if (currentUser?.tipo_usuario === 'secretaria') {
       return item.id === 'agenda' || item.id === 'citas' || item.id === 'planificacion' || item.id === 'interconsultas';
@@ -116,7 +146,14 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
   const renderContent = () => {
     switch (activeItem) {
       case 'agenda':
+        if (esUsuarioServicio) {
+          return <AgendaServiciosView currentUser={currentUser} modoUsuarioServicio />;
+        }
         return <AgendaViewSupabase currentUser={currentUser} onIniciarConsulta={handleIniciarConsultaDesdeAgenda} />;
+      case 'dashboard-servicios':
+        return <DashboardServiciosView currentUser={currentUser} />;
+      case 'agenda-servicios':
+        return <AgendaServiciosView currentUser={currentUser} />;
       case 'pacientes':
         return (
           <PacientesViewSupabase

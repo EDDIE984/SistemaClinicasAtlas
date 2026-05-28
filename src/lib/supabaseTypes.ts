@@ -19,7 +19,7 @@ export interface Database {
           email: string
           telefono: string | null
           password: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN'
           fecha_ingreso: string
           estado: 'activo' | 'inactivo'
           created_at: string
@@ -33,7 +33,7 @@ export interface Database {
           email: string
           telefono?: string | null
           password?: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
@@ -47,7 +47,7 @@ export interface Database {
           email?: string
           telefono?: string | null
           password?: string
-          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria'
+          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
@@ -315,6 +315,7 @@ export interface Database {
           id_usuario_sucursal: number
           id_usuario: number
           id_sucursal: number
+          id_servicio: number | null
           id_especialidad: number | null
           especialidad: string | null
           cargo: string | null
@@ -326,6 +327,7 @@ export interface Database {
           id_usuario_sucursal?: number
           id_usuario: number
           id_sucursal: number
+          id_servicio?: number | null
           id_especialidad: number | null
           especialidad?: string | null
           cargo?: string | null
@@ -337,6 +339,7 @@ export interface Database {
           id_usuario_sucursal?: number
           id_usuario?: number
           id_sucursal?: number
+          id_servicio?: number | null
           id_especialidad?: number | null
           especialidad?: string | null
           cargo?: string | null
@@ -568,6 +571,35 @@ export interface Database {
           numero?: string | null
           capacidad?: number | null
           equipamiento?: string | null
+          estado?: 'activo' | 'inactivo'
+          created_at?: string
+          updated_at?: string
+        }
+      },
+      servicio: {
+        Row: {
+          id_servicio: number
+          id_sucursal: number
+          descripcion: string
+          area: string
+          estado: 'activo' | 'inactivo'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id_servicio?: number
+          id_sucursal: number
+          descripcion: string
+          area: string
+          estado?: 'activo' | 'inactivo'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id_servicio?: number
+          id_sucursal?: number
+          descripcion?: string
+          area?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
           updated_at?: string

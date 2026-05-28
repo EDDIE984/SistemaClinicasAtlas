@@ -15,17 +15,17 @@ import type { AsignacionConsultorio } from '../../lib/configuracionesService';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
 const DIAS_SEMANA = [
-  { valor: 1, nombre: 'Lunes' },
-  { valor: 2, nombre: 'Martes' },
-  { valor: 3, nombre: 'Miércoles' },
-  { valor: 4, nombre: 'Jueves' },
-  { valor: 5, nombre: 'Viernes' },
-  { valor: 6, nombre: 'Sábado' },
-  { valor: 0, nombre: 'Domingo' }
+  { valor: 1, nombre: 'Lunes',     abrev: 'Lun' },
+  { valor: 2, nombre: 'Martes',    abrev: 'Mar' },
+  { valor: 3, nombre: 'Miércoles', abrev: 'Mié' },
+  { valor: 4, nombre: 'Jueves',    abrev: 'Jue' },
+  { valor: 5, nombre: 'Viernes',   abrev: 'Vie' },
+  { valor: 6, nombre: 'Sábado',    abrev: 'Sáb' },
+  { valor: 0, nombre: 'Domingo',   abrev: 'Dom' },
 ];
 
 export function AsignacionConsultorioTabSupabase() {
-  const { asignaciones, isLoading, agregarAsignacion, actualizarAsignacion, eliminarAsignacion } = useAsignacionesConsultorio();
+  const { asignaciones, isLoading, loadAsignaciones, agregarAsignacion, actualizarAsignacion, eliminarAsignacion } = useAsignacionesConsultorio();
   const { asignaciones: usuariosSucursales } = useUsuarioSucursales();
   const { consultorios } = useConsultorios();
   const { sucursales } = useSucursales();
@@ -43,12 +43,18 @@ export function AsignacionConsultorioTabSupabase() {
   const [formData, setFormData] = useState({
     id_usuario_sucursal: 0,
     id_consultorio: 0,
-    dia_semana: 1,
     hora_inicio: '08:00',
     hora_fin: '17:00',
     duracion_consulta: 30,
     estado: 'activo' as 'activo' | 'inactivo'
   });
+  const [diasSeleccionados, setDiasSeleccionados] = useState<number[]>([1]);
+
+  const toggleDia = (valor: number) => {
+    setDiasSeleccionados(prev =>
+      prev.includes(valor) ? prev.filter(d => d !== valor) : [...prev, valor]
+    );
+  };
 
   // Filtrar consultorios cuando cambia el médico seleccionado
   useEffect(() => {
@@ -89,12 +95,12 @@ export function AsignacionConsultorioTabSupabase() {
     setFormData({
       id_usuario_sucursal: primerMedico?.id_usuario_sucursal || 0,
       id_consultorio: consultorios[0]?.id_consultorio || 0,
-      dia_semana: 1,
       hora_inicio: '08:00',
       hora_fin: '17:00',
       duracion_consulta: 30,
       estado: 'activo' as 'activo' | 'inactivo'
     });
+    setDiasSeleccionados([1]);
     setIsEditing(false);
     setAsignacionActual(null);
     setIsDialogOpen(true);
@@ -104,12 +110,12 @@ export function AsignacionConsultorioTabSupabase() {
     setFormData({
       id_usuario_sucursal: asignacion.id_usuario_sucursal,
       id_consultorio: asignacion.id_consultorio,
-      dia_semana: asignacion.dia_semana, // Ya es número, no necesita conversión
       hora_inicio: asignacion.hora_inicio,
       hora_fin: asignacion.hora_fin,
       duracion_consulta: asignacion.duracion_consulta || 30,
       estado: asignacion.estado
     });
+    setDiasSeleccionados([asignacion.dia_semana]);
     setIsEditing(true);
     setAsignacionActual(asignacion);
     setIsDialogOpen(true);
@@ -120,45 +126,52 @@ export function AsignacionConsultorioTabSupabase() {
       toast.error('Debe seleccionar un médico y un consultorio');
       return;
     }
-
+    if (!isEditing && diasSeleccionados.length === 0) {
+      toast.error('Debe seleccionar al menos un día');
+      return;
+    }
     if (!formData.hora_inicio || !formData.hora_fin) {
       toast.error('Debe especificar hora de inicio y fin');
       return;
     }
-
-    // Validar duración de consulta
     if (!formData.duracion_consulta || formData.duracion_consulta <= 0 || formData.duracion_consulta > 480) {
       toast.error('La duración debe estar entre 1 y 480 minutos (8 horas)');
       return;
     }
-    
-    const datos = {
+
+    const datosBase = {
       id_usuario_sucursal: formData.id_usuario_sucursal,
       id_consultorio: formData.id_consultorio,
-      dia_semana: formData.dia_semana, // Ya es número, guardarlo directo
       hora_inicio: formData.hora_inicio,
       hora_fin: formData.hora_fin,
       duracion_consulta: formData.duracion_consulta,
       estado: formData.estado as 'activo' | 'inactivo'
     };
 
-    console.log('📋 Guardando horario:', datos);
-
     if (isEditing && asignacionActual) {
-      const success = await actualizarAsignacion(asignacionActual.id_asignacion, datos);
+      const success = await actualizarAsignacion(asignacionActual.id_asignacion, datosBase);
       if (success) {
+        await loadAsignaciones();
         toast.success('Horario actualizado exitosamente');
         setIsDialogOpen(false);
       } else {
         toast.error('Error al actualizar el horario');
       }
     } else {
-      const nueva = await agregarAsignacion(datos);
-      if (nueva) {
-        toast.success('Horario creado exitosamente');
+      const resultados = await Promise.all(
+        diasSeleccionados.map(dia => agregarAsignacion({ ...datosBase, dia_semana: dia }))
+      );
+      const creados = resultados.filter(Boolean).length;
+      if (creados > 0) {
+        await loadAsignaciones();
+        toast.success(
+          creados === 1
+            ? 'Horario creado exitosamente'
+            : `${creados} horarios creados exitosamente`
+        );
         setIsDialogOpen(false);
       } else {
-        toast.error('Error al crear el horario');
+        toast.error('Error al crear los horarios');
       }
     }
   };
@@ -173,6 +186,7 @@ export function AsignacionConsultorioTabSupabase() {
 
     const success = await eliminarAsignacion(asignacionAEliminar.id_asignacion);
     if (success) {
+      await loadAsignaciones();
       toast.success('Horario eliminado exitosamente');
       setIsDeleteDialogOpen(false);
       setAsignacionAEliminar(null);
@@ -377,22 +391,28 @@ export function AsignacionConsultorioTabSupabase() {
             </div>
 
             <div className="space-y-2">
-              <Label>Día de la semana *</Label>
-              <Select
-                value={formData.dia_semana.toString()}
-                onValueChange={(value: string) => setFormData({ ...formData, dia_semana: parseInt(value) })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIAS_SEMANA.map((dia) => (
-                    <SelectItem key={dia.valor} value={dia.valor.toString()}>
-                      {dia.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>{isEditing ? 'Día de la semana' : 'Días de la semana *'}</Label>
+              <div className="flex flex-wrap gap-2">
+                {DIAS_SEMANA.map(dia => {
+                  const seleccionado = diasSeleccionados.includes(dia.valor);
+                  return (
+                    <Button
+                      key={dia.valor}
+                      type="button"
+                      size="sm"
+                      variant={seleccionado ? 'default' : 'outline'}
+                      disabled={isEditing}
+                      onClick={() => toggleDia(dia.valor)}
+                      className="min-w-[46px]"
+                    >
+                      {dia.abrev}
+                    </Button>
+                  );
+                })}
+              </div>
+              {isEditing && (
+                <p className="text-xs text-gray-400">El día no se puede modificar. Elimina y crea un nuevo horario si necesitas cambiarlo.</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -450,7 +470,11 @@ export function AsignacionConsultorioTabSupabase() {
               Cancelar
             </Button>
             <Button onClick={handleGuardar}>
-              {isEditing ? 'Actualizar' : 'Crear'}
+              {isEditing
+                ? 'Actualizar'
+                : diasSeleccionados.length > 1
+                  ? `Crear ${diasSeleccionados.length} horarios`
+                  : 'Crear'}
             </Button>
           </DialogFooter>
         </DialogContent>

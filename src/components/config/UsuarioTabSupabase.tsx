@@ -10,19 +10,21 @@ import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Plus, Pencil, Trash2, Loader2, Users } from 'lucide-react';
 import { toast } from 'sonner';
-import { useUsuarios, formatearTipoUsuario, useCompanias, useSucursales } from '../../hooks/useConfiguraciones';
-import type { Usuario, TipoUsuario, Compania, Sucursal } from '../../lib/configuracionesService';
-import { createUsuarioSucursal } from '../../lib/configuracionesService';
+import { useUsuarios, formatearTipoUsuario, useCompanias, useSucursales, useServicios, useUsuarioSucursales } from '../../hooks/useConfiguraciones';
+import type { Usuario, TipoUsuario, Sucursal, UsuarioSucursal } from '../../lib/configuracionesService';
+import { createUsuarioSucursal, getUsuarioSucursalesByUsuario, updateUsuarioSucursalOrThrow } from '../../lib/configuracionesService';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
 export function UsuarioTabSupabase() {
   const { usuarios, isLoading, agregarUsuario, actualizarUsuario, eliminarUsuario } = useUsuarios();
   const { companias } = useCompanias();
   const { sucursales: todasSucursales } = useSucursales();
+  const { asignaciones: asignacionesUsuarios } = useUsuarioSucursales();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [usuarioActual, setUsuarioActual] = useState<Usuario | null>(null);
+  const [usuarioSucursalActual, setUsuarioSucursalActual] = useState<UsuarioSucursal | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null);
 
@@ -38,10 +40,14 @@ export function UsuarioTabSupabase() {
     estado: 'activo',
     id_compania: '',
     id_sucursal: '',
+    id_servicio: '',
     especialidad: ''
   });
 
   const [sucursalesFiltradas, setSucursalesFiltradas] = useState<Sucursal[]>([]);
+  const idSucursalSeleccionada = formData.id_sucursal ? parseInt(formData.id_sucursal) : undefined;
+  const { servicios: serviciosSucursal } = useServicios(idSucursalSeleccionada);
+  const { servicios: todosServicios } = useServicios();
 
   // Filtrar sucursales cuando cambia la compañía seleccionada
   useEffect(() => {
@@ -55,14 +61,41 @@ export function UsuarioTabSupabase() {
       if (formData.id_sucursal) {
         const sucursalValida = filtered.find(s => s.id_sucursal.toString() === formData.id_sucursal);
         if (!sucursalValida) {
-          setFormData(prev => ({ ...prev, id_sucursal: '' }));
+          setFormData(prev => ({ ...prev, id_sucursal: '', id_servicio: '' }));
         }
       }
     } else {
       setSucursalesFiltradas([]);
-      setFormData(prev => ({ ...prev, id_sucursal: '' }));
+      setFormData(prev => ({ ...prev, id_sucursal: '', id_servicio: '' }));
     }
   }, [formData.id_compania, todasSucursales]);
+
+  useEffect(() => {
+    if (!formData.id_servicio || serviciosSucursal.length === 0) return;
+
+    const servicioValido = serviciosSucursal.find(
+      servicio => servicio.id_servicio.toString() === formData.id_servicio
+    );
+
+    if (!servicioValido) {
+      setFormData(prev => ({ ...prev, id_servicio: '' }));
+    }
+  }, [formData.id_servicio, serviciosSucursal]);
+
+  const getAsignacionPrincipal = (idUsuario: number) => {
+    return asignacionesUsuarios.find(asignacion => asignacion.id_usuario === idUsuario && asignacion.estado === 'activo')
+      || asignacionesUsuarios.find(asignacion => asignacion.id_usuario === idUsuario);
+  };
+
+  const getServicioAsignadoLabel = (idUsuario: number) => {
+    const asignacion = getAsignacionPrincipal(idUsuario);
+    if (!asignacion) return '-';
+
+    const servicio = asignacion.servicio
+      || todosServicios.find(item => item.id_servicio === asignacion.id_servicio);
+
+    return servicio ? `${servicio.descripcion} (${servicio.area})` : '-';
+  };
 
   const handleNuevo = () => {
     setFormData({
@@ -77,15 +110,20 @@ export function UsuarioTabSupabase() {
       estado: 'activo',
       id_compania: '',
       id_sucursal: '',
+      id_servicio: '',
       especialidad: ''
     });
     setIsEditing(false);
     setUsuarioActual(null);
+    setUsuarioSucursalActual(null);
     setSucursalesFiltradas([]);
     setIsDialogOpen(true);
   };
 
-  const handleEditar = (usuario: Usuario) => {
+  const handleEditar = async (usuario: Usuario) => {
+    const asignaciones = await getUsuarioSucursalesByUsuario(usuario.id_usuario);
+    const asignacionPrincipal = asignaciones.find(asignacion => asignacion.estado === 'activo') || asignaciones[0] || null;
+
     setFormData({
       nombre: usuario.nombre,
       apellido: usuario.apellido,
@@ -96,13 +134,19 @@ export function UsuarioTabSupabase() {
       tipo_usuario: usuario.tipo_usuario,
       fecha_ingreso: usuario.fecha_ingreso,
       estado: usuario.estado,
-      id_compania: '',
-      id_sucursal: '',
-      especialidad: ''
+      id_compania: asignacionPrincipal?.sucursal?.id_compania?.toString() || '',
+      id_sucursal: asignacionPrincipal?.id_sucursal?.toString() || '',
+      id_servicio: asignacionPrincipal?.id_servicio?.toString() || '',
+      especialidad: asignacionPrincipal?.especialidad || ''
     });
     setIsEditing(true);
     setUsuarioActual(usuario);
-    setSucursalesFiltradas([]);
+    setUsuarioSucursalActual(asignacionPrincipal);
+    setSucursalesFiltradas(
+      asignacionPrincipal?.sucursal?.id_compania
+        ? todasSucursales.filter(s => s.id_compania === asignacionPrincipal.sucursal?.id_compania)
+        : []
+    );
     setIsDialogOpen(true);
   };
 
@@ -117,9 +161,13 @@ export function UsuarioTabSupabase() {
       return;
     }
 
-    // Validar compañía y sucursal solo para nuevos usuarios
-    if (!isEditing && (!formData.id_compania || !formData.id_sucursal)) {
+    if (!formData.id_compania || !formData.id_sucursal) {
       toast.error('Compañía y sucursal son requeridos');
+      return;
+    }
+
+    if (formData.tipo_usuario === 'USUARIO_IMANGE' && !formData.id_servicio) {
+      toast.error('Debe seleccionar un servicio para Usuario Imagen');
       return;
     }
 
@@ -142,8 +190,36 @@ export function UsuarioTabSupabase() {
     if (isEditing && usuarioActual) {
       const success = await actualizarUsuario(usuarioActual.id_usuario, datos);
       if (success) {
-        toast.success('Usuario actualizado exitosamente');
-        setIsDialogOpen(false);
+        try {
+          const asignacionesActuales = usuarioSucursalActual
+            ? [usuarioSucursalActual]
+            : await getUsuarioSucursalesByUsuario(usuarioActual.id_usuario);
+          const asignacionParaActualizar = asignacionesActuales.find(
+            asignacion => asignacion.id_sucursal === parseInt(formData.id_sucursal)
+          ) || asignacionesActuales[0] || null;
+
+          const datosAsignacion = {
+            id_usuario: usuarioActual.id_usuario,
+            id_sucursal: parseInt(formData.id_sucursal),
+            id_servicio: formData.id_servicio ? parseInt(formData.id_servicio) : null,
+            especialidad: formData.especialidad.trim() || null,
+            cargo: asignacionParaActualizar?.cargo || null,
+            id_especialidad: asignacionParaActualizar?.id_especialidad || null,
+            estado: asignacionParaActualizar?.estado || 'activo' as 'activo' | 'inactivo'
+          };
+
+          if (asignacionParaActualizar) {
+            await updateUsuarioSucursalOrThrow(asignacionParaActualizar.id_usuario_sucursal, datosAsignacion);
+          } else {
+            const nuevaAsignacion = await createUsuarioSucursal(datosAsignacion);
+            if (!nuevaAsignacion) throw new Error('No se pudo crear la asignación usuario-sucursal');
+          }
+
+          toast.success('Usuario actualizado exitosamente');
+          setIsDialogOpen(false);
+        } catch (error: any) {
+          toast.error(error.message || 'Usuario actualizado, pero no se pudo guardar el servicio asignado');
+        }
       } else {
         toast.error('Error al actualizar el usuario');
       }
@@ -156,6 +232,7 @@ export function UsuarioTabSupabase() {
           const asignacion = await createUsuarioSucursal({
             id_usuario: nuevo.id_usuario,
             id_sucursal: parseInt(formData.id_sucursal),
+            id_servicio: formData.id_servicio ? parseInt(formData.id_servicio) : null,
             especialidad: formData.especialidad.trim() || null,
             cargo: null,
             estado: 'activo'
@@ -224,6 +301,7 @@ export function UsuarioTabSupabase() {
                 <TableHead>Email</TableHead>
                 <TableHead>Teléfono</TableHead>
                 <TableHead>Tipo</TableHead>
+                <TableHead>Servicio</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
@@ -231,7 +309,7 @@ export function UsuarioTabSupabase() {
             <TableBody>
               {usuarios.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                     No hay usuarios registrados
                   </TableCell>
                 </TableRow>
@@ -249,6 +327,7 @@ export function UsuarioTabSupabase() {
                         {formatearTipoUsuario(usuario.tipo_usuario)}
                       </Badge>
                     </TableCell>
+                    <TableCell>{getServicioAsignadoLabel(usuario.id_usuario)}</TableCell>
                     <TableCell>
                       <Badge variant={usuario.estado === 'activo' ? 'default' : 'secondary'}>
                         {usuario.estado === 'activo' ? 'Activo' : 'Inactivo'}
@@ -362,6 +441,8 @@ export function UsuarioTabSupabase() {
                     <SelectItem value="administrativo">Administrativo</SelectItem>
                     <SelectItem value="enfermera">Enfermera</SelectItem>
                     <SelectItem value="secretaria">Secretaria</SelectItem>
+                    <SelectItem value="USUARIO_IMANGE">Usuario Imagen</SelectItem>
+                    <SelectItem value="GESTOR_IMAGEN">Gestor Imagen</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -389,59 +470,77 @@ export function UsuarioTabSupabase() {
               </Select>
             </div>
 
-            {!isEditing && (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Compañía *</Label>
-                    <Select
-                      value={formData.id_compania}
-                      onValueChange={(value) => setFormData({ ...formData, id_compania: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione una compañía" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {companias.map((compania) => (
-                          <SelectItem key={compania.id_compania} value={compania.id_compania.toString()}>
-                            {compania.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Compañía *</Label>
+                <Select
+                  value={formData.id_compania}
+                  onValueChange={(value) => setFormData({ ...formData, id_compania: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione una compañía" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companias.map((compania) => (
+                      <SelectItem key={compania.id_compania} value={compania.id_compania.toString()}>
+                        {compania.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                  <div className="space-y-2">
-                    <Label>Sucursal *</Label>
-                    <Select
-                      value={formData.id_sucursal}
-                      onValueChange={(value) => setFormData({ ...formData, id_sucursal: value })}
-                      disabled={!formData.id_compania}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione una sucursal" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sucursalesFiltradas.map((sucursal) => (
-                          <SelectItem key={sucursal.id_sucursal} value={sucursal.id_sucursal.toString()}>
-                            {sucursal.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <Label>Sucursal *</Label>
+                <Select
+                  value={formData.id_sucursal}
+                  onValueChange={(value) => setFormData({ ...formData, id_sucursal: value, id_servicio: '' })}
+                  disabled={!formData.id_compania}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione una sucursal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sucursalesFiltradas.map((sucursal) => (
+                      <SelectItem key={sucursal.id_sucursal} value={sucursal.id_sucursal.toString()}>
+                        {sucursal.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-                <div className="space-y-2">
-                  <Label>Especialidad</Label>
-                  <Input
-                    value={formData.especialidad}
-                    onChange={(e) => setFormData({ ...formData, especialidad: e.target.value })}
-                    placeholder="Ej: Medicina General, Cardiología, etc."
-                  />
-                </div>
-              </>
+            {formData.tipo_usuario !== 'GESTOR_IMAGEN' && (
+              <div className="space-y-2">
+                <Label>Servicio {formData.tipo_usuario === 'USUARIO_IMANGE' ? '*' : ''}</Label>
+                <Select
+                  value={formData.id_servicio}
+                  onValueChange={(value) => setFormData({ ...formData, id_servicio: value })}
+                  disabled={!formData.id_sucursal || serviciosSucursal.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione un servicio (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {serviciosSucursal.map((servicio) => (
+                      <SelectItem key={servicio.id_servicio} value={servicio.id_servicio.toString()}>
+                        {servicio.descripcion} ({servicio.area})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
+
+            <div className="space-y-2">
+              <Label>Especialidad</Label>
+              <Input
+                value={formData.especialidad}
+                onChange={(e) => setFormData({ ...formData, especialidad: e.target.value })}
+                placeholder="Ej: Medicina General, Cardiología, etc."
+              />
+            </div>
           </div>
 
           <DialogFooter>
