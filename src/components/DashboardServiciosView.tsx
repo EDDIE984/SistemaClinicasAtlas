@@ -131,6 +131,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const [citaAConfirmar, setCitaAConfirmar]       = useState<CitaServicioCompleta | null>(null);
   const [medicoSolicitante, setMedicoSolicitante] = useState('');
   const [numRegistro, setNumRegistro]             = useState('');
+  const [tieneSeguroMedico, setTieneSeguroMedico] = useState('');
   const [fotoBase64, setFotoBase64]               = useState('');
   const [fotoNombre, setFotoNombre]               = useState('');
   const [isUploadingFoto, setIsUploadingFoto]     = useState(false);
@@ -141,6 +142,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     setCitaAConfirmar(cita);
     setMedicoSolicitante('');
     setNumRegistro('');
+    setTieneSeguroMedico('');
     setFotoBase64('');
     setFotoNombre('');
   };
@@ -193,12 +195,13 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   };
 
   const handleConfirmar = async () => {
-    if (!citaAConfirmar || !medicoSolicitante || !numRegistro || !fotoBase64) return;
+    if (!citaAConfirmar || !puedeConfirmar) return;
     setIsConfirmando(true);
     try {
       const ok = await confirmarCita(citaAConfirmar.id_cita_servicio, {
         medico_solicitante:     medicoSolicitante.toUpperCase(),
         numero_registro_medico: numRegistro,
+        tiene_seguro_medico:    tieneSeguroMedico.trim(),
         foto_pedido_base64:     fotoBase64,
       });
       if (ok) {
@@ -212,7 +215,11 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     }
   };
 
-  const puedeConfirmar = medicoSolicitante.trim() !== '' && numRegistro.trim() !== '' && fotoBase64 !== '';
+  const puedeConfirmar =
+    medicoSolicitante.trim() !== '' &&
+    numRegistro.trim() !== '' &&
+    tieneSeguroMedico.trim() !== '' &&
+    fotoBase64 !== '';
 
   // ─── Visor de foto ────────────────────────────────────────────────────────
   const [citaFoto, setCitaFoto]             = useState<CitaServicioCompleta | null>(null);
@@ -318,6 +325,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                     <TableHead>Paciente</TableHead>
                     <TableHead>Médico solicitante</TableHead>
                     <TableHead>N° Registro</TableHead>
+                    <TableHead>Tiene seguro médico</TableHead>
                     <TableHead>Foto pedido</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
@@ -370,6 +378,15 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                         <TableCell>
                           {cita.numero_registro_medico ? (
                             <span className="text-sm font-mono">{cita.numero_registro_medico}</span>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </TableCell>
+
+                        {/* Tiene seguro médico */}
+                        <TableCell>
+                          {cita.tiene_seguro_medico ? (
+                            <span className="text-sm">{cita.tiene_seguro_medico}</span>
                           ) : (
                             <span className="text-xs text-gray-300">—</span>
                           )}
@@ -470,7 +487,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
           <DialogHeader>
             <DialogTitle>Confirmar cita</DialogTitle>
             <DialogDescription>
-              Registra el médico solicitante, número de registro y fotografía del pedido para confirmar la cita.
+              Registra el médico solicitante, número de registro, seguro médico y fotografía del pedido para confirmar la cita.
             </DialogDescription>
           </DialogHeader>
           {citaAConfirmar && (
@@ -503,6 +520,16 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                   placeholder="Ej: 123456"
                   value={numRegistro}
                   onChange={e => setNumRegistro(e.target.value)}
+                />
+              </div>
+
+              {/* Tiene seguro médico */}
+              <div className="space-y-1.5">
+                <Label>Tiene seguro médico *</Label>
+                <Input
+                  placeholder="Ej: Sí, IESS / No / Particular"
+                  value={tieneSeguroMedico}
+                  onChange={e => setTieneSeguroMedico(e.target.value)}
                 />
               </div>
 
@@ -547,7 +574,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
               {!puedeConfirmar && (
                 <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
                   <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />
-                  <span>La fotografía del pedido es obligatoria para confirmar. Sin ella la cita permanecerá en estado <strong>Agendada</strong>.</span>
+                  <span>Completa todos los campos obligatorios y carga la fotografía del pedido para confirmar. Sin esos datos la cita permanecerá en estado <strong>Agendada</strong>.</span>
                 </div>
               )}
             </div>

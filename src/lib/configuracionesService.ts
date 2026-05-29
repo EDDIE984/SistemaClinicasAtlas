@@ -1597,6 +1597,7 @@ export interface CitaServicio {
   notas_cita?: string;
   medico_solicitante?: string;
   numero_registro_medico?: string;
+  tiene_seguro_medico?: string;
   fecha_confirmada?: string | null;
   fecha_inicio_atencion?: string | null;
   fecha_atendida?: string | null;

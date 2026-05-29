@@ -21,6 +21,7 @@ const SELECT_COMPLETO = `
   notas_cita,
   medico_solicitante,
   numero_registro_medico,
+  tiene_seguro_medico,
   fecha_confirmada,
   fecha_inicio_atencion,
   fecha_atendida,
@@ -145,6 +146,7 @@ export async function confirmarCitaServicio(
   datos: {
     medico_solicitante: string;
     numero_registro_medico: string;
+    tiene_seguro_medico: string;
     foto_pedido_base64: string;
   }
 ): Promise<import('./configuracionesService').CitaServicio | null> {
