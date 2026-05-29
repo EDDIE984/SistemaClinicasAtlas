@@ -483,15 +483,15 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
       {/* Dialog de confirmación */}
       <Dialog open={!!citaAConfirmar} onOpenChange={open => !open && setCitaAConfirmar(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-w-md max-h-[calc(100dvh-2rem)] grid-rows-[auto,minmax(0,1fr),auto] gap-0 overflow-hidden p-0">
+          <DialogHeader className="px-6 pt-6 pb-3 pr-12">
             <DialogTitle>Confirmar cita</DialogTitle>
             <DialogDescription>
               Registra el médico solicitante, número de registro, seguro médico y fotografía del pedido para confirmar la cita.
             </DialogDescription>
           </DialogHeader>
           {citaAConfirmar && (
-            <div className="space-y-4">
+            <div className="min-h-0 overflow-y-auto px-6 py-3 space-y-4">
               {/* Resumen */}
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
                 <div className="font-medium text-blue-900">
@@ -579,7 +579,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="border-t bg-background px-6 py-4">
             <Button variant="outline" onClick={() => setCitaAConfirmar(null)}>Cancelar</Button>
             <Button
               onClick={handleConfirmar}
