@@ -1,9 +1,25 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
 
 const MIME_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
-export default function handler(req: VercelRequest, res: VercelResponse) {
+function getSupabaseConfig() {
+  const url =
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL;
+
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY;
+
+  return { url, key };
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -12,7 +28,17 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
 
   try {
-    const { data, mimeType } = req.body as { data?: string; mimeType?: string };
+    const { id_cita_servicio, data, mimeType } = req.body as {
+      id_cita_servicio?: number | string;
+      data?: string;
+      mimeType?: string;
+    };
+
+    const idCitaServicio = Number(id_cita_servicio);
+
+    if (!Number.isInteger(idCitaServicio) || idCitaServicio <= 0) {
+      return res.status(400).json({ error: 'El campo "id_cita_servicio" es requerido y debe ser un número válido.' });
+    }
 
     if (!data || typeof data !== 'string') {
       return res.status(400).json({ error: 'El campo "data" (base64) es requerido.' });
@@ -47,11 +73,45 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const tamanio_kb = Math.round(bytesAproximados / 1024);
     const base64Normalizado = `data:${resolvedMime};base64,${base64Data}`;
 
+    const { url, key } = getSupabaseConfig();
+    if (!url || !key) {
+      return res.status(500).json({
+        error: 'Supabase no está configurado. Configure SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.',
+      });
+    }
+
+    const supabase = createClient(url, key, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    const { data: citaActualizada, error } = await supabase
+      .from('cita_servicio')
+      .update({ foto_pedido_base64: base64Normalizado })
+      .eq('id_cita_servicio', idCitaServicio)
+      .select('id_cita_servicio')
+      .single();
+
+    if (error) {
+      console.error('❌ Error al guardar imagen en cita_servicio:', error);
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'No existe una cita_servicio con el id indicado.' });
+      }
+
+      return res.status(500).json({
+        error: 'No se pudo guardar la imagen en la cita de servicio.',
+        details: error.message,
+      });
+    }
+
     return res.status(200).json({
-      base64: base64Normalizado,
+      ok: true,
+      id_cita_servicio: idCitaServicio,
       mimeType: resolvedMime,
       tamanio_kb,
-      valido: true,
+      message: 'Imagen guardada correctamente en la cita de servicio.',
     });
   } catch (error) {
     console.error('❌ Error en /api/imagen-base64:', error);

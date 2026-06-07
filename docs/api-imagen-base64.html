@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Webservice /api/imagen-base64 — Clínicas Atlas</title>
+  <title>Webservice guardar imagen de cita_servicio — Clínicas Atlas</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }
@@ -94,19 +94,20 @@
   <section id="descripcion">
     <h2>1. Descripción general</h2>
     <p>
-      El webservice <strong>/api/imagen-base64</strong> recibe una imagen (como cadena <em>data URL</em> o base64 puro)
-      y la valida, normaliza y devuelve lista para almacenar en la base de datos o enviar a otro servicio.
+      El webservice <strong>/api/imagen-base64</strong> recibe el <code>id_cita_servicio</code> y una imagen
+      en base64, valida la imagen y la guarda directamente en la columna
+      <code>cita_servicio.foto_pedido_base64</code>.
     </p>
     <p>
       Casos de uso principales:
     </p>
     <ul style="padding-left:1.4rem; color:#334155; font-size:.9rem; margin-bottom:.75rem;">
-      <li style="margin-bottom:.3rem;"><strong>Dashboard de Servicios</strong> — adjuntar fotografía del pedido médico al confirmar una cita de imagen o laboratorio.</li>
-      <li style="margin-bottom:.3rem;"><strong>Chatbot Atlas</strong> — recibir imágenes del paciente (resultados, pedidos) antes de derivar al agente.</li>
-      <li style="margin-bottom:.3rem;">Cualquier módulo que requiera conversión/validación de imágenes sin subir a almacenamiento externo.</li>
+      <li style="margin-bottom:.3rem;"><strong>Servicios externos / Postman</strong> — guardar la fotografía del pedido médico asociada a una cita ya existente.</li>
+      <li style="margin-bottom:.3rem;"><strong>Dashboard de Servicios</strong> — adjuntar fotografía del pedido médico cuando ya se conoce el <code>id_cita_servicio</code>.</li>
     </ul>
     <div class="note">
-      La imagen <strong>no se almacena</strong> en este endpoint. El API solo valida y normaliza. El guardado en base de datos ocurre en la operación posterior (ej. confirmar cita).
+      Este endpoint <strong>sí almacena</strong> la imagen. El valor guardado es un
+      <code>data:image/...;base64,...</code> normalizado en la tabla <code>cita_servicio</code>.
     </div>
   </section>
 
@@ -139,6 +140,15 @@
         <thead><tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Descripción</th></tr></thead>
         <tbody>
           <tr>
+            <td><code>id_cita_servicio</code></td>
+            <td>number</td>
+            <td>Sí</td>
+            <td>
+              Código de la cita de servicio donde se guardará la imagen. Corresponde a
+              <code>cita_servicio.id_cita_servicio</code>.
+            </td>
+          </tr>
+          <tr>
             <td><code>data</code></td>
             <td>string</td>
             <td>Sí</td>
@@ -153,7 +163,7 @@
             <td>Sí</td>
             <td>
               Tipo MIME de la imagen, ej. <code>image/jpeg</code>, <code>image/png</code>, <code>image/webp</code>.
-              Debe empezar con <code>image/</code>; cualquier otro valor devuelve 400.
+              Debe estar dentro de los tipos permitidos por el servicio.
             </td>
           </tr>
         </tbody>
@@ -162,6 +172,7 @@
 
     <h3>Ejemplo de body</h3>
     <pre><code>{
+  <span class="str">"id_cita_servicio"</span>: <span class="nm">123</span>,
   <span class="str">"data"</span>: <span class="str">"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."</span>,
   <span class="str">"mimeType"</span>: <span class="str">"image/jpeg"</span>
 }</code></pre>
@@ -178,25 +189,28 @@
 
     <h3>Éxito — 200 OK</h3>
     <pre><code>{
-  <span class="str">"base64"</span>: <span class="str">"data:image/jpeg;base64,/9j/4AAQ..."</span>,
+  <span class="str">"ok"</span>: <span class="kw">true</span>,
+  <span class="str">"id_cita_servicio"</span>: <span class="nm">123</span>,
   <span class="str">"mimeType"</span>: <span class="str">"image/jpeg"</span>,
   <span class="str">"tamanio_kb"</span>: <span class="nm">142</span>,
-  <span class="str">"valido"</span>: <span class="kw">true</span>
+  <span class="str">"message"</span>: <span class="str">"Imagen guardada correctamente en la cita de servicio."</span>
 }</code></pre>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Campo</th><th>Tipo</th><th>Descripción</th></tr></thead>
         <tbody>
-          <tr><td><code>base64</code></td><td>string</td><td>Data URL completa lista para usar en <code>&lt;img src&gt;</code> o guardar en BD.</td></tr>
+          <tr><td><code>ok</code></td><td>boolean</td><td>Indica que la imagen fue guardada correctamente.</td></tr>
+          <tr><td><code>id_cita_servicio</code></td><td>number</td><td>Cita de servicio actualizada.</td></tr>
           <tr><td><code>mimeType</code></td><td>string</td><td>MIME validado tal como fue recibido.</td></tr>
           <tr><td><code>tamanio_kb</code></td><td>number</td><td>Tamaño decodificado en kilobytes (redondeado).</td></tr>
-          <tr><td><code>valido</code></td><td>boolean</td><td>Siempre <code>true</code> en respuesta 200.</td></tr>
+          <tr><td><code>message</code></td><td>string</td><td>Mensaje descriptivo de la operación realizada.</td></tr>
         </tbody>
       </table>
     </div>
 
     <h3>Errores</h3>
-    <div class="status-row"><span class="status-code s400">400</span><span>Tipo de archivo no permitido — el <code>mimeType</code> no comienza con <code>image/</code>.</span></div>
+    <div class="status-row"><span class="status-code s400">400</span><span>Falta <code>id_cita_servicio</code>, falta <code>data</code> o el tipo de archivo no está permitido.</span></div>
+    <div class="status-row"><span class="status-code s400">404</span><span>No existe una <code>cita_servicio</code> con el id indicado.</span></div>
     <div class="status-row"><span class="status-code s413">413</span><span>Imagen demasiado grande — el tamaño decodificado supera 5 MB.</span></div>
     <div class="status-row"><span class="status-code s405">405</span><span>Método no permitido — se usó GET, PUT u otro en lugar de POST.</span></div>
     <div class="status-row"><span class="status-code s500">500</span><span>Error interno — el body JSON estaba malformado o vacío.</span></div>
@@ -211,13 +225,14 @@
   <!-- 5. Ejemplo JS -->
   <section id="ejemplo-js">
     <h2>5. Ejemplo: JavaScript / Fetch API</h2>
-    <p>Flujo completo desde la selección del archivo hasta guardar el base64 en el estado de React:</p>
+    <p>Flujo completo desde la selección del archivo hasta guardar la imagen en una cita de servicio existente:</p>
     <pre><code><span class="cmt">/**
- * Convierte un File a base64 validado usando el webservice.
+ * Guarda un File como base64 en cita_servicio.foto_pedido_base64.
+ * @param {number} idCitaServicio  Código de cita_servicio
  * @param {File} file  Archivo seleccionado por el usuario
- * @returns {Promise&lt;{base64: string, tamanio_kb: number}&gt;}
+ * @returns {Promise&lt;{ok: boolean, id_cita_servicio: number, tamanio_kb: number}&gt;}
  */</span>
-<span class="kw">async function</span> <span class="fn">convertirImagenABase64</span>(file) {
+<span class="kw">async function</span> <span class="fn">guardarImagenCitaServicio</span>(idCitaServicio, file) {
   <span class="cmt">// 1. Validar en cliente antes de enviar</span>
   <span class="kw">if</span> (!file.type.startsWith(<span class="str">'image/'</span>)) {
     <span class="kw">throw new</span> Error(<span class="str">'Solo se permiten imágenes'</span>);
@@ -238,7 +253,11 @@
   <span class="kw">const</span> resp = <span class="kw">await</span> fetch(<span class="str">'/api/imagen-base64'</span>, {
     method: <span class="str">'POST'</span>,
     headers: { <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span> },
-    body: JSON.stringify({ data: dataUrl, mimeType: file.type }),
+    body: JSON.stringify({
+      id_cita_servicio: idCitaServicio,
+      data: dataUrl,
+      mimeType: file.type,
+    }),
   });
 
   <span class="kw">const</span> json = <span class="kw">await</span> resp.json();
@@ -247,8 +266,8 @@
     <span class="kw">throw new</span> Error(json.error || <span class="str">'Error al procesar la imagen'</span>);
   }
 
-  <span class="cmt">// 4. json.base64 está listo para &lt;img src&gt; o guardar en BD</span>
-  <span class="kw">return</span> { base64: json.base64, tamanio_kb: json.tamanio_kb };
+  <span class="cmt">// 4. La imagen ya quedó guardada en la base de datos</span>
+  <span class="kw">return</span> json;
 }
 
 <span class="cmt">// ── Uso ──────────────────────────────────────────────────────</span>
@@ -259,10 +278,9 @@ input.addEventListener(<span class="str">'change'</span>, <span class="kw">async
   <span class="kw">if</span> (!file) <span class="kw">return</span>;
 
   <span class="kw">try</span> {
-    <span class="kw">const</span> { base64, tamanio_kb } = <span class="kw">await</span> convertirImagenABase64(file);
-    console.log(<span class="str">`Imagen lista (${tamanio_kb} KB)`</span>);
-    document.querySelector(<span class="str">'img#preview'</span>).src = base64;  <span class="cmt">// preview</span>
-    <span class="cmt">// Guardar base64 en tu estado para enviarlo al backend</span>
+    <span class="kw">const</span> idCitaServicio = <span class="nm">123</span>;
+    <span class="kw">const</span> { tamanio_kb } = <span class="kw">await</span> guardarImagenCitaServicio(idCitaServicio, file);
+    console.log(<span class="str">`Imagen guardada (${tamanio_kb} KB)`</span>);
   } <span class="kw">catch</span> (err) {
     console.error(err.message);
   }
@@ -288,17 +306,17 @@ input.addEventListener(<span class="str">'change'</span>, <span class="kw">async
         method: <span class="str">'POST'</span>,
         headers: { <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span> },
         body: JSON.stringify({
+          id_cita_servicio: <span class="nm">123</span>,
           data:     ev.target.result,
           mimeType: file.type,
         }),
       });
       <span class="kw">const</span> json = <span class="kw">await</span> resp.json();
       <span class="kw">if</span> (resp.ok) {
-        document.getElementById(<span class="str">'preview'</span>).src         = json.base64;
+        document.getElementById(<span class="str">'preview'</span>).src         = ev.target.result;
         document.getElementById(<span class="str">'preview'</span>).style.display = <span class="str">'block'</span>;
         document.getElementById(<span class="str">'info'</span>).textContent     =
-          <span class="str">`Tamaño: ${json.tamanio_kb} KB`</span>;
-        <span class="cmt">// Aquí guardas json.base64 para enviarlo con tu formulario</span>
+          <span class="str">`Imagen guardada. Tamaño: ${json.tamanio_kb} KB`</span>;
       } <span class="kw">else</span> {
         alert(json.error);
       }
@@ -363,10 +381,10 @@ input.addEventListener(<span class="str">'change'</span>, <span class="kw">async
     <span class="kw">return</span> toast.error(<span class="str">'La imagen supera el límite de 5 MB'</span>);
 
   <span class="kw">try</span> {
-    <span class="cmt">// ... FileReader + fetch (ver sección 5) ...</span>
+    <span class="cmt">// ... FileReader + fetch con id_cita_servicio (ver sección 5) ...</span>
     <span class="kw">const</span> json = <span class="kw">await</span> resp.json();
     <span class="kw">if</span> (!resp.ok) <span class="kw">throw new</span> Error(json.error);
-    <span class="cmt">// ok — guardar json.base64</span>
+    <span class="cmt">// ok — imagen guardada en cita_servicio.foto_pedido_base64</span>
   } <span class="kw">catch</span> (err) {
     <span class="kw">if</span> (err <span class="kw">instanceof</span> TypeError) {
       <span class="cmt">// Error de red (sin conexión, CORS, etc.)</span>
