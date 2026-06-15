@@ -154,7 +154,8 @@
             <td>Sí</td>
             <td>
               Imagen en formato <em>data URL</em> (<code>data:image/jpeg;base64,/9j/4AAQ...</code>)
-              o base64 puro sin prefijo. Se acepta cualquier subformato de imagen.
+              o base64 puro sin prefijo. Debe ser el base64 de los bytes reales de la imagen,
+              no el base64 de un nombre de archivo, URL, JSON, texto, ni de otro base64 re-codificado.
             </td>
           </tr>
           <tr>
@@ -162,8 +163,8 @@
             <td>string</td>
             <td>Sí</td>
             <td>
-              Tipo MIME de la imagen, ej. <code>image/jpeg</code>, <code>image/png</code>, <code>image/webp</code>.
-              Debe estar dentro de los tipos permitidos por el servicio.
+              Tipo MIME declarado de la imagen, ej. <code>image/jpeg</code>, <code>image/png</code>, <code>image/webp</code>.
+              El servicio detecta el MIME real por la firma del archivo y guarda ese MIME detectado.
             </td>
           </tr>
         </tbody>
@@ -180,6 +181,8 @@
     <div class="note">
       El campo <code>data</code> puede incluir o no el prefijo <code>data:image/...;base64,</code>.
       El API lo detecta automáticamente y normaliza antes de calcular el tamaño.
+      Si envías base64 puro, para una imagen JPEG normalmente empieza con <code>/9j/</code>; PNG con
+      <code>iVBOR</code>; WEBP con <code>UklGR</code>; GIF con <code>R0lGOD</code>.
     </div>
   </section>
 
@@ -201,7 +204,7 @@
         <tbody>
           <tr><td><code>ok</code></td><td>boolean</td><td>Indica que la imagen fue guardada correctamente.</td></tr>
           <tr><td><code>id_cita_servicio</code></td><td>number</td><td>Cita de servicio actualizada.</td></tr>
-          <tr><td><code>mimeType</code></td><td>string</td><td>MIME validado tal como fue recibido.</td></tr>
+          <tr><td><code>mimeType</code></td><td>string</td><td>MIME real detectado por el servicio a partir de la firma del archivo.</td></tr>
           <tr><td><code>tamanio_kb</code></td><td>number</td><td>Tamaño decodificado en kilobytes (redondeado).</td></tr>
           <tr><td><code>message</code></td><td>string</td><td>Mensaje descriptivo de la operación realizada.</td></tr>
         </tbody>
@@ -285,6 +288,37 @@ input.addEventListener(<span class="str">'change'</span>, <span class="kw">async
     console.error(err.message);
   }
 });</code></pre>
+  </section>
+
+  <!-- 5b. Ejemplo Node/Postman -->
+  <section id="ejemplo-node">
+    <h2>5b. Ejemplo: enviar base64 puro desde Node/Postman</h2>
+    <p>
+      Si ya tienes un archivo en disco, convierte los <strong>bytes del archivo</strong> a base64.
+      No conviertas a base64 una ruta, una URL, un JSON ni una cadena que ya era base64.
+    </p>
+    <pre><code><span class="kw">import</span> fs <span class="kw">from</span> <span class="str">'fs'</span>;
+
+<span class="kw">const</span> rawBase64 = fs.readFileSync(<span class="str">'pedido.jpg'</span>).toString(<span class="str">'base64'</span>);
+
+<span class="kw">const</span> resp = <span class="kw">await</span> fetch(<span class="str">'https://TU-DOMINIO.com/api/imagen-base64'</span>, {
+  method: <span class="str">'POST'</span>,
+  headers: { <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span> },
+  body: JSON.stringify({
+    id_cita_servicio: <span class="nm">123</span>,
+    data: rawBase64,
+    mimeType: <span class="str">'image/jpeg'</span>,
+  }),
+});
+
+<span class="kw">const</span> json = <span class="kw">await</span> resp.json();
+<span class="kw">if</span> (!resp.ok) <span class="kw">throw new</span> Error(json.error);
+console.log(json);</code></pre>
+
+    <div class="warn">
+      El servicio valida la firma real del archivo. Si envías texto aleatorio con prefijo
+      <code>data:image/jpeg;base64,</code>, responderá error porque el contenido no corresponde a una imagen.
+    </div>
   </section>
 
   <!-- 6. Ejemplo formulario HTML -->

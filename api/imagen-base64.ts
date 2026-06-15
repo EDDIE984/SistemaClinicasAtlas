@@ -74,6 +74,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Validar tamaño (base64 → bytes: largo * 3/4)
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64Data.replace(/\s/g, ''))) {
+      return res.status(400).json({ error: 'El campo "data" no contiene base64 válido.' });
+    }
+
+    base64Data = base64Data.replace(/\s/g, '');
+
     const bytesAproximados = Math.floor(base64Data.length * 0.75);
     if (bytesAproximados > MAX_BYTES) {
       return res.status(413).json({ error: 'Imagen demasiado grande (máximo 5 MB).' });
@@ -124,7 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       ok: true,
       id_cita_servicio: idCitaServicio,
-      mimeType: resolvedMime,
+      mimeType: mimeDetectado,
       tamanio_kb,
       message: 'Imagen guardada correctamente en la cita de servicio.',
     });
