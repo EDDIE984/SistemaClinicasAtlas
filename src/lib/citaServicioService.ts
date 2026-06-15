@@ -207,6 +207,15 @@ export async function confirmarCitaServicio(
 
 const STORAGE_BUCKET = 'resultados-servicios';
 
+function inferirMimeImagenBase64(base64: string): string {
+  if (base64.startsWith('/9j/')) return 'image/jpeg';
+  if (base64.startsWith('iVBOR')) return 'image/png';
+  if (base64.startsWith('UklGR')) return 'image/webp';
+  if (base64.startsWith('R0lGOD')) return 'image/gif';
+  if (base64.startsWith('Qk')) return 'image/bmp';
+  return 'image/jpeg';
+}
+
 export async function finalizarCitaServicio(
   idCita: number,
   file: File,
@@ -291,7 +300,26 @@ export async function getFotoPedido(id: number): Promise<string | null> {
       console.error('❌ Error al obtener foto de pedido:', error);
       return null;
     }
-    return (data as { foto_pedido_base64: string | null })?.foto_pedido_base64 ?? null;
+
+    const foto = (data as { foto_pedido_base64: string | null })?.foto_pedido_base64?.trim();
+    if (!foto) return null;
+
+    if (foto.startsWith('data:image/')) {
+      return foto;
+    }
+
+    if (foto.startsWith('data:')) {
+      console.error('❌ La foto de pedido no es un data URL de imagen válido');
+      return null;
+    }
+
+    const base64Limpio = foto.replace(/\s/g, '');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64Limpio)) {
+      console.error('❌ La foto de pedido no tiene formato base64 válido');
+      return null;
+    }
+
+    return `data:${inferirMimeImagenBase64(base64Limpio)};base64,${base64Limpio}`;
   } catch (error) {
     console.error('❌ Error inesperado en getFotoPedido:', error);
     return null;

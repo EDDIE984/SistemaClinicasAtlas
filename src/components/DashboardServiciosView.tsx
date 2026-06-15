@@ -68,6 +68,28 @@ function calcularBytesBase64(dataUrl: string): number {
   return Math.floor(base64.length * 0.75);
 }
 
+function extensionDesdeDataUrl(dataUrl: string): string {
+  const mime = dataUrl.match(/^data:([^;]+);base64,/)?.[1];
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/gif') return 'gif';
+  if (mime === 'image/bmp') return 'bmp';
+  return 'jpg';
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(',');
+  const mime = header.match(/^data:([^;]+);base64$/)?.[1] || 'image/jpeg';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: mime });
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 export function DashboardServiciosView({ currentUser }: DashboardServiciosViewProps) {
   const { sucursales } = useSucursales();
@@ -238,6 +260,25 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
       setFotoVisualizando(foto);
     } finally {
       setIsLoadingFoto(false);
+    }
+  };
+
+  const handleDescargarFoto = () => {
+    if (!fotoVisualizando || !citaFoto) return;
+
+    try {
+      const blob = dataUrlToBlob(fotoVisualizando);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pedido_${citaFoto.id_cita_servicio}.${extensionDesdeDataUrl(fotoVisualizando)}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('❌ Error al descargar foto de pedido:', error);
+      toast.error('No se pudo descargar la fotografía del pedido');
     }
   };
 
@@ -713,6 +754,10 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                     src={fotoVisualizando}
                     alt="Pedido médico"
                     className="max-h-[55vh] max-w-full object-contain rounded"
+                    onError={() => {
+                      setFotoVisualizando(null);
+                      toast.error('La fotografía guardada no se puede visualizar. Revisa el formato de la imagen.');
+                    }}
                   />
                 ) : (
                   <div className="text-center text-gray-400 py-8">
@@ -723,13 +768,13 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
               </div>
               {fotoVisualizando && (
                 <div className="text-right">
-                  <a
-                    href={fotoVisualizando}
-                    download={`pedido_${citaFoto.id_cita_servicio}.jpg`}
+                  <button
+                    type="button"
+                    onClick={handleDescargarFoto}
                     className="text-xs text-indigo-600 underline hover:text-indigo-800"
                   >
                     Descargar imagen
-                  </a>
+                  </button>
                 </div>
               )}
             </div>
