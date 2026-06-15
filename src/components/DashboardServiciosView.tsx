@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import {
   LayoutDashboard, Loader2, CheckCircle, XCircle, Pencil, ClipboardList,
   Calendar, Clock, User, Stethoscope, Image, AlertCircle, RefreshCw, Eye,
-  FileText,
+  FileText, BookOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCitasServicio } from '../hooks/useCitasServicio';
@@ -331,9 +331,18 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
           </h1>
           <p className="text-sm text-gray-500">Gestión y confirmación de citas de imagen y laboratorio</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-          <RefreshCw className="size-4 mr-1" /> Actualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open('/manual-servicio-imagen.html', '_blank')}
+          >
+            <BookOpen className="size-4 mr-1" /> Manual
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            <RefreshCw className="size-4 mr-1" /> Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}

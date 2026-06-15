@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manual de Usuario - Servicio de Imagen</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --paper: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9dee8;
+      --soft: #eef2f7;
+      --accent: #2457c5;
+      --accent-soft: #e8efff;
+      --ok: #0f766e;
+      --warn: #a16207;
+      --danger: #b42318;
+      --shadow: 0 18px 45px rgba(16, 24, 40, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      gap: 28px;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    aside {
+      position: sticky;
+      top: 20px;
+      align-self: start;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    aside h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+    }
+
+    nav a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 8px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      background: var(--accent-soft);
+      text-decoration: none;
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .cover {
+      background: linear-gradient(135deg, #0f2454, #2457c5);
+      color: white;
+      border-radius: 18px;
+      padding: 42px;
+      box-shadow: var(--shadow);
+      margin-bottom: 22px;
+    }
+
+    .cover .eyebrow {
+      margin: 0 0 18px;
+      color: #cbd9ff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: 42px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .cover p {
+      max-width: 720px;
+      margin: 18px 0 0;
+      color: #e8efff;
+      font-size: 16px;
+    }
+
+    section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+      margin-bottom: 18px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 17px;
+    }
+
+    p { margin: 0 0 12px; }
+
+    ul, ol {
+      margin: 10px 0 0;
+      padding-left: 22px;
+    }
+
+    li { margin: 7px 0; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .meta div,
+    .role-card,
+    .callout,
+    .shot {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfcfe;
+      padding: 14px;
+    }
+
+    .meta span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .meta strong { font-size: 14px; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .role-card h3 {
+      margin-top: 0;
+      color: var(--accent);
+    }
+
+    .callout {
+      margin: 16px 0;
+      border-left: 4px solid var(--accent);
+    }
+
+    .callout strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .callout.warn { border-left-color: var(--warn); }
+    .callout.ok { border-left-color: var(--ok); }
+    .callout.danger { border-left-color: var(--danger); }
+
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .steps li {
+      counter-increment: step;
+      position: relative;
+      padding: 12px 12px 12px 48px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfcfe;
+      margin: 10px 0;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 14px;
+      top: 13px;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--accent);
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--soft);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+    }
+
+    code {
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+    }
+
+    .shot {
+      margin: 16px 0;
+      padding: 12px;
+      background: #f8fafc;
+    }
+
+    .shot img {
+      display: block;
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+      margin-top: 10px;
+    }
+
+    .shot .placeholder {
+      display: grid;
+      place-items: center;
+      min-height: 180px;
+      border: 1px dashed #a8b1c1;
+      border-radius: 10px;
+      color: var(--muted);
+      background: white;
+      text-align: center;
+      padding: 18px;
+      margin-top: 10px;
+    }
+
+    .caption {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .print-note {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 18px;
+    }
+
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; padding: 16px; }
+      aside { position: static; }
+      .meta, .grid-2 { grid-template-columns: 1fr; }
+      h1 { font-size: 32px; }
+      section, .cover { padding: 22px; }
+    }
+
+    @media print {
+      body { background: white; }
+      .shell { display: block; max-width: none; padding: 0; }
+      aside { display: none; }
+      .cover, section { box-shadow: none; border-radius: 0; page-break-inside: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <h2>Indice</h2>
+      <nav>
+        <a href="#objetivo">Objetivo</a>
+        <a href="#alcance">Alcance</a>
+        <a href="#flujo">Flujo general</a>
+        <a href="#roles">Roles de imagen</a>
+        <a href="#gestor">Gestor Imagen</a>
+        <a href="#usuario-imagen">Usuario Imagen</a>
+        <a href="#whatsapp">Carga desde WhatsApp</a>
+        <a href="#estados">Estados</a>
+        <a href="#errores">Errores frecuentes</a>
+        <a href="#capturas">Capturas requeridas</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="cover">
+        <p class="eyebrow">Clinicas Atlas · Manual operativo</p>
+        <h1>Manual de Usuario para Servicio de Imagen</h1>
+        <p>
+          Guia para gestionar citas de servicios de imagen, registrar pedidos medicos,
+          atender citas asignadas y finalizar resultados con documentos PDF.
+        </p>
+        <div class="meta">
+          <div><span>Modulo</span><strong>Servicio de Imagen</strong></div>
+          <div><span>Roles incluidos</span><strong>Gestor Imagen · Usuario Imagen</strong></div>
+          <div><span>Version</span><strong>Junio 2026</strong></div>
+        </div>
+      </header>
+
+      <section id="objetivo">
+        <h2>1. Objetivo del manual</h2>
+        <p>
+          Este manual explica como operar el flujo de Servicio de Imagen dentro del sistema.
+          Esta dirigido al personal que agenda, confirma, revisa y atiende citas de imagen.
+        </p>
+        <div class="callout ok">
+          <strong>Resultado esperado</strong>
+          El usuario debe poder encontrar una cita, revisar la fotografia del pedido,
+          gestionar la atencion y consultar o cargar resultados sin depender de soporte tecnico.
+        </div>
+      </section>
+
+      <section id="alcance">
+        <h2>2. Alcance</h2>
+        <p>Este documento incluye solamente operaciones relacionadas con Servicio de Imagen.</p>
+        <div class="grid-2">
+          <div class="role-card">
+            <h3>Incluye</h3>
+            <ul>
+              <li>Dashboard de Servicios.</li>
+              <li>Agenda de Servicios.</li>
+              <li>Citas de imagen y laboratorio cuando se gestionan desde el modulo de servicios.</li>
+              <li>Fotografia del pedido medico.</li>
+              <li>Confirmacion de cita.</li>
+              <li>Inicio y registro de atencion.</li>
+              <li>Finalizacion con PDF de resultado.</li>
+              <li>Carga de fotografia recibida por WhatsApp mediante integracion.</li>
+            </ul>
+          </div>
+          <div class="role-card">
+            <h3>No incluye</h3>
+            <ul>
+              <li>Configuracion del sistema.</li>
+              <li>Creacion o administracion de usuarios.</li>
+              <li>Consulta externa.</li>
+              <li>Historia clinica de consulta externa.</li>
+              <li>Administracion general, reportes financieros o permisos.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="flujo">
+        <h2>3. Flujo general del Servicio de Imagen</h2>
+        <ol class="steps">
+          <li>Se crea o existe una cita de servicio para un paciente.</li>
+          <li>El pedido medico puede registrarse desde el dashboard o recibirse desde WhatsApp.</li>
+          <li>El Gestor Imagen revisa la cita, valida datos y confirma si corresponde.</li>
+          <li>El Usuario Imagen revisa sus citas asignadas en la agenda de su servicio.</li>
+          <li>El Usuario Imagen inicia atencion, registra observaciones o URL de informe y guarda la atencion.</li>
+          <li>El Gestor Imagen puede finalizar la cita subiendo el PDF de resultado.</li>
+          <li>Una cita finalizada permite consultar el PDF o reemplazarlo si fue necesario.</li>
+        </ol>
+      </section>
+
+      <section id="roles">
+        <h2>4. Roles de Servicio de Imagen</h2>
+        <div class="grid-2">
+          <div class="role-card">
+            <h3>Gestor Imagen</h3>
+            <p>
+              Supervisa las citas de servicios, confirma pedidos, consulta fotos,
+              cancela o edita citas accionables y finaliza resultados con PDF.
+            </p>
+            <ul>
+              <li>Accede a <strong>Dashboard de Servicios</strong>.</li>
+              <li>Accede a <strong>Agenda de Servicios</strong>.</li>
+              <li>Puede usar filtros por sucursal, servicio y fechas.</li>
+              <li>Puede ver fotografia del pedido y resultado PDF.</li>
+            </ul>
+          </div>
+          <div class="role-card">
+            <h3>Usuario Imagen</h3>
+            <p>
+              Atiende las citas confirmadas asignadas a su sucursal y servicio.
+              Su vista esta orientada al trabajo diario de atencion.
+            </p>
+            <ul>
+              <li>Accede a su <strong>Agenda</strong>.</li>
+              <li>Visualiza sucursal y servicio asignado.</li>
+              <li>Filtra por estado.</li>
+              <li>Inicia, continua o guarda la atencion.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="gestor">
+        <h2>5. Uso del rol Gestor Imagen</h2>
+
+        <h3>5.1 Ingreso al Dashboard de Servicios</h3>
+        <p>
+          Al iniciar sesion como Gestor Imagen, el sistema muestra el Dashboard de Servicios.
+          Esta pantalla concentra las citas de servicios de imagen y laboratorio.
+        </p>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> Dashboard de Servicios completo.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/01-dashboard-servicios.png</div>
+        </div>
+
+        <h3>5.2 Uso de filtros</h3>
+        <p>
+          Los filtros permiten ubicar citas por sucursal, servicio y rango de fechas.
+          Presione <strong>Actualizar</strong> si desea recargar la pantalla.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Filtro</th><th>Uso</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Sucursal</td><td>Muestra citas de una sucursal o todas las sucursales.</td></tr>
+            <tr><td>Servicio</td><td>Muestra un servicio especifico, como Tomografia o Rayos X.</td></tr>
+            <tr><td>Desde</td><td>Fecha inicial del rango de busqueda.</td></tr>
+            <tr><td>Hasta</td><td>Fecha final del rango de busqueda.</td></tr>
+          </tbody>
+        </table>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> bloque de filtros en dos columnas.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/02-filtros-dashboard.png</div>
+        </div>
+
+        <h3>5.3 Lectura de la tabla de citas</h3>
+        <p>La tabla muestra la informacion principal para operar cada cita:</p>
+        <ul>
+          <li>Fecha y hora de la cita.</li>
+          <li>Servicio solicitado.</li>
+          <li>Paciente y cedula.</li>
+          <li>Medico solicitante y numero de registro, si existen.</li>
+          <li>Seguro medico.</li>
+          <li>Fotografia del pedido.</li>
+          <li>Estado de la cita.</li>
+          <li>Acciones disponibles.</li>
+        </ul>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> tabla con una cita que tenga foto activa.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/03-tabla-citas-foto.png</div>
+        </div>
+
+        <h3>5.4 Ver fotografia del pedido</h3>
+        <ol class="steps">
+          <li>Ubique la cita en la tabla.</li>
+          <li>En la columna <strong>Foto pedido</strong>, presione <strong>Ver foto</strong>.</li>
+          <li>El sistema abre un visor con la fotografia registrada.</li>
+          <li>Use <strong>Descargar imagen</strong> si necesita guardar una copia local.</li>
+        </ol>
+        <div class="callout warn">
+          <strong>Importante</strong>
+          Si la columna muestra <strong>Sin foto</strong>, no hay una imagen valida registrada para esa cita.
+          Verifique que el pedido haya sido enviado correctamente.
+        </div>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> dialogo de fotografia del pedido.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/04-visor-foto-pedido.png</div>
+        </div>
+
+        <h3>5.5 Confirmar cita desde el dashboard</h3>
+        <p>
+          Cuando una cita esta en estado <strong>Agendada</strong>, puede aparecer la accion
+          <strong>Confirmar</strong>. Para confirmar, complete los datos requeridos.
+        </p>
+        <ol class="steps">
+          <li>Presione <strong>Confirmar</strong> en la fila de la cita.</li>
+          <li>Ingrese el medico solicitante.</li>
+          <li>Ingrese el numero de registro medico.</li>
+          <li>Indique si tiene seguro medico.</li>
+          <li>Cargue la fotografia del pedido.</li>
+          <li>Presione <strong>Confirmar cita</strong>.</li>
+        </ol>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> formulario Confirmar cita.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/05-confirmar-cita.png</div>
+        </div>
+
+        <h3>5.6 Finalizar cita con PDF</h3>
+        <p>
+          El Gestor Imagen puede subir el PDF del resultado para marcar la cita como finalizada.
+        </p>
+        <ol class="steps">
+          <li>Ubique una cita que aun no este finalizada.</li>
+          <li>Presione <strong>Finalizar</strong>.</li>
+          <li>Seleccione un archivo PDF del resultado.</li>
+          <li>Presione <strong>Confirmar y Finalizar</strong>.</li>
+        </ol>
+        <div class="callout warn">
+          <strong>Restriccion</strong>
+          El sistema acepta solamente archivos PDF de hasta 10 MB.
+        </div>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> modal Finalizar cita con PDF.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/06-finalizar-pdf.png</div>
+        </div>
+
+        <h3>5.7 Ver o reemplazar PDF de resultado</h3>
+        <p>
+          Cuando la cita esta en estado <strong>Finalizado</strong>, la tabla muestra acciones para
+          consultar el PDF o reemplazarlo.
+        </p>
+        <ul>
+          <li><strong>Ver PDF:</strong> abre el resultado en una nueva ventana.</li>
+          <li><strong>Reemplazar:</strong> permite cargar un nuevo PDF, eliminando el anterior.</li>
+        </ul>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> fila finalizada con botones Ver PDF y Reemplazar.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/07-cita-finalizada.png</div>
+        </div>
+      </section>
+
+      <section id="usuario-imagen">
+        <h2>6. Uso del rol Usuario Imagen</h2>
+
+        <h3>6.1 Ingreso a Agenda</h3>
+        <p>
+          El Usuario Imagen ingresa directamente a la Agenda de su servicio asignado.
+          La pantalla muestra las citas del servicio, con vista de semana o lista.
+        </p>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> agenda del Usuario Imagen.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/08-agenda-usuario-imagen.png</div>
+        </div>
+
+        <h3>6.2 Filtros del Usuario Imagen</h3>
+        <p>
+          En modo Usuario Imagen, la sucursal y el servicio se muestran como datos asignados.
+          El usuario puede cambiar el estado de filtro y alternar entre <strong>Semana</strong> y <strong>Lista</strong>.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Control</th><th>Descripcion</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Sucursal</td><td>Muestra la sucursal asignada al usuario.</td></tr>
+            <tr><td>Servicio</td><td>Muestra el servicio asignado al usuario.</td></tr>
+            <tr><td>Estado</td><td>Permite ver Confirmadas, En atencion, Atendidas, Agendadas, Canceladas o Todas.</td></tr>
+            <tr><td>Semana</td><td>Muestra las citas distribuidas por dia.</td></tr>
+            <tr><td>Lista</td><td>Muestra las citas en tabla y permite usar rango de fechas.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>6.3 Revisar detalle de cita</h3>
+        <ol class="steps">
+          <li>Seleccione una cita desde la agenda semanal o la lista.</li>
+          <li>Revise los datos de la cita y del cliente.</li>
+          <li>Revise los datos de confirmacion medica.</li>
+          <li>Presione <strong>Ver fotografia del pedido</strong> si necesita consultar la orden enviada.</li>
+        </ol>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> dialogo Detalle de la cita.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/09-detalle-cita-usuario.png</div>
+        </div>
+
+        <h3>6.4 Iniciar atencion</h3>
+        <p>
+          Si la cita esta en estado <strong>Confirmada</strong>, el usuario puede iniciar la atencion.
+        </p>
+        <ol class="steps">
+          <li>Abra el detalle de la cita.</li>
+          <li>Presione <strong>Inicio de atencion</strong>.</li>
+          <li>El sistema cambia la cita a estado <strong>En atencion</strong>.</li>
+          <li>Se abre la pantalla de atencion de servicio.</li>
+        </ol>
+
+        <h3>6.5 Guardar atencion</h3>
+        <p>
+          En la pantalla <strong>Atencion de servicio</strong>, el usuario puede registrar la URL del informe
+          y observaciones de la atencion.
+        </p>
+        <ol class="steps">
+          <li>Ingrese una URL valida si el informe se encuentra publicado externamente.</li>
+          <li>Agregue observaciones si corresponde.</li>
+          <li>Presione <strong>Guardar</strong>.</li>
+          <li>La cita cambia a estado <strong>Atendida</strong>.</li>
+        </ol>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> pantalla Atencion de servicio.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/10-atencion-servicio.png</div>
+        </div>
+
+        <h3>6.6 Cancelar cita con observacion</h3>
+        <p>
+          Si es necesario cancelar una cita desde la atencion del servicio, se debe registrar una observacion.
+        </p>
+        <ol class="steps">
+          <li>Abra el detalle de la cita.</li>
+          <li>Presione <strong>Cancelar cita</strong>.</li>
+          <li>Escriba el motivo de cancelacion.</li>
+          <li>Presione <strong>Confirmar cancelacion</strong>.</li>
+        </ol>
+      </section>
+
+      <section id="whatsapp">
+        <h2>7. Carga de pedido desde WhatsApp</h2>
+        <p>
+          El paciente o personal autorizado puede enviar una fotografia del pedido medico por WhatsApp.
+          La integracion recibe la imagen, la descifra y la envia al servicio de carga de imagen.
+        </p>
+        <ol class="steps">
+          <li>El mensaje de WhatsApp contiene una imagen del pedido medico.</li>
+          <li>La integracion descarga y descifra la imagen.</li>
+          <li>La imagen se convierte a base64 valido.</li>
+          <li>El servicio guarda la imagen en la cita correspondiente.</li>
+          <li>El Dashboard de Servicios muestra la accion <strong>Ver foto</strong>.</li>
+        </ol>
+        <div class="callout danger">
+          <strong>No enviar archivos cifrados</strong>
+          La URL cruda de WhatsApp puede devolver media cifrada. La integracion debe descifrar la imagen antes de enviarla al sistema.
+        </div>
+        <div class="shot">
+          <p class="caption"><strong>Captura sugerida:</strong> conversacion de WhatsApp con la foto del pedido, ocultando datos sensibles.</p>
+          <div class="placeholder">Pendiente: docs/assets/manual-servicio-imagen/11-whatsapp-pedido.png</div>
+        </div>
+      </section>
+
+      <section id="estados">
+        <h2>8. Estados de la cita</h2>
+        <table>
+          <thead>
+            <tr><th>Estado</th><th>Significado operativo</th><th>Acciones usuales</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Agendada</td><td>La cita fue creada, pero aun puede requerir datos o confirmacion.</td><td>Confirmar, editar o cancelar.</td></tr>
+            <tr><td>Confirmada</td><td>La cita esta lista para atencion del servicio.</td><td>Usuario Imagen puede iniciar atencion.</td></tr>
+            <tr><td>En atencion</td><td>El servicio ya inicio la atencion del paciente.</td><td>Continuar atencion y guardar.</td></tr>
+            <tr><td>Atendida</td><td>La atencion fue registrada como completada.</td><td>Consulta de historial operativo.</td></tr>
+            <tr><td>Finalizado</td><td>El resultado PDF fue cargado por Gestor Imagen.</td><td>Ver PDF o reemplazar PDF.</td></tr>
+            <tr><td>Cancelada</td><td>La cita fue cancelada.</td><td>No se debe atender.</td></tr>
+            <tr><td>No asistio</td><td>El paciente no asistio.</td><td>No se debe atender.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="errores">
+        <h2>9. Errores frecuentes y solucion</h2>
+        <table>
+          <thead>
+            <tr><th>Situacion</th><th>Causa probable</th><th>Que hacer</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>No aparece la cita esperada</td>
+              <td>Rango de fechas, sucursal o servicio incorrecto.</td>
+              <td>Revise filtros y presione Actualizar.</td>
+            </tr>
+            <tr>
+              <td>La columna muestra Sin foto</td>
+              <td>No hay imagen valida registrada.</td>
+              <td>Solicite reenviar la fotografia o verifique la integracion de WhatsApp.</td>
+            </tr>
+            <tr>
+              <td>No se puede visualizar la foto</td>
+              <td>Archivo corrupto o no corresponde a una imagen real.</td>
+              <td>Vuelva a cargar la foto desde el archivo original.</td>
+            </tr>
+            <tr>
+              <td>No se puede finalizar con PDF</td>
+              <td>Archivo no es PDF o supera 10 MB.</td>
+              <td>Seleccione un PDF valido menor o igual a 10 MB.</td>
+            </tr>
+            <tr>
+              <td>No permite guardar atencion</td>
+              <td>URL de informe invalida.</td>
+              <td>Use una URL que inicie con http:// o https://, o deje el campo vacio si no aplica.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="capturas">
+        <h2>10. Capturas requeridas</h2>
+        <p>
+          Para completar el manual con imagenes reales, necesito que me compartas las siguientes capturas.
+          Puedes enviarlas una por una; yo las ire colocando en el HTML.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Archivo sugerido</th><th>Captura necesaria</th><th>Datos a ocultar</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>01-dashboard-servicios.png</code></td><td>Dashboard de Servicios completo.</td><td>Cedulas, telefonos y nombres reales si aplica.</td></tr>
+            <tr><td><code>02-filtros-dashboard.png</code></td><td>Bloque de filtros en dos columnas.</td><td>Ninguno obligatorio.</td></tr>
+            <tr><td><code>03-tabla-citas-foto.png</code></td><td>Tabla con una cita que tenga boton Ver foto.</td><td>Datos personales del paciente.</td></tr>
+            <tr><td><code>04-visor-foto-pedido.png</code></td><td>Dialogo de fotografia del pedido.</td><td>Datos medicos sensibles del pedido.</td></tr>
+            <tr><td><code>05-confirmar-cita.png</code></td><td>Modal Confirmar cita.</td><td>Nombre del paciente si aparece.</td></tr>
+            <tr><td><code>06-finalizar-pdf.png</code></td><td>Modal Finalizar cita con PDF.</td><td>Datos del paciente.</td></tr>
+            <tr><td><code>07-cita-finalizada.png</code></td><td>Fila finalizada con Ver PDF y Reemplazar.</td><td>Datos del paciente.</td></tr>
+            <tr><td><code>08-agenda-usuario-imagen.png</code></td><td>Agenda del Usuario Imagen.</td><td>Datos de pacientes.</td></tr>
+            <tr><td><code>09-detalle-cita-usuario.png</code></td><td>Dialogo Detalle de la cita.</td><td>Datos de contacto y cedula.</td></tr>
+            <tr><td><code>10-atencion-servicio.png</code></td><td>Pantalla Atencion de servicio.</td><td>Datos de paciente.</td></tr>
+            <tr><td><code>11-whatsapp-pedido.png</code></td><td>WhatsApp con imagen enviada.</td><td>Telefono, nombre, contenido sensible.</td></tr>
+          </tbody>
+        </table>
+        <p class="print-note">
+          Recomendacion: capturar en navegador con zoom 100% y ancho de ventana suficiente para mostrar la interfaz completa.
+        </p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
