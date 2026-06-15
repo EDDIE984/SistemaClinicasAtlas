@@ -343,7 +343,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
             <p className="text-sm font-semibold text-gray-900">Filtros de búsqueda</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-gray-600">Sucursal</Label>
               <Select value={filtroSucursal} onValueChange={v => { setFiltroSucursal(v); setFiltroServicio('todos'); }}>
