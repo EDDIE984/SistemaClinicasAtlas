@@ -337,13 +337,17 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
       </div>
 
       {/* Filtros */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-            <div className="space-y-1">
-              <Label className="text-xs">Sucursal</Label>
+      <Card className="border-gray-200 bg-white">
+        <CardContent className="p-4 md:p-5">
+          <div className="mb-4 flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+            <p className="text-sm font-semibold text-gray-900">Filtros de búsqueda</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-gray-600">Sucursal</Label>
               <Select value={filtroSucursal} onValueChange={v => { setFiltroSucursal(v); setFiltroServicio('todos'); }}>
-                <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
+                <SelectTrigger className="h-10 bg-gray-50 border-gray-200"><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todas">Todas las sucursales</SelectItem>
                   {sucursales.map(s => (
@@ -352,10 +356,11 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Servicio</Label>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-gray-600">Servicio</Label>
               <Select value={filtroServicio} onValueChange={setFiltroServicio}>
-                <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+                <SelectTrigger className="h-10 bg-gray-50 border-gray-200"><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos los servicios</SelectItem>
                   {serviciosActivos.map(s => (
@@ -364,13 +369,25 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Desde</Label>
-              <Input type="date" value={desde} onChange={e => setDesde(e.target.value)} />
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-gray-600">Desde</Label>
+              <Input
+                type="date"
+                value={desde}
+                onChange={e => setDesde(e.target.value)}
+                className="h-10 bg-gray-50 border-gray-200"
+              />
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Hasta</Label>
-              <Input type="date" value={hasta} onChange={e => setHasta(e.target.value)} />
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-gray-600">Hasta</Label>
+              <Input
+                type="date"
+                value={hasta}
+                onChange={e => setHasta(e.target.value)}
+                className="h-10 bg-gray-50 border-gray-200"
+              />
             </div>
           </div>
         </CardContent>
