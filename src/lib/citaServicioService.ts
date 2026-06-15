@@ -27,6 +27,8 @@ const SELECT_COMPLETO = `
   fecha_atendida,
   fecha_cancelada,
   fecha_no_asistio,
+  url_pdf_resultado,
+  fecha_finalizada,
   created_at,
   updated_at,
   servicio(*, sucursal(*)),
@@ -67,7 +69,44 @@ export async function getCitasServicio(params: {
       console.error('❌ Error al obtener citas de servicio:', error);
       return [];
     }
-    return (data as CitaServicioCompleta[]) || [];
+
+    const citas = (data as CitaServicioCompleta[]) || [];
+    if (citas.length === 0) return citas;
+
+    let fotosQuery = (supabaseAdmin.from('cita_servicio') as any)
+      .select('id_cita_servicio')
+      .gte('fecha_cita', params.fechaDesde)
+      .lte('fecha_cita', params.fechaHasta)
+      .not('foto_pedido_base64', 'is', null)
+      .neq('foto_pedido_base64', '');
+
+    if (params.idSucursal) {
+      fotosQuery = fotosQuery.eq('id_sucursal', params.idSucursal);
+    }
+
+    if (params.idServicio) {
+      fotosQuery = fotosQuery.eq('id_servicio', params.idServicio);
+    }
+
+    if (params.estadoCita) {
+      fotosQuery = fotosQuery.eq('estado_cita', params.estadoCita);
+    }
+
+    const { data: citasConFoto, error: fotosError } = await fotosQuery;
+    if (fotosError) {
+      console.error('❌ Error al verificar fotos de pedido:', fotosError);
+      return citas.map(cita => ({ ...cita, tiene_foto_pedido: false }));
+    }
+
+    const idsConFoto = new Set(
+      ((citasConFoto as Array<{ id_cita_servicio: number }> | null) || [])
+        .map(cita => cita.id_cita_servicio)
+    );
+
+    return citas.map(cita => ({
+      ...cita,
+      tiene_foto_pedido: idsConFoto.has(cita.id_cita_servicio),
+    }));
   } catch (error) {
     console.error('❌ Error inesperado en getCitasServicio:', error);
     return [];
@@ -126,6 +165,15 @@ export async function cancelarCitaServicio(id: number): Promise<boolean> {
 
 export async function deleteCitaServicio(id: number): Promise<boolean> {
   try {
+    const { data: cita } = await (supabaseAdmin.from('cita_servicio') as any)
+      .select('url_pdf_resultado')
+      .eq('id_cita_servicio', id)
+      .single();
+
+    if (cita?.url_pdf_resultado) {
+      await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([cita.url_pdf_resultado]);
+    }
+
     const { error } = await (supabaseAdmin.from('cita_servicio') as any)
       .delete()
       .eq('id_cita_servicio', id);
@@ -155,6 +203,81 @@ export async function confirmarCitaServicio(
     estado_cita: 'confirmada',
     fecha_confirmada: new Date().toISOString(),
   });
+}
+
+const STORAGE_BUCKET = 'resultados-servicios';
+
+export async function finalizarCitaServicio(
+  idCita: number,
+  file: File,
+  idCompania: number
+): Promise<CitaServicio | null> {
+  try {
+    const path = `${idCompania}/${idCita}/${Date.now()}-resultado.pdf`;
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, file, { contentType: 'application/pdf', upsert: false });
+
+    if (uploadError) {
+      console.error('❌ Error al subir PDF al storage:', uploadError);
+      return null;
+    }
+
+    return updateCitaServicio(idCita, {
+      estado_cita: 'finalizado',
+      url_pdf_resultado: path,
+      fecha_finalizada: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('❌ Error inesperado en finalizarCitaServicio:', error);
+    return null;
+  }
+}
+
+export async function reemplazarPdfCitaServicio(
+  idCita: number,
+  urlAnterior: string,
+  file: File,
+  idCompania: number
+): Promise<CitaServicio | null> {
+  try {
+    await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([urlAnterior]);
+
+    const path = `${idCompania}/${idCita}/${Date.now()}-resultado.pdf`;
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, file, { contentType: 'application/pdf', upsert: false });
+
+    if (uploadError) {
+      console.error('❌ Error al subir nuevo PDF al storage:', uploadError);
+      return null;
+    }
+
+    return updateCitaServicio(idCita, {
+      url_pdf_resultado: path,
+      fecha_finalizada: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('❌ Error inesperado en reemplazarPdfCitaServicio:', error);
+    return null;
+  }
+}
+
+export async function generarUrlFirmadaPdf(storagePath: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(storagePath, 3600);
+
+    if (error) {
+      console.error('❌ Error al generar URL firmada:', error);
+      return null;
+    }
+    return data?.signedUrl ?? null;
+  } catch (error) {
+    console.error('❌ Error inesperado en generarUrlFirmadaPdf:', error);
+    return null;
+  }
 }
 
 export async function getFotoPedido(id: number): Promise<string | null> {

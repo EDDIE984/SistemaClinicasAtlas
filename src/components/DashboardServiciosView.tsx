@@ -12,13 +12,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import {
   LayoutDashboard, Loader2, CheckCircle, XCircle, Pencil, ClipboardList,
   Calendar, Clock, User, Stethoscope, Image, AlertCircle, RefreshCw, Eye,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCitasServicio } from '../hooks/useCitasServicio';
 import { useSucursales, useServicios } from '../hooks/useConfiguraciones';
 import { AgendarCitaServicioModal } from './AgendarCitaServicioModal';
-import { getFotoPedido } from '../lib/citaServicioService';
+import { getFotoPedido, generarUrlFirmadaPdf } from '../lib/citaServicioService';
 import type { CitaServicioCompleta } from '../lib/configuracionesService';
+import { FinalizarCitaServicioModal } from './FinalizarCitaServicioModal';
 
 interface DashboardServiciosViewProps {
   currentUser: {
@@ -40,7 +42,7 @@ function fechaMas(dias: number): string {
 }
 
 // ─── Configuración de estados ─────────────────────────────────────────────────
-const ORDEN_ESTADO = ['agendada', 'confirmada', 'en_atencion', 'atendida', 'cancelada', 'no_asistio'];
+const ORDEN_ESTADO = ['agendada', 'confirmada', 'en_atencion', 'atendida', 'finalizado', 'cancelada', 'no_asistio'];
 
 const ESTADO_CONFIG: Record<string, {
   label: string;
@@ -50,12 +52,13 @@ const ESTADO_CONFIG: Record<string, {
   confirmada:  { label: 'Confirmada',     className: 'bg-blue-100 text-blue-800 border-blue-300' },
   en_atencion: { label: 'Inicio Atención',className: 'bg-purple-100 text-purple-800 border-purple-300' },
   atendida:    { label: 'Atendida',       className: 'bg-green-100 text-green-800 border-green-300' },
+  finalizado:  { label: 'Finalizado',     className: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   cancelada:   { label: 'Cancelada',      className: 'bg-red-100 text-red-800 border-red-300' },
   no_asistio:  { label: 'No asistió',     className: 'bg-red-100 text-red-800 border-red-300' },
 };
 
 const PUEDE_ACCIONAR = (estado: string) =>
-  !['cancelada', 'atendida', 'no_asistio'].includes(estado);
+  !['cancelada', 'atendida', 'no_asistio', 'finalizado'].includes(estado);
 
 const MIME_IMAGEN_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
 const MAX_IMAGEN_BYTES = 5 * 1024 * 1024;
@@ -84,7 +87,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   );
 
   // ─── Citas ───────────────────────────────────────────────────────────────
-  const { citas, isLoading, crearCita, actualizarCita, cancelarCita, confirmarCita } = useCitasServicio({
+  const { citas, isLoading, loadCitas, crearCita, actualizarCita, cancelarCita, confirmarCita } = useCitasServicio({
     fechaDesde: desde,
     fechaHasta: hasta,
     idSucursal: idSucursalNum,
@@ -238,6 +241,25 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     }
   };
 
+  // ─── Finalizar con PDF ────────────────────────────────────────────────────
+  const [citaParaFinalizar, setCitaParaFinalizar] = useState<CitaServicioCompleta | null>(null);
+  const [modalFinalizarMode, setModalFinalizarMode] = useState<'finalizar' | 'reemplazar'>('finalizar');
+  const [modalFinalizarOpen, setModalFinalizarOpen] = useState(false);
+
+  const puedeFinalizarCitas = ['GESTOR_IMAGEN', 'ADMINISTRADOR'].includes(currentUser?.tipo_usuario || '');
+
+  const abrirModalFinalizar = (cita: CitaServicioCompleta, mode: 'finalizar' | 'reemplazar') => {
+    setCitaParaFinalizar(cita);
+    setModalFinalizarMode(mode);
+    setModalFinalizarOpen(true);
+  };
+
+  const abrirPdf = async (storagePath: string) => {
+    const url = await generarUrlFirmadaPdf(storagePath);
+    if (url) window.open(url, '_blank');
+    else toast.error('No se pudo generar el enlace del PDF');
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -335,7 +357,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                   {citasOrdenadas.map(cita => {
                     const cfg = ESTADO_CONFIG[cita.estado_cita] ?? { label: cita.estado_cita, className: 'bg-gray-100 text-gray-700' };
                     const accionable = PUEDE_ACCIONAR(cita.estado_cita);
-                    const tieneConfirmacion = !!cita.medico_solicitante;
+                    const tieneFotoPedido = cita.tiene_foto_pedido === true;
                     return (
                       <TableRow key={cita.id_cita_servicio}>
                         <TableCell className="text-sm whitespace-nowrap">
@@ -394,7 +416,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
                         {/* Foto pedido */}
                         <TableCell>
-                          {tieneConfirmacion ? (
+                          {tieneFotoPedido ? (
                             <button
                               className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-50 border border-green-200 text-green-700 text-xs hover:bg-green-100 transition-colors"
                               onClick={() => handleVerFoto(cita)}
@@ -448,7 +470,39 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                                 </Button>
                               </>
                             )}
-                            {!accionable && (
+                            {puedeFinalizarCitas && !['cancelada', 'no_asistio', 'finalizado'].includes(cita.estado_cita) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50 text-xs"
+                                onClick={() => abrirModalFinalizar(cita, 'finalizar')}
+                              >
+                                <FileText className="size-3" /> Finalizar
+                              </Button>
+                            )}
+                            {cita.estado_cita === 'finalizado' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50 text-xs"
+                                  onClick={() => abrirPdf(cita.url_pdf_resultado!)}
+                                >
+                                  <Eye className="size-3" /> Ver PDF
+                                </Button>
+                                {puedeFinalizarCitas && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="gap-1 text-xs"
+                                    onClick={() => abrirModalFinalizar(cita, 'reemplazar')}
+                                  >
+                                    <FileText className="size-3" /> Reemplazar
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                            {!accionable && cita.estado_cita !== 'finalizado' && (
                               <span className="text-xs text-gray-400 italic pr-2">{cfg.label}</span>
                             )}
                           </div>
@@ -702,6 +756,17 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
           if (cita) setCitaACancelar(cita);
         }}
       />
+
+      {/* Modal finalizar / reemplazar PDF */}
+      {citaParaFinalizar && (
+        <FinalizarCitaServicioModal
+          isOpen={modalFinalizarOpen}
+          onClose={() => setModalFinalizarOpen(false)}
+          onSuccess={() => { setModalFinalizarOpen(false); loadCitas(); }}
+          cita={citaParaFinalizar}
+          mode={modalFinalizarMode}
+        />
+      )}
     </div>
   );
 }

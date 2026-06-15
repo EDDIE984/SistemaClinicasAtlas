@@ -1,5 +1,5 @@
 // Modal para agendar citas de servicios (Tomografía, Rayos X, Laboratorio, etc.)
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -7,7 +7,7 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
-import { Loader2, Search, User, ChevronLeft, XCircle } from 'lucide-react';
+import { Loader2, Search, User, ChevronLeft, XCircle, Image, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { getPacienteByCedula, createPaciente } from '../lib/pacientesService';
 import { consultarCedulaRegistroCivil } from '../lib/registroCivilService';
@@ -31,6 +31,14 @@ interface AgendarCitaServicioModalProps {
 }
 
 type Step = 'paciente' | 'nuevoPaciente' | 'detalles';
+
+const MIME_IMAGEN_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
+const MAX_IMAGEN_BYTES = 5 * 1024 * 1024;
+
+function calcularBytesBase64(dataUrl: string): number {
+  const base64 = dataUrl.split(',')[1] ?? '';
+  return Math.floor(base64.length * 0.75);
+}
 
 const getNuevoPacienteInicial = () => ({
   cedula: '',
@@ -99,6 +107,9 @@ export function AgendarCitaServicioModal({
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLookingUpCedula, setIsLookingUpCedula] = useState(false);
+  const [isUploadingFoto, setIsUploadingFoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogContentRef = useRef<HTMLDivElement>(null);
 
   // Paciente seleccionado
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState<Paciente | null>(null);
@@ -114,6 +125,11 @@ export function AgendarCitaServicioModal({
   const [precio, setPrecio] = useState<string>('');
   const [formaPago, setFormaPago] = useState<string>('');
   const [notas, setNotas] = useState('');
+  const [medicoSolicitante, setMedicoSolicitante] = useState('');
+  const [numRegistro, setNumRegistro] = useState('');
+  const [tieneSeguroMedico, setTieneSeguroMedico] = useState('');
+  const [fotoBase64, setFotoBase64] = useState('');
+  const [fotoNombre, setFotoNombre] = useState('');
 
   // Slots
   const [slots, setSlots] = useState<{ id_horario: number; horario: string; slot: SlotServicio }[]>([]);
@@ -123,6 +139,18 @@ export function AgendarCitaServicioModal({
   const serviciosActivos = servicios.filter(
     s => s.estado === 'activo' && s.descripcion.toUpperCase() !== 'CONSULTA EXTERNA'
   );
+
+  const getSucursalInicialPaciente = () => {
+    const servicioSeleccionado = serviciosActivos.find(
+      s => s.id_servicio === (idServicio || idServicioInicial || serviciosActivos[0]?.id_servicio)
+    );
+    const idSucursalSesion = parseInt(localStorage.getItem('currentSucursalId') || '0');
+
+    return servicioSeleccionado?.id_sucursal
+      || (idSucursalSesion || null)
+      || sucursales[0]?.id_sucursal
+      || null;
+  };
 
   // Reset al abrir
   useEffect(() => {
@@ -151,12 +179,21 @@ export function AgendarCitaServicioModal({
       setPrecio(citaEditar.precio_cita?.toString() || '');
       setFormaPago(citaEditar.forma_pago || '');
       setNotas(citaEditar.notas_cita || '');
+      setMedicoSolicitante(citaEditar.medico_solicitante || '');
+      setNumRegistro(citaEditar.numero_registro_medico || '');
+      setTieneSeguroMedico(citaEditar.tiene_seguro_medico || '');
+      setFotoBase64('');
+      setFotoNombre('');
       setStep('detalles');
     } else {
       setStep('paciente');
       setPacienteSeleccionado(null);
       setCedulaBusqueda('');
-      setNuevoPaciente({ ...getNuevoPacienteInicial(), nombre_admisionista: nombreAdmisionista });
+      setNuevoPaciente({
+        ...getNuevoPacienteInicial(),
+        id_sucursal: getSucursalInicialPaciente(),
+        nombre_admisionista: nombreAdmisionista,
+      });
       setIdServicio(idServicioInicial || serviciosActivos[0]?.id_servicio || 0);
       setFecha(fechaInicial || new Date().toISOString().split('T')[0]);
       setSlotSeleccionado(null);
@@ -165,15 +202,35 @@ export function AgendarCitaServicioModal({
       setPrecio('');
       setFormaPago('');
       setNotas('');
+      setMedicoSolicitante('');
+      setNumRegistro('');
+      setTieneSeguroMedico('');
+      setFotoBase64('');
+      setFotoNombre('');
       setSlots([]);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || step !== 'nuevoPaciente' || nuevoPaciente.id_sucursal || sucursales.length === 0) return;
+    setNuevoPaciente(prev => ({
+      ...prev,
+      id_sucursal: getSucursalInicialPaciente(),
+    }));
+  }, [isOpen, step, nuevoPaciente.id_sucursal, sucursales.length, idServicio]);
 
   // Cargar slots cuando cambia servicio o fecha
   useEffect(() => {
     if (step !== 'detalles' || !idServicio || !fecha) return;
     cargarSlots();
   }, [idServicio, fecha, step]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    requestAnimationFrame(() => {
+      dialogContentRef.current?.scrollTo({ top: 0 });
+    });
+  }, [isOpen, step]);
 
   const cargarSlots = async () => {
     setIsLoadingSlots(true);
@@ -208,7 +265,12 @@ export function AgendarCitaServicioModal({
         setStep('paciente');
       } else {
         // No existe — ir a formulario nuevo paciente con consulta al Registro Civil
-        const base = { ...getNuevoPacienteInicial(), cedula, nombre_admisionista: nombreAdmisionista };
+        const base = {
+          ...getNuevoPacienteInicial(),
+          cedula,
+          id_sucursal: getSucursalInicialPaciente(),
+          nombre_admisionista: nombreAdmisionista,
+        };
         setNuevoPaciente(base);
         setStep('nuevoPaciente');
         setIsLookingUpCedula(true);
@@ -250,8 +312,8 @@ export function AgendarCitaServicioModal({
   };
 
   const handleRegistrarPaciente = async () => {
-    const { nombres, apellidos, cedula, fecha_nacimiento, sexo, email, telefono, direccion } = nuevoPaciente;
-    if (!nombres || !apellidos || !cedula || !fecha_nacimiento || !sexo || !email || !telefono || !direccion) {
+    const { nombres, apellidos, cedula, fecha_nacimiento, sexo, email, telefono } = nuevoPaciente;
+    if (!nombres || !apellidos || !cedula || !fecha_nacimiento || !sexo || !email || !telefono) {
       toast.error('Todos los campos obligatorios (*) deben completarse');
       return;
     }
@@ -281,41 +343,41 @@ export function AgendarCitaServicioModal({
         sexo,
         telefono: telefono || null,
         email: email || null,
-        direccion: direccion || null,
+        direccion: null,
         fecha_registro: new Date().toISOString().split('T')[0],
         nombre_admisionista: nuevoPaciente.nombre_admisionista || null,
         historia_clinica_establecimiento: nuevoPaciente.historia_clinica_establecimiento || null,
         tipo_documento_identificacion: nuevoPaciente.tipo_documento_identificacion || null,
-        estado_civil: nuevoPaciente.estado_civil || null,
-        telefono_fijo: nuevoPaciente.telefono_fijo || null,
-        lugar_nacimiento: nuevoPaciente.lugar_nacimiento || null,
-        nacionalidad: nuevoPaciente.nacionalidad || null,
-        condicion_edad: nuevoPaciente.condicion_edad || null,
-        grupo_prioritario: nuevoPaciente.grupo_prioritario || null,
-        grupo_prioritario_especifique: nuevoPaciente.grupo_prioritario_especifique || null,
-        autoidentificacion_etnica: nuevoPaciente.autoidentificacion_etnica || null,
-        nacionalidad_etnica: nuevoPaciente.nacionalidad_etnica || null,
-        pueblo: nuevoPaciente.pueblo || null,
-        nivel_educacion: nuevoPaciente.nivel_educacion || null,
-        estado_nivel_educacion: nuevoPaciente.estado_nivel_educacion || null,
-        tipo_empresa_trabajo: nuevoPaciente.tipo_empresa_trabajo || null,
-        ocupacion_profesion: nuevoPaciente.ocupacion_profesion || null,
-        seguro_salud_principal: nuevoPaciente.seguro_salud_principal || null,
-        provincia: nuevoPaciente.provincia || null,
-        canton: nuevoPaciente.canton || null,
-        parroquia: nuevoPaciente.parroquia || null,
-        barrio_sector: nuevoPaciente.barrio_sector || null,
-        calle_principal: nuevoPaciente.calle_principal || null,
-        calle_secundaria: nuevoPaciente.calle_secundaria || null,
-        referencia_domicilio: nuevoPaciente.referencia_domicilio || null,
+        estado_civil: null,
+        telefono_fijo: null,
+        lugar_nacimiento: null,
+        nacionalidad: null,
+        condicion_edad: null,
+        grupo_prioritario: null,
+        grupo_prioritario_especifique: null,
+        autoidentificacion_etnica: null,
+        nacionalidad_etnica: null,
+        pueblo: null,
+        nivel_educacion: null,
+        estado_nivel_educacion: null,
+        tipo_empresa_trabajo: null,
+        ocupacion_profesion: null,
+        seguro_salud_principal: null,
+        provincia: null,
+        canton: null,
+        parroquia: null,
+        barrio_sector: null,
+        calle_principal: null,
+        calle_secundaria: null,
+        referencia_domicilio: null,
         contacto_emergencia_nombre: nuevoPaciente.contacto_emergencia_nombre || null,
         contacto_emergencia_parentesco: nuevoPaciente.contacto_emergencia_parentesco || null,
         contacto_emergencia_direccion: nuevoPaciente.contacto_emergencia_direccion || null,
         contacto_emergencia_telefono: nuevoPaciente.contacto_emergencia_telefono || null,
-        forma_llegada: nuevoPaciente.forma_llegada || null,
-        fuente_informacion: nuevoPaciente.fuente_informacion || null,
-        institucion_entrega_paciente: nuevoPaciente.institucion_entrega_paciente || null,
-        telefono_institucion_entrega: nuevoPaciente.telefono_institucion_entrega || null,
+        forma_llegada: null,
+        fuente_informacion: null,
+        institucion_entrega_paciente: null,
+        telefono_institucion_entrega: null,
       } as Omit<Paciente, 'id_paciente' | 'created_at' | 'estado'>);
 
       if (!pacienteCreado) { toast.error('No se pudo registrar el paciente'); return; }
@@ -332,11 +394,56 @@ export function AgendarCitaServicioModal({
     setStep('detalles');
   };
 
+  const handleSeleccionarFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!MIME_IMAGEN_PERMITIDOS.includes(file.type.toLowerCase())) {
+      toast.error('Solo se permiten imágenes');
+      return;
+    }
+    if (file.size > MAX_IMAGEN_BYTES) {
+      toast.error('La imagen no puede superar 5 MB');
+      return;
+    }
+
+    setIsUploadingFoto(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64Raw = ev.target?.result as string;
+      if (!base64Raw?.startsWith('data:image/')) {
+        toast.error('Formato de imagen inválido');
+        setIsUploadingFoto(false);
+        return;
+      }
+
+      const bytes = calcularBytesBase64(base64Raw);
+      if (bytes > MAX_IMAGEN_BYTES) {
+        toast.error('Imagen demasiado grande (máximo 5 MB)');
+        setIsUploadingFoto(false);
+        return;
+      }
+
+      setFotoBase64(base64Raw);
+      setFotoNombre(file.name);
+      setIsUploadingFoto(false);
+      toast.success(`Imagen cargada (${Math.round(bytes / 1024)} KB)`);
+    };
+    reader.onerror = () => {
+      setIsUploadingFoto(false);
+      toast.error('Error al leer el archivo');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleGuardar = async () => {
     if (!pacienteSeleccionado) { toast.error('Seleccione un paciente'); return; }
     if (!idServicio) { toast.error('Seleccione un servicio'); return; }
     if (!fecha) { toast.error('Seleccione una fecha'); return; }
     if (!slotSeleccionado && !isEditing) { toast.error('Seleccione un horario disponible'); return; }
+    if (!medicoSolicitante.trim()) { toast.error('Ingrese el nombre del médico solicitante'); return; }
+    if (!numRegistro.trim()) { toast.error('Ingrese el número de registro médico'); return; }
+    if (!tieneSeguroMedico.trim()) { toast.error('Ingrese si tiene seguro médico'); return; }
 
     const sucursalDelServicio = serviciosActivos.find(s => s.id_servicio === idServicio);
     const idSucursal = sucursalDelServicio?.id_sucursal
@@ -350,12 +457,17 @@ export function AgendarCitaServicioModal({
       fecha_cita: fecha,
       hora_inicio: slotSeleccionado?.hora_inicio || citaEditar?.hora_inicio || '',
       hora_fin: slotSeleccionado?.hora_fin || citaEditar?.hora_fin || '',
-      estado_cita: 'agendada' as const,
+      estado_cita: (isEditing ? citaEditar?.estado_cita || 'confirmada' : 'confirmada') as CitaServicio['estado_cita'],
       motivo: motivo || undefined,
       precio_cita: precio ? parseFloat(precio) : undefined,
       forma_pago: (formaPago || undefined) as CitaServicio['forma_pago'],
       estado_pago: 'pendiente' as const,
       notas_cita: notas || undefined,
+      medico_solicitante: medicoSolicitante.trim().toUpperCase(),
+      numero_registro_medico: numRegistro.trim(),
+      tiene_seguro_medico: tieneSeguroMedico.trim(),
+      fecha_confirmada: isEditing ? citaEditar?.fecha_confirmada || undefined : new Date().toISOString(),
+      ...(fotoBase64 ? { foto_pedido_base64: fotoBase64 } : {}),
     };
 
     setIsSaving(true);
@@ -388,7 +500,7 @@ export function AgendarCitaServicioModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent ref={dialogContentRef} className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Editar Cita de Servicio' : 'Nueva Cita de Servicio'}
@@ -479,7 +591,7 @@ export function AgendarCitaServicioModal({
                 <Input value={nuevoPaciente.cedula} onChange={e => setNuevoPaciente(p => ({ ...p, cedula: e.target.value }))} placeholder="0000000000" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Tipo de documento</Label>
                 <Select value={nuevoPaciente.tipo_documento_identificacion} onValueChange={v => setNuevoPaciente(p => ({ ...p, tipo_documento_identificacion: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
@@ -492,7 +604,7 @@ export function AgendarCitaServicioModal({
                 </Select>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Historia clínica en establecimiento</Label>
                 <Select value={nuevoPaciente.historia_clinica_establecimiento} onValueChange={v => setNuevoPaciente(p => ({ ...p, historia_clinica_establecimiento: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
@@ -518,7 +630,7 @@ export function AgendarCitaServicioModal({
                 <h3 className="text-sm font-semibold text-gray-900">Datos personales</h3>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Estado civil</Label>
                 <Select value={nuevoPaciente.estado_civil} onValueChange={v => setNuevoPaciente(p => ({ ...p, estado_civil: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
@@ -556,7 +668,7 @@ export function AgendarCitaServicioModal({
                 <Input value={nuevoPaciente.telefono} onChange={e => setNuevoPaciente(p => ({ ...p, telefono: e.target.value }))} placeholder="+593984035410" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Teléfono fijo</Label>
                 <Input value={nuevoPaciente.telefono_fijo} onChange={e => setNuevoPaciente(p => ({ ...p, telefono_fijo: e.target.value }))} placeholder="022000000" />
               </div>
@@ -566,17 +678,17 @@ export function AgendarCitaServicioModal({
                 <Input type="email" value={nuevoPaciente.email} onChange={e => setNuevoPaciente(p => ({ ...p, email: e.target.value.toUpperCase() }))} placeholder="EJEMPLO@CORREO.COM" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Lugar de nacimiento</Label>
                 <Input value={nuevoPaciente.lugar_nacimiento} onChange={set('lugar_nacimiento')} placeholder="CIUDAD / PROVINCIA" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Nacionalidad</Label>
                 <Input value={nuevoPaciente.nacionalidad} onChange={set('nacionalidad')} placeholder="ECUATORIANA" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Condición edad</Label>
                 <Select value={nuevoPaciente.condicion_edad} onValueChange={v => setNuevoPaciente(p => ({ ...p, condicion_edad: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
@@ -589,7 +701,7 @@ export function AgendarCitaServicioModal({
                 </Select>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Grupo prioritario</Label>
                 <Select value={nuevoPaciente.grupo_prioritario} onValueChange={v => setNuevoPaciente(p => ({ ...p, grupo_prioritario: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
@@ -600,52 +712,52 @@ export function AgendarCitaServicioModal({
                 </Select>
               </div>
 
-              <div className="space-y-2 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2 hidden">
                 <Label>Especifique grupo prioritario</Label>
                 <Input value={nuevoPaciente.grupo_prioritario_especifique} onChange={set('grupo_prioritario_especifique')} placeholder="ADULTO MAYOR, EMBARAZO, DISCAPACIDAD..." className="uppercase" />
               </div>
 
               {/* Etnia, educación y trabajo */}
-              <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
+              <div className="sm:col-span-2 xl:col-span-4 border-t pt-4 hidden">
                 <h3 className="text-sm font-semibold text-gray-900">Etnia, educación y trabajo</h3>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Autoidentificación étnica</Label>
                 <Input value={nuevoPaciente.autoidentificacion_etnica} onChange={set('autoidentificacion_etnica')} placeholder="MESTIZO/A" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Nacionalidad étnica</Label>
                 <Input value={nuevoPaciente.nacionalidad_etnica} onChange={set('nacionalidad_etnica')} placeholder="NACIONALIDAD ÉTNICA" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Pueblo</Label>
                 <Input value={nuevoPaciente.pueblo} onChange={set('pueblo')} placeholder="PUEBLO" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Nivel de educación</Label>
                 <Input value={nuevoPaciente.nivel_educacion} onChange={set('nivel_educacion')} placeholder="BÁSICA, BACHILLERATO, SUPERIOR..." className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Estado del nivel de educación</Label>
                 <Input value={nuevoPaciente.estado_nivel_educacion} onChange={set('estado_nivel_educacion')} placeholder="COMPLETO / INCOMPLETO" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Tipo de empresa de trabajo</Label>
                 <Input value={nuevoPaciente.tipo_empresa_trabajo} onChange={set('tipo_empresa_trabajo')} placeholder="PÚBLICA / PRIVADA / NINGUNA" className="uppercase" />
               </div>
 
-              <div className="space-y-2 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2 hidden">
                 <Label>Ocupación / profesión</Label>
                 <Input value={nuevoPaciente.ocupacion_profesion} onChange={set('ocupacion_profesion')} placeholder="OCUPACIÓN O PROFESIÓN" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Seguro salud principal</Label>
                 <Select value={nuevoPaciente.seguro_salud_principal} onValueChange={v => setNuevoPaciente(p => ({ ...p, seguro_salud_principal: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
@@ -661,53 +773,53 @@ export function AgendarCitaServicioModal({
               </div>
 
               {/* Residencia */}
-              <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
+              <div className="sm:col-span-2 xl:col-span-4 border-t pt-4 hidden">
                 <h3 className="text-sm font-semibold text-gray-900">Residencia</h3>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Provincia</Label>
                 <Input value={nuevoPaciente.provincia} onChange={set('provincia')} placeholder="PROVINCIA" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Cantón</Label>
                 <Input value={nuevoPaciente.canton} onChange={set('canton')} placeholder="CANTÓN" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Parroquia</Label>
                 <Input value={nuevoPaciente.parroquia} onChange={set('parroquia')} placeholder="PARROQUIA" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Barrio o sector</Label>
                 <Input value={nuevoPaciente.barrio_sector} onChange={set('barrio_sector')} placeholder="BARRIO O SECTOR" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Calle principal</Label>
                 <Input value={nuevoPaciente.calle_principal} onChange={set('calle_principal')} placeholder="CALLE PRINCIPAL" className="uppercase" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Calle secundaria</Label>
                 <Input value={nuevoPaciente.calle_secundaria} onChange={set('calle_secundaria')} placeholder="CALLE SECUNDARIA" className="uppercase" />
               </div>
 
-              <div className="space-y-2 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2 hidden">
                 <Label>Referencia domicilio</Label>
                 <Input value={nuevoPaciente.referencia_domicilio} onChange={set('referencia_domicilio')} placeholder="REFERENCIA" className="uppercase" />
               </div>
 
-              <div className="space-y-2 sm:col-span-2 xl:col-span-4">
+              <div className="space-y-2 sm:col-span-2 xl:col-span-4 hidden">
                 <Label>Dirección completa *</Label>
                 <Input value={nuevoPaciente.direccion} onChange={set('direccion')} placeholder="DIRECCIÓN COMPLETA" className="uppercase" />
               </div>
 
               {/* Contacto y llegada */}
               <div className="sm:col-span-2 xl:col-span-4 border-t pt-4">
-                <h3 className="text-sm font-semibold text-gray-900">Contacto y llegada</h3>
+                <h3 className="text-sm font-semibold text-gray-900">Contacto de emergencia</h3>
               </div>
 
               <div className="space-y-2">
@@ -730,7 +842,7 @@ export function AgendarCitaServicioModal({
                 <Input value={nuevoPaciente.contacto_emergencia_telefono} onChange={e => setNuevoPaciente(p => ({ ...p, contacto_emergencia_telefono: e.target.value }))} placeholder="+593..." />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Forma de llegada</Label>
                 <Select value={nuevoPaciente.forma_llegada} onValueChange={v => setNuevoPaciente(p => ({ ...p, forma_llegada: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
@@ -742,17 +854,17 @@ export function AgendarCitaServicioModal({
                 </Select>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 hidden">
                 <Label>Fuente de información</Label>
                 <Input value={nuevoPaciente.fuente_informacion} onChange={set('fuente_informacion')} placeholder="PACIENTE / FAMILIAR / OTRO" className="uppercase" />
               </div>
 
-              <div className="space-y-2 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2 hidden">
                 <Label>Institución o persona que entrega</Label>
                 <Input value={nuevoPaciente.institucion_entrega_paciente} onChange={set('institucion_entrega_paciente')} placeholder="INSTITUCIÓN / PERSONA" className="uppercase" />
               </div>
 
-              <div className="space-y-2 sm:col-span-2">
+              <div className="space-y-2 sm:col-span-2 hidden">
                 <Label>Teléfono institución entrega</Label>
                 <Input value={nuevoPaciente.telefono_institucion_entrega} onChange={e => setNuevoPaciente(p => ({ ...p, telefono_institucion_entrega: e.target.value }))} placeholder="+593..." />
               </div>
@@ -851,6 +963,84 @@ export function AgendarCitaServicioModal({
                       </Button>
                     );
                   })}
+                </div>
+              )}
+            </div>
+
+            {/* Pedido médico */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-4">
+              <div className="md:col-span-2">
+                <h3 className="text-sm font-semibold text-gray-900">Datos del pedido médico</h3>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Médico solicitante *</Label>
+                <Input
+                  placeholder="NOMBRE DEL MÉDICO"
+                  value={medicoSolicitante}
+                  onChange={e => setMedicoSolicitante(e.target.value)}
+                  className="uppercase"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Número de registro *</Label>
+                <Input
+                  placeholder="Ej: 123456"
+                  value={numRegistro}
+                  onChange={e => setNumRegistro(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1 md:col-span-2">
+                <Label>Tiene seguro médico *</Label>
+                <Input
+                  placeholder="Ej: Sí, IESS / No / Particular"
+                  value={tieneSeguroMedico}
+                  onChange={e => setTieneSeguroMedico(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1 md:col-span-2">
+                <Label>Fotografía del pedido</Label>
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {isUploadingFoto ? (
+                    <div className="flex items-center justify-center gap-2 text-blue-600">
+                      <Loader2 className="size-5 animate-spin" />
+                      <span className="text-sm">Procesando imagen...</span>
+                    </div>
+                  ) : fotoNombre ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-center gap-2 text-blue-700">
+                        <Image className="size-5" />
+                        <span className="max-w-full truncate text-sm font-medium">{fotoNombre}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">Haz clic para cambiar el archivo</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 text-gray-500">
+                      <Image className="size-8 mx-auto opacity-40" />
+                      <p className="text-sm">Haz clic para seleccionar la fotografía del pedido</p>
+                      <p className="text-xs">JPG, PNG, WEBP — máximo 5 MB</p>
+                    </div>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleSeleccionarFoto}
+                />
+              </div>
+
+              {!isEditing && (!medicoSolicitante.trim() || !numRegistro.trim() || !tieneSeguroMedico.trim()) && (
+                <div className="md:col-span-2 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                  <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />
+                  <span>Completa los datos del pedido para guardar la cita como confirmada. La fotografía puede cargarse luego desde confirmación.</span>
                 </div>
               )}
             </div>

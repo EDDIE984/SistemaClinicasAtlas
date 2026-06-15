@@ -1590,7 +1590,7 @@ export interface CitaServicio {
   hora_inicio: string;
   hora_fin: string;
   motivo?: string;
-  estado_cita: 'agendada' | 'confirmada' | 'en_atencion' | 'atendida' | 'cancelada' | 'no_asistio';
+  estado_cita: 'agendada' | 'confirmada' | 'en_atencion' | 'atendida' | 'cancelada' | 'no_asistio' | 'finalizado';
   precio_cita?: number;
   forma_pago?: 'efectivo' | 'tarjeta' | 'transferencia' | 'seguro';
   estado_pago?: 'pendiente' | 'pagado' | 'parcial';
@@ -1598,11 +1598,15 @@ export interface CitaServicio {
   medico_solicitante?: string;
   numero_registro_medico?: string;
   tiene_seguro_medico?: string;
+  foto_pedido_base64?: string | null;
+  tiene_foto_pedido?: boolean;
   fecha_confirmada?: string | null;
   fecha_inicio_atencion?: string | null;
   fecha_atendida?: string | null;
   fecha_cancelada?: string | null;
   fecha_no_asistio?: string | null;
+  url_pdf_resultado?: string | null;
+  fecha_finalizada?: string | null;
   created_at?: string;
   updated_at?: string;
   servicio?: Servicio;
