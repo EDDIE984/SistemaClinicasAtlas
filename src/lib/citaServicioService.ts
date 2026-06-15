@@ -74,7 +74,7 @@ export async function getCitasServicio(params: {
     if (citas.length === 0) return citas;
 
     let fotosQuery = (supabaseAdmin.from('cita_servicio') as any)
-      .select('id_cita_servicio')
+      .select('id_cita_servicio, foto_pedido_base64')
       .gte('fecha_cita', params.fechaDesde)
       .lte('fecha_cita', params.fechaHasta)
       .not('foto_pedido_base64', 'is', null)
@@ -99,7 +99,8 @@ export async function getCitasServicio(params: {
     }
 
     const idsConFoto = new Set(
-      ((citasConFoto as Array<{ id_cita_servicio: number }> | null) || [])
+      ((citasConFoto as Array<{ id_cita_servicio: number; foto_pedido_base64: string | null }> | null) || [])
+        .filter(cita => normalizarFotoPedidoBase64(cita.foto_pedido_base64) !== null)
         .map(cita => cita.id_cita_servicio)
     );
 
@@ -207,13 +208,24 @@ export async function confirmarCitaServicio(
 
 const STORAGE_BUCKET = 'resultados-servicios';
 
-function inferirMimeImagenBase64(base64: string): string {
-  if (base64.startsWith('/9j/')) return 'image/jpeg';
-  if (base64.startsWith('iVBOR')) return 'image/png';
-  if (base64.startsWith('UklGR')) return 'image/webp';
-  if (base64.startsWith('R0lGOD')) return 'image/gif';
-  if (base64.startsWith('Qk')) return 'image/bmp';
-  return 'image/jpeg';
+function normalizarFotoPedidoBase64(foto: string | null | undefined): string | null {
+  const valor = foto?.trim();
+  if (!valor) return null;
+
+  if (valor.startsWith('data:') && !valor.startsWith('data:image/')) {
+    return null;
+  }
+
+  const base64Limpio = (valor.includes(',') ? valor.split(',')[1] : valor).replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64Limpio)) return null;
+
+  if (base64Limpio.startsWith('/9j/')) return `data:image/jpeg;base64,${base64Limpio}`;
+  if (base64Limpio.startsWith('iVBOR')) return `data:image/png;base64,${base64Limpio}`;
+  if (base64Limpio.startsWith('UklGR')) return `data:image/webp;base64,${base64Limpio}`;
+  if (base64Limpio.startsWith('R0lGOD')) return `data:image/gif;base64,${base64Limpio}`;
+  if (base64Limpio.startsWith('Qk')) return `data:image/bmp;base64,${base64Limpio}`;
+
+  return null;
 }
 
 export async function finalizarCitaServicio(
@@ -301,25 +313,16 @@ export async function getFotoPedido(id: number): Promise<string | null> {
       return null;
     }
 
-    const foto = (data as { foto_pedido_base64: string | null })?.foto_pedido_base64?.trim();
-    if (!foto) return null;
+    const fotoNormalizada = normalizarFotoPedidoBase64(
+      (data as { foto_pedido_base64: string | null })?.foto_pedido_base64
+    );
 
-    if (foto.startsWith('data:image/')) {
-      return foto;
-    }
-
-    if (foto.startsWith('data:')) {
-      console.error('❌ La foto de pedido no es un data URL de imagen válido');
+    if (!fotoNormalizada) {
+      console.error('❌ La foto de pedido no tiene un formato de imagen válido');
       return null;
     }
 
-    const base64Limpio = foto.replace(/\s/g, '');
-    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64Limpio)) {
-      console.error('❌ La foto de pedido no tiene formato base64 válido');
-      return null;
-    }
-
-    return `data:${inferirMimeImagenBase64(base64Limpio)};base64,${base64Limpio}`;
+    return fotoNormalizada;
   } catch (error) {
     console.error('❌ Error inesperado en getFotoPedido:', error);
     return null;

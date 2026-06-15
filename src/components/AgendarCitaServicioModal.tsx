@@ -40,6 +40,17 @@ function calcularBytesBase64(dataUrl: string): number {
   return Math.floor(base64.length * 0.75);
 }
 
+function dataUrlTieneFirmaImagen(dataUrl: string): boolean {
+  const base64 = dataUrl.split(',')[1] ?? '';
+  return (
+    base64.startsWith('/9j/') ||
+    base64.startsWith('iVBOR') ||
+    base64.startsWith('UklGR') ||
+    base64.startsWith('R0lGOD') ||
+    base64.startsWith('Qk')
+  );
+}
+
 const getNuevoPacienteInicial = () => ({
   cedula: '',
   nombres: '',
@@ -413,6 +424,12 @@ export function AgendarCitaServicioModal({
       const base64Raw = ev.target?.result as string;
       if (!base64Raw?.startsWith('data:image/')) {
         toast.error('Formato de imagen inválido');
+        setIsUploadingFoto(false);
+        return;
+      }
+
+      if (!dataUrlTieneFirmaImagen(base64Raw)) {
+        toast.error('El archivo seleccionado no contiene una imagen válida');
         setIsUploadingFoto(false);
         return;
       }

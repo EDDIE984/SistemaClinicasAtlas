@@ -4,6 +4,15 @@ import { createClient } from '@supabase/supabase-js';
 const MIME_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
+function detectarMimeImagen(buffer: Buffer): string | null {
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  if (buffer.subarray(0, 6).toString('ascii') === 'GIF87a' || buffer.subarray(0, 6).toString('ascii') === 'GIF89a') return 'image/gif';
+  if (buffer[0] === 0x42 && buffer[1] === 0x4d) return 'image/bmp';
+  return null;
+}
+
 function getSupabaseConfig() {
   const url =
     process.env.SUPABASE_URL ||
@@ -70,8 +79,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(413).json({ error: 'Imagen demasiado grande (máximo 5 MB).' });
     }
 
+    const bufferImagen = Buffer.from(base64Data, 'base64');
+    const mimeDetectado = detectarMimeImagen(bufferImagen);
+    if (!mimeDetectado) {
+      return res.status(400).json({ error: 'El contenido enviado no corresponde a una imagen válida.' });
+    }
+
     const tamanio_kb = Math.round(bytesAproximados / 1024);
-    const base64Normalizado = `data:${resolvedMime};base64,${base64Data}`;
+    const base64Normalizado = `data:${mimeDetectado};base64,${base64Data}`;
 
     const { url, key } = getSupabaseConfig();
     if (!url || !key) {
