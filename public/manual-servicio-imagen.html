@@ -262,11 +262,63 @@
 
     .shot img {
       display: block;
-      width: 100%;
+      width: min(100%, 620px);
+      max-height: 360px;
+      object-fit: contain;
       border: 1px solid var(--line);
       border-radius: 10px;
       background: white;
-      margin-top: 10px;
+      margin: 10px auto 0;
+      cursor: zoom-in;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+
+    .shot img:hover {
+      box-shadow: 0 12px 28px rgba(16, 24, 40, 0.14);
+      transform: translateY(-1px);
+    }
+
+    .image-lightbox {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      background: rgba(15, 23, 42, 0.86);
+      z-index: 50;
+    }
+
+    .image-lightbox.is-open {
+      display: flex;
+    }
+
+    .image-lightbox img {
+      max-width: min(100%, 1180px);
+      max-height: 88vh;
+      object-fit: contain;
+      border-radius: 10px;
+      background: white;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+    }
+
+    .image-lightbox button {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(255, 255, 255, 0.32);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+      cursor: pointer;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .image-lightbox button:hover {
+      background: rgba(255, 255, 255, 0.2);
     }
 
     .shot .placeholder {
@@ -741,5 +793,50 @@
       </section>
     </main>
   </div>
+  <div class="image-lightbox" id="imageLightbox" aria-hidden="true">
+    <button type="button" id="closeLightbox" aria-label="Cerrar imagen ampliada">&times;</button>
+    <img id="lightboxImage" src="" alt="" />
+  </div>
+  <script>
+    const lightbox = document.getElementById('imageLightbox');
+    const lightboxImage = document.getElementById('lightboxImage');
+    const closeLightbox = document.getElementById('closeLightbox');
+
+    document.querySelectorAll('.shot img').forEach((image) => {
+      image.setAttribute('tabindex', '0');
+      image.setAttribute('title', 'Clic para ampliar');
+
+      const openImage = () => {
+        lightboxImage.src = image.src;
+        lightboxImage.alt = image.alt;
+        lightbox.classList.add('is-open');
+        lightbox.setAttribute('aria-hidden', 'false');
+        closeLightbox.focus();
+      };
+
+      image.addEventListener('click', openImage);
+      image.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openImage();
+        }
+      });
+    });
+
+    const closeImage = () => {
+      lightbox.classList.remove('is-open');
+      lightbox.setAttribute('aria-hidden', 'true');
+      lightboxImage.src = '';
+      lightboxImage.alt = '';
+    };
+
+    closeLightbox.addEventListener('click', closeImage);
+    lightbox.addEventListener('click', (event) => {
+      if (event.target === lightbox) closeImage();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && lightbox.classList.contains('is-open')) closeImage();
+    });
+  </script>
 </body>
 </html>
