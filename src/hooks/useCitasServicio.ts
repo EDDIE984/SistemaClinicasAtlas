@@ -60,7 +60,7 @@ export function useCitasServicio(params: UseCitasServicioParams) {
 
   const confirmarCita = async (
     id: number,
-    datos: { medico_solicitante: string; numero_registro_medico: string; tiene_seguro_medico: string; foto_pedido_base64: string }
+    datos: { medico_solicitante: string; numero_registro_medico: string; tiene_seguro_medico: string; foto_pedido_base64?: string }
   ): Promise<CitaServicio | null> => {
     const result = await confirmarCitaServicio(id, datos);
     if (result) await loadCitas();

@@ -72,6 +72,31 @@ function toISO(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
+const ECUADOR_TIME_ZONE = 'America/Guayaquil';
+
+function fechaHoyEcuadorISO(): string {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ECUADOR_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+
+  const year = partes.find(parte => parte.type === 'year')?.value;
+  const month = partes.find(parte => parte.type === 'month')?.value;
+  const day = partes.find(parte => parte.type === 'day')?.value;
+
+  return `${year}-${month}-${day}`;
+}
+
+function esFechaPasadaEnEcuador(fecha: string): boolean {
+  return fecha < fechaHoyEcuadorISO();
+}
+
+function permiteAccionesAgendaServicio(cita: CitaServicioCompleta): boolean {
+  return !esFechaPasadaEnEcuador(cita.fecha_cita);
+}
+
 function formatFechaCorta(d: Date): string {
   return d.toLocaleDateString('es-EC', { weekday: 'short', day: 'numeric', month: 'short' });
 }
@@ -188,12 +213,20 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
   const [fechaPreseleccionada, setFechaPresel] = useState<string | null>(null);
 
   const handleNuevaCita = (fecha?: string) => {
+    if (fecha && esFechaPasadaEnEcuador(fecha)) {
+      toast.error('No puedes agendar citas en fechas pasadas');
+      return;
+    }
     setCitaParaEditar(null);
     setFechaPresel(fecha || null);
     setIsModalOpen(true);
   };
 
   const handleEditarCita = (cita: CitaServicioCompleta) => {
+    if (!permiteAccionesAgendaServicio(cita)) {
+      toast.error('Solo puedes editar citas de hoy o fechas futuras');
+      return;
+    }
     setCitaParaEditar(cita);
     setFechaPresel(null);
     setIsModalOpen(true);
@@ -212,6 +245,11 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
 
   const handleCancelarConfirmar = async () => {
     if (!citaACancelar) return;
+    if (!permiteAccionesAgendaServicio(citaACancelar)) {
+      toast.error('Solo puedes cancelar citas de hoy o fechas futuras');
+      setCitaACancelar(null);
+      return;
+    }
     const ok = await cancelarCita(citaACancelar.id_cita_servicio);
     if (ok) {
       toast.success('Cita cancelada');
@@ -219,6 +257,14 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
     } else {
       toast.error('Error al cancelar la cita');
     }
+  };
+
+  const abrirCancelacion = (cita: CitaServicioCompleta) => {
+    if (!permiteAccionesAgendaServicio(cita)) {
+      toast.error('Solo puedes cancelar citas de hoy o fechas futuras');
+      return;
+    }
+    setCitaACancelar(cita);
   };
 
   const abrirDetalleServicio = (cita: CitaServicioCompleta) => {
@@ -234,6 +280,11 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
   };
 
   const abrirPantallaAtencion = (cita: CitaServicioCompleta) => {
+    if (!permiteAccionesAgendaServicio(cita)) {
+      toast.error('Solo puedes atender citas de hoy o fechas futuras');
+      return;
+    }
+
     if (cita.estado_cita !== 'confirmada' && cita.estado_cita !== 'en_atencion') {
       toast.error('Solo puedes ingresar a atención desde citas confirmadas o en atención');
       return;
@@ -247,6 +298,10 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
 
   const handleIniciarAtencionServicio = async () => {
     if (!citaDetalle) return;
+    if (!permiteAccionesAgendaServicio(citaDetalle)) {
+      toast.error('Solo puedes iniciar atención en citas de hoy o fechas futuras');
+      return;
+    }
 
     setIsProcesandoAccion(true);
     try {
@@ -277,6 +332,10 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
 
   const handleGuardarAtencion = async () => {
     if (!citaAtencion) return;
+    if (!permiteAccionesAgendaServicio(citaAtencion)) {
+      toast.error('Solo puedes guardar atención en citas de hoy o fechas futuras');
+      return;
+    }
 
     if (!esUrlValida(urlInforme)) {
       toast.error('Ingresa una URL válida para el informe');
@@ -319,6 +378,10 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
 
   const handleCancelarServicioConObservacion = async () => {
     if (!citaDetalle) return;
+    if (!permiteAccionesAgendaServicio(citaDetalle)) {
+      toast.error('Solo puedes cancelar citas de hoy o fechas futuras');
+      return;
+    }
 
     const observacion = observacionCancelacion.trim();
     if (!observacion) {
@@ -663,6 +726,7 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
                 const iso = toISO(dia);
                 const citasDia = citasFiltradas.filter(c => c.fecha_cita === iso);
                 const esHoy = iso === toISO(new Date());
+                const esDiaPasado = esFechaPasadaEnEcuador(iso);
 
                 return (
                   <div key={iso} className="flex flex-col min-h-[300px]">
@@ -674,6 +738,8 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
                           size="sm"
                           variant="ghost"
                           className={`w-full mt-1 h-5 text-xs px-0 ${esHoy ? 'text-white hover:bg-blue-700' : 'text-gray-500 hover:bg-gray-200'}`}
+                          disabled={esDiaPasado}
+                          title={esDiaPasado ? 'No disponible para fechas pasadas' : undefined}
                           onClick={() => handleNuevaCita(iso)}
                         >
                           <Plus className="size-3 mr-0.5" /> Agregar
@@ -688,6 +754,7 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
                       ) : (
                         citasDia.map(cita => {
                           const cancelable = !modoUsuarioServicio && cita.estado_cita !== 'cancelada' && cita.estado_cita !== 'atendida' && cita.estado_cita !== 'no_asistio';
+                          const accionesPermitidas = permiteAccionesAgendaServicio(cita);
                           return (
                           <div
                             key={cita.id_cita_servicio}
@@ -696,13 +763,15 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
                               if (modoUsuarioServicio) abrirDetalleServicio(cita);
                               else handleEditarCita(cita);
                             }}
+                            title={!accionesPermitidas ? 'Las acciones no están disponibles para citas pasadas' : undefined}
                           >
                             {/* Botón cancelar — visible al hacer hover */}
                             {cancelable && (
                               <button
-                                className="absolute top-0.5 right-0.5 hidden group-hover:flex items-center justify-center size-4 rounded-full bg-red-100 hover:bg-red-200 text-red-600 z-10"
-                                title="Cancelar cita"
-                                onClick={e => { e.stopPropagation(); setCitaACancelar(cita); }}
+                                className="absolute top-0.5 right-0.5 hidden group-hover:flex items-center justify-center size-4 rounded-full bg-red-100 hover:bg-red-200 text-red-600 disabled:cursor-not-allowed disabled:opacity-40 z-10"
+                                title={accionesPermitidas ? 'Cancelar cita' : 'No disponible para citas pasadas'}
+                                disabled={!accionesPermitidas}
+                                onClick={e => { e.stopPropagation(); abrirCancelacion(cita); }}
                               >
                                 <XCircle className="size-3" />
                               </button>
@@ -816,14 +885,23 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
                             <div className="flex gap-1 justify-end">
                               {cita.estado_cita !== 'cancelada' && cita.estado_cita !== 'atendida' && cita.estado_cita !== 'no_asistio' ? (
                                 <>
-                                  <Button size="sm" variant="ghost" className="gap-1" onClick={() => handleEditarCita(cita)}>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="gap-1"
+                                    disabled={!permiteAccionesAgendaServicio(cita)}
+                                    title={!permiteAccionesAgendaServicio(cita) ? 'No disponible para citas pasadas' : undefined}
+                                    onClick={() => handleEditarCita(cita)}
+                                  >
                                     <Pencil className="size-3" /> Editar
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     className="gap-1 text-red-600 hover:bg-red-50 hover:text-red-700"
-                                    onClick={() => setCitaACancelar(cita)}
+                                    disabled={!permiteAccionesAgendaServicio(cita)}
+                                    title={!permiteAccionesAgendaServicio(cita) ? 'No disponible para citas pasadas' : undefined}
+                                    onClick={() => abrirCancelacion(cita)}
                                   >
                                     <XCircle className="size-4" /> Cancelar
                                   </Button>
@@ -1019,13 +1097,18 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
                     variant="outline"
                     className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
                     onClick={() => setMostrarCancelacionServicio(true)}
-                    disabled={isProcesandoAccion}
+                    disabled={isProcesandoAccion || !permiteAccionesAgendaServicio(citaDetalle)}
+                    title={!permiteAccionesAgendaServicio(citaDetalle) ? 'No disponible para citas pasadas' : undefined}
                   >
                     <XCircle className="size-4 mr-2" />
                     Cancelar cita
                   </Button>
                   {citaDetalle?.estado_cita === 'confirmada' && (
-                    <Button onClick={handleIniciarAtencionServicio} disabled={isProcesandoAccion}>
+                    <Button
+                      onClick={handleIniciarAtencionServicio}
+                      disabled={isProcesandoAccion || !permiteAccionesAgendaServicio(citaDetalle)}
+                      title={!permiteAccionesAgendaServicio(citaDetalle) ? 'No disponible para citas pasadas' : undefined}
+                    >
                       {isProcesandoAccion ? (
                         <Loader2 className="size-4 mr-2 animate-spin" />
                       ) : (
@@ -1035,7 +1118,11 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
                     </Button>
                   )}
                   {citaDetalle?.estado_cita === 'en_atencion' && (
-                    <Button onClick={() => abrirPantallaAtencion(citaDetalle)} disabled={isProcesandoAccion}>
+                    <Button
+                      onClick={() => abrirPantallaAtencion(citaDetalle)}
+                      disabled={isProcesandoAccion || !permiteAccionesAgendaServicio(citaDetalle)}
+                      title={!permiteAccionesAgendaServicio(citaDetalle) ? 'No disponible para citas pasadas' : undefined}
+                    >
                       <PlayCircle className="size-4 mr-2" />
                       Continuar atención
                     </Button>

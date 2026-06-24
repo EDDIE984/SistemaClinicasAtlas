@@ -62,6 +62,26 @@ const PUEDE_ACCIONAR = (estado: string) =>
 
 const MIME_IMAGEN_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
 const MAX_IMAGEN_BYTES = 5 * 1024 * 1024;
+const ECUADOR_TIME_ZONE = 'America/Guayaquil';
+
+function fechaHoyEcuadorISO(): string {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ECUADOR_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+
+  const year = partes.find(parte => parte.type === 'year')?.value;
+  const month = partes.find(parte => parte.type === 'month')?.value;
+  const day = partes.find(parte => parte.type === 'day')?.value;
+
+  return `${year}-${month}-${day}`;
+}
+
+function permiteAccionesDashboardServicio(cita: CitaServicioCompleta): boolean {
+  return cita.fecha_cita >= fechaHoyEcuadorISO();
+}
 
 function calcularBytesBase64(dataUrl: string): number {
   const base64 = dataUrl.split(',')[1] ?? '';
@@ -149,6 +169,10 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const [citaParaEditar, setCitaParaEditar]         = useState<CitaServicioCompleta | null>(null);
 
   const handleEditar = (cita: CitaServicioCompleta) => {
+    if (!permiteAccionesDashboardServicio(cita)) {
+      toast.error('Solo puedes editar citas de hoy o fechas futuras');
+      return;
+    }
     setCitaParaEditar(cita);
     setIsModalAgendarOpen(true);
   };
@@ -158,9 +182,22 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
   const handleCancelarConfirmar = async () => {
     if (!citaACancelar) return;
+    if (!permiteAccionesDashboardServicio(citaACancelar)) {
+      toast.error('Solo puedes cancelar citas de hoy o fechas futuras');
+      setCitaACancelar(null);
+      return;
+    }
     const ok = await cancelarCita(citaACancelar.id_cita_servicio);
     if (ok) { toast.success('Cita cancelada'); setCitaACancelar(null); }
     else toast.error('Error al cancelar la cita');
+  };
+
+  const abrirCancelacion = (cita: CitaServicioCompleta) => {
+    if (!permiteAccionesDashboardServicio(cita)) {
+      toast.error('Solo puedes cancelar citas de hoy o fechas futuras');
+      return;
+    }
+    setCitaACancelar(cita);
   };
 
   // ─── Confirmación ─────────────────────────────────────────────────────────
@@ -175,6 +212,10 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const abrirConfirmacion = (cita: CitaServicioCompleta) => {
+    if (!permiteAccionesDashboardServicio(cita)) {
+      toast.error('Solo puedes confirmar citas de hoy o fechas futuras');
+      return;
+    }
     setCitaAConfirmar(cita);
     setMedicoSolicitante('');
     setNumRegistro('');
@@ -244,7 +285,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
         medico_solicitante:     medicoSolicitante.toUpperCase(),
         numero_registro_medico: numRegistro,
         tiene_seguro_medico:    tieneSeguroMedico.trim(),
-        foto_pedido_base64:     fotoBase64,
+        ...(fotoBase64 ? { foto_pedido_base64: fotoBase64 } : {}),
       });
       if (ok) {
         toast.success('Cita confirmada exitosamente');
@@ -260,8 +301,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const puedeConfirmar =
     medicoSolicitante.trim() !== '' &&
     numRegistro.trim() !== '' &&
-    tieneSeguroMedico.trim() !== '' &&
-    fotoBase64 !== '';
+    tieneSeguroMedico.trim() !== '';
 
   // ─── Visor de foto ────────────────────────────────────────────────────────
   const [citaFoto, setCitaFoto]             = useState<CitaServicioCompleta | null>(null);
@@ -307,6 +347,10 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const puedeFinalizarCitas = ['GESTOR_IMAGEN', 'ADMINISTRADOR'].includes(currentUser?.tipo_usuario || '');
 
   const abrirModalFinalizar = (cita: CitaServicioCompleta, mode: 'finalizar' | 'reemplazar') => {
+    if (mode === 'finalizar' && !permiteAccionesDashboardServicio(cita)) {
+      toast.error('Solo puedes finalizar citas de hoy o fechas futuras');
+      return;
+    }
     setCitaParaFinalizar(cita);
     setModalFinalizarMode(mode);
     setModalFinalizarOpen(true);
@@ -441,6 +485,8 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                   {citasOrdenadas.map(cita => {
                     const cfg = ESTADO_CONFIG[cita.estado_cita] ?? { label: cita.estado_cita, className: 'bg-gray-100 text-gray-700' };
                     const accionable = PUEDE_ACCIONAR(cita.estado_cita);
+                    const accionesPermitidas = permiteAccionesDashboardServicio(cita);
+                    const accionableEnFechaPermitida = accionable && accionesPermitidas;
                     const tieneFotoPedido = cita.tiene_foto_pedido === true;
                     return (
                       <TableRow key={cita.id_cita_servicio}>
@@ -529,6 +575,8 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                                 size="sm"
                                 variant="outline"
                                 className="gap-1 text-blue-600 border-blue-300 hover:bg-blue-50 text-xs"
+                                disabled={!accionableEnFechaPermitida}
+                                title={!accionableEnFechaPermitida ? 'No disponible para citas pasadas' : undefined}
                                 onClick={() => abrirConfirmacion(cita)}
                               >
                                 <CheckCircle className="size-3" /> Confirmar
@@ -540,6 +588,8 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                                   size="sm"
                                   variant="ghost"
                                   className="gap-1 text-xs"
+                                  disabled={!accionableEnFechaPermitida}
+                                  title={!accionableEnFechaPermitida ? 'No disponible para citas pasadas' : undefined}
                                   onClick={() => handleEditar(cita)}
                                 >
                                   <Pencil className="size-3" /> Editar
@@ -548,7 +598,9 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                                   size="sm"
                                   variant="ghost"
                                   className="gap-1 text-xs text-red-600 hover:bg-red-50"
-                                  onClick={() => setCitaACancelar(cita)}
+                                  disabled={!accionableEnFechaPermitida}
+                                  title={!accionableEnFechaPermitida ? 'No disponible para citas pasadas' : undefined}
+                                  onClick={() => abrirCancelacion(cita)}
                                 >
                                   <XCircle className="size-3" /> Cancelar
                                 </Button>
@@ -559,6 +611,8 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                                 size="sm"
                                 variant="outline"
                                 className="gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50 text-xs"
+                                disabled={!accionesPermitidas}
+                                title={!accionesPermitidas ? 'No disponible para citas pasadas' : undefined}
                                 onClick={() => abrirModalFinalizar(cita, 'finalizar')}
                               >
                                 <FileText className="size-3" /> Finalizar
@@ -625,7 +679,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
           <DialogHeader className="pr-8">
             <DialogTitle>Confirmar cita</DialogTitle>
             <DialogDescription>
-              Registra el médico solicitante, número de registro, seguro médico y fotografía del pedido para confirmar la cita.
+              Registra el médico solicitante, número de registro y seguro médico para confirmar la cita. La fotografía del pedido es opcional.
             </DialogDescription>
           </DialogHeader>
           {citaAConfirmar && (
@@ -673,7 +727,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
               {/* Fotografía del pedido */}
               <div className="space-y-1.5">
-                <Label>Fotografía del pedido *</Label>
+                <Label>Fotografía del pedido</Label>
                 <div
                   className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
                   onClick={() => fileInputRef.current?.click()}
@@ -712,7 +766,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
               {!puedeConfirmar && (
                 <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
                   <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />
-                  <span>Completa todos los campos obligatorios y carga la fotografía del pedido para confirmar. Sin esos datos la cita permanecerá en estado <strong>Agendada</strong>.</span>
+                  <span>Completa los campos obligatorios para confirmar. Sin esos datos la cita permanecerá en estado <strong>Agendada</strong>.</span>
                 </div>
               )}
             </div>
