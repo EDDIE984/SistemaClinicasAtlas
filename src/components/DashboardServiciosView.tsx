@@ -219,7 +219,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     setCitaAConfirmar(cita);
     setMedicoSolicitante('');
     setNumRegistro('');
-    setTieneSeguroMedico('');
+    setTieneSeguroMedico(cita.tiene_seguro_medico || '');
     setFotoBase64('');
     setFotoNombre('');
   };
