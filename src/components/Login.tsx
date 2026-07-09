@@ -58,6 +58,13 @@ export function Login({ onLogin }: LoginProps) {
     useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const getAsignacionKey = (asignacion: AsignacionCompleta) =>
+    [
+      asignacion.id_usuario_sucursal,
+      asignacion.id_sucursal,
+      asignacion.id_servicio ?? "sin-servicio",
+    ].join("-");
+
   const persistSession = (usuario: Usuario, asignacion: AsignacionCompleta) => {
     localStorage.setItem("currentUserEmail", usuario.email);
     localStorage.setItem(
@@ -80,6 +87,10 @@ export function Login({ onLogin }: LoginProps) {
       "currentCompaniaId",
       asignacion.compania.id_compania.toString(),
     );
+    localStorage.removeItem("currentServicioId");
+    localStorage.removeItem("currentServicioArea");
+    localStorage.removeItem("currentServicioDescripcion");
+
     if (asignacion.id_servicio) {
       localStorage.setItem("currentServicioId", asignacion.id_servicio.toString());
     }
@@ -165,7 +176,7 @@ export function Login({ onLogin }: LoginProps) {
 
     const asignacionSeleccionada = asignaciones.find(
       (a) =>
-        a.id_usuario_sucursal.toString() === selectedAsignacion,
+        getAsignacionKey(a) === selectedAsignacion,
     );
 
     if (asignacionSeleccionada) {
@@ -285,8 +296,8 @@ export function Login({ onLogin }: LoginProps) {
                   <SelectContent>
                     {asignaciones.map((asig) => (
                       <SelectItem
-                        key={asig.id_usuario_sucursal}
-                        value={asig.id_usuario_sucursal.toString()}
+                        key={getAsignacionKey(asig)}
+                        value={getAsignacionKey(asig)}
                       >
                         <div className="flex items-center gap-2">
                           <Building2 className="size-4 text-blue-600" />
@@ -317,8 +328,7 @@ export function Login({ onLogin }: LoginProps) {
                   {(() => {
                     const asig = asignaciones.find(
                       (a) =>
-                        a.id_usuario_sucursal.toString() ===
-                        selectedAsignacion,
+                        getAsignacionKey(a) === selectedAsignacion,
                     );
                     return asig ? (
                       <>

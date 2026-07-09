@@ -93,8 +93,8 @@ function esFechaPasadaEnEcuador(fecha: string): boolean {
   return fecha < fechaHoyEcuadorISO();
 }
 
-function permiteAccionesAgendaServicio(cita: CitaServicioCompleta): boolean {
-  return !esFechaPasadaEnEcuador(cita.fecha_cita);
+function permiteAccionesAgendaServicio(cita?: CitaServicioCompleta | null): boolean {
+  return !!cita?.fecha_cita && !esFechaPasadaEnEcuador(cita.fecha_cita);
 }
 
 function formatFechaCorta(d: Date): string {
@@ -151,6 +151,7 @@ const ESTADO_CONFIG: Record<string, { label: string; variant: 'default' | 'secon
 };
 
 type EstadoFiltroServicio = 'todas' | 'agendada' | 'confirmada' | 'en_atencion' | 'atendida' | 'cancelada';
+const normalizarTexto = (valor?: string | null) => (valor ?? '').trim().toUpperCase();
 
 export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }: AgendaServiciosViewProps) {
   const { sucursales } = useSucursales();
@@ -168,7 +169,7 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
 
   const { servicios } = useServicios(idSucursalNum);
   const serviciosActivos = servicios.filter(
-    s => s.estado === 'activo' && s.descripcion.toUpperCase() !== 'CONSULTA EXTERNA'
+    s => s.estado === 'activo' && normalizarTexto(s.descripcion) !== 'CONSULTA EXTERNA'
   );
 
   // ─── Vista ───────────────────────────────────────────────────────────────────

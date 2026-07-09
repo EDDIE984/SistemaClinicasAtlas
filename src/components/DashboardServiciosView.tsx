@@ -60,6 +60,8 @@ const ESTADO_CONFIG: Record<string, {
 const PUEDE_ACCIONAR = (estado: string) =>
   !['cancelada', 'atendida', 'no_asistio', 'finalizado'].includes(estado);
 
+const normalizarTexto = (valor?: string | null) => (valor ?? '').trim().toUpperCase();
+
 const MIME_IMAGEN_PERMITIDOS = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
 const MAX_IMAGEN_BYTES = 5 * 1024 * 1024;
 const ECUADOR_TIME_ZONE = 'America/Guayaquil';
@@ -136,7 +138,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
   const { servicios } = useServicios(idSucursalNum);
   const serviciosActivos = servicios.filter(
-    s => s.estado === 'activo' && s.descripcion.toUpperCase() !== 'CONSULTA EXTERNA'
+    s => s.estado === 'activo' && normalizarTexto(s.descripcion) !== 'CONSULTA EXTERNA'
   );
 
   // ─── Citas ───────────────────────────────────────────────────────────────
@@ -344,7 +346,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const [modalFinalizarMode, setModalFinalizarMode] = useState<'finalizar' | 'reemplazar'>('finalizar');
   const [modalFinalizarOpen, setModalFinalizarOpen] = useState(false);
 
-  const puedeFinalizarCitas = ['GESTOR_IMAGEN', 'ADMINISTRADOR'].includes(currentUser?.tipo_usuario || '');
+  const puedeFinalizarCitas = ['GESTOR_IMAGEN', 'administrativo'].includes(currentUser?.tipo_usuario || '');
 
   const abrirModalFinalizar = (cita: CitaServicioCompleta, mode: 'finalizar' | 'reemplazar') => {
     if (mode === 'finalizar' && !permiteAccionesDashboardServicio(cita)) {

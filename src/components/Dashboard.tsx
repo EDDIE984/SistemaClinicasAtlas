@@ -56,11 +56,15 @@ interface DashboardProps {
 
 type MenuItem = 'pacientes' | 'agenda' | 'agenda-servicios' | 'dashboard-servicios' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'configuraciones' | 'planificacion' | 'interconsultas';
 
+const normalizarTexto = (valor?: string | null) => (valor ?? '').trim().toUpperCase();
+const esRolImagen = (tipoUsuario?: string | null) =>
+  tipoUsuario === 'USUARIO_IMAGEN' || tipoUsuario === 'USUARIO_IMANGE';
+
 export function Dashboard({ onLogout, currentUser }: DashboardProps) {
-  const servicioArea = currentUser?.servicio_area?.trim().toUpperCase();
-  const servicioDescripcion = currentUser?.servicio?.trim().toUpperCase();
+  const servicioArea = normalizarTexto(currentUser?.servicio_area);
+  const servicioDescripcion = normalizarTexto(currentUser?.servicio);
   const esUsuarioServicio =
-    !!currentUser?.id_servicio &&
+    (esRolImagen(currentUser?.tipo_usuario) || !!currentUser?.id_servicio) &&
     servicioArea !== 'CONSULTA_EXTERNA' &&
     servicioDescripcion !== 'CONSULTA EXTERNA';
 

@@ -166,7 +166,7 @@ export function UsuarioTabSupabase() {
       return;
     }
 
-    if (formData.tipo_usuario === 'USUARIO_IMANGE' && !formData.id_servicio) {
+    if ((formData.tipo_usuario === 'USUARIO_IMANGE' || formData.tipo_usuario === 'USUARIO_IMAGEN') && !formData.id_servicio) {
       toast.error('Debe seleccionar un servicio para Usuario Imagen');
       return;
     }
@@ -513,7 +513,7 @@ export function UsuarioTabSupabase() {
 
             {formData.tipo_usuario !== 'GESTOR_IMAGEN' && (
               <div className="space-y-2">
-                <Label>Servicio {formData.tipo_usuario === 'USUARIO_IMANGE' ? '*' : ''}</Label>
+                <Label>Servicio {(formData.tipo_usuario === 'USUARIO_IMANGE' || formData.tipo_usuario === 'USUARIO_IMAGEN') ? '*' : ''}</Label>
                 <Select
                   value={formData.id_servicio}
                   onValueChange={(value) => setFormData({ ...formData, id_servicio: value })}

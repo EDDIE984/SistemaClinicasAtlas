@@ -71,7 +71,7 @@ export interface Servicio {
 // INTERFACES - USUARIOS
 // ========================================
 
-export type TipoUsuario = 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN';
+export type TipoUsuario = 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN';
 
 export interface Usuario {
   id_usuario: number;
@@ -1371,6 +1371,7 @@ export function formatearTipoUsuario(tipo: TipoUsuario): string {
     enfermera: 'Enfermera',
     secretaria: 'Secretaria',
     USUARIO_IMANGE: 'Usuario Imagen',
+    USUARIO_IMAGEN: 'Usuario Imagen',
     GESTOR_IMAGEN: 'Gestor Imagen'
   };
   return tipos[tipo] || tipo;

@@ -19,7 +19,7 @@ export interface Database {
           email: string
           telefono: string | null
           password: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN'
           fecha_ingreso: string
           estado: 'activo' | 'inactivo'
           created_at: string
@@ -33,7 +33,7 @@ export interface Database {
           email: string
           telefono?: string | null
           password?: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
@@ -47,7 +47,7 @@ export interface Database {
           email?: string
           telefono?: string | null
           password?: string
-          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'GESTOR_IMAGEN'
+          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
