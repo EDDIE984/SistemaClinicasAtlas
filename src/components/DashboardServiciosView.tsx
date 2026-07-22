@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import {
   LayoutDashboard, Loader2, CheckCircle, XCircle, Pencil, ClipboardList,
   Calendar, Clock, User, Stethoscope, Image, AlertCircle, RefreshCw, Eye,
-  FileText, BookOpen,
+  FileText, BookOpen, IdCard, Phone, Mail, MapPin, Cake, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCitasServicio } from '../hooks/useCitasServicio';
@@ -21,6 +21,7 @@ import { AgendarCitaServicioModal } from './AgendarCitaServicioModal';
 import { getFotoPedido, generarUrlFirmadaPdf } from '../lib/citaServicioService';
 import type { CitaServicioCompleta } from '../lib/configuracionesService';
 import { FinalizarCitaServicioModal } from './FinalizarCitaServicioModal';
+import { calcularEdad, getPacienteById, updatePaciente, type Paciente } from '../lib/pacientesService';
 
 interface DashboardServiciosViewProps {
   currentUser: {
@@ -29,6 +30,22 @@ interface DashboardServiciosViewProps {
     sucursal?: string;
   } | null;
 }
+
+type PacienteEditForm = Pick<Paciente,
+  | 'cedula'
+  | 'nombres'
+  | 'apellidos'
+  | 'fecha_nacimiento'
+  | 'sexo'
+  | 'estado_civil'
+  | 'telefono'
+  | 'telefono_fijo'
+  | 'email'
+  | 'direccion'
+  | 'contacto_emergencia_nombre'
+  | 'contacto_emergencia_parentesco'
+  | 'contacto_emergencia_telefono'
+>;
 
 // ─── Utilidades de fecha ──────────────────────────────────────────────────────
 function toISO(d: Date): string {
@@ -149,6 +166,106 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     idServicio: idServicioNum,
   });
 
+  // ─── Detalle del paciente ────────────────────────────────────────────────
+  const [pacienteDetalle, setPacienteDetalle] = useState<Paciente | null>(null);
+  const [isPacienteDetalleOpen, setIsPacienteDetalleOpen] = useState(false);
+  const [isLoadingPaciente, setIsLoadingPaciente] = useState(false);
+  const [isEditandoPaciente, setIsEditandoPaciente] = useState(false);
+  const [isGuardandoPaciente, setIsGuardandoPaciente] = useState(false);
+  const [pacienteForm, setPacienteForm] = useState<PacienteEditForm | null>(null);
+
+  const handleVerPaciente = async (cita: CitaServicioCompleta) => {
+    setIsPacienteDetalleOpen(true);
+    setIsLoadingPaciente(true);
+    setIsEditandoPaciente(false);
+    setPacienteForm(null);
+    setPacienteDetalle(null);
+
+    try {
+      const paciente = await getPacienteById(cita.id_paciente);
+      if (!paciente) {
+        toast.error('No se pudo obtener la información del paciente');
+        setIsPacienteDetalleOpen(false);
+        return;
+      }
+      setPacienteDetalle(paciente);
+    } finally {
+      setIsLoadingPaciente(false);
+    }
+  };
+
+  const iniciarEdicionPaciente = () => {
+    if (!pacienteDetalle) return;
+    setPacienteForm({
+      cedula: pacienteDetalle.cedula,
+      nombres: pacienteDetalle.nombres,
+      apellidos: pacienteDetalle.apellidos,
+      fecha_nacimiento: pacienteDetalle.fecha_nacimiento,
+      sexo: pacienteDetalle.sexo,
+      estado_civil: pacienteDetalle.estado_civil ?? '',
+      telefono: pacienteDetalle.telefono ?? '',
+      telefono_fijo: pacienteDetalle.telefono_fijo ?? '',
+      email: pacienteDetalle.email ?? '',
+      direccion: pacienteDetalle.direccion ?? '',
+      contacto_emergencia_nombre: pacienteDetalle.contacto_emergencia_nombre ?? '',
+      contacto_emergencia_parentesco: pacienteDetalle.contacto_emergencia_parentesco ?? '',
+      contacto_emergencia_telefono: pacienteDetalle.contacto_emergencia_telefono ?? '',
+    });
+    setIsEditandoPaciente(true);
+  };
+
+  const actualizarCampoPaciente = <K extends keyof PacienteEditForm>(campo: K, valor: PacienteEditForm[K]) => {
+    setPacienteForm(actual => actual ? { ...actual, [campo]: valor } : actual);
+  };
+
+  const handleGuardarPaciente = async () => {
+    if (!pacienteDetalle || !pacienteForm || isGuardandoPaciente) return;
+
+    const obligatoriosCompletos = pacienteForm.cedula.trim()
+      && pacienteForm.nombres.trim()
+      && pacienteForm.apellidos.trim()
+      && pacienteForm.fecha_nacimiento;
+    if (!obligatoriosCompletos) {
+      toast.error('Completa cédula, nombres, apellidos y fecha de nacimiento');
+      return;
+    }
+    if (pacienteForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pacienteForm.email)) {
+      toast.error('Ingresa un correo electrónico válido');
+      return;
+    }
+
+    setIsGuardandoPaciente(true);
+    try {
+      const updates: Partial<Paciente> = {
+        ...pacienteForm,
+        cedula: pacienteForm.cedula.trim().toUpperCase(),
+        nombres: pacienteForm.nombres.trim().toUpperCase(),
+        apellidos: pacienteForm.apellidos.trim().toUpperCase(),
+        estado_civil: pacienteForm.estado_civil?.trim() || null,
+        telefono: pacienteForm.telefono?.trim() || null,
+        telefono_fijo: pacienteForm.telefono_fijo?.trim() || null,
+        email: pacienteForm.email?.trim().toUpperCase() || null,
+        direccion: pacienteForm.direccion?.trim().toUpperCase() || null,
+        contacto_emergencia_nombre: pacienteForm.contacto_emergencia_nombre?.trim().toUpperCase() || null,
+        contacto_emergencia_parentesco: pacienteForm.contacto_emergencia_parentesco?.trim().toUpperCase() || null,
+        contacto_emergencia_telefono: pacienteForm.contacto_emergencia_telefono?.trim() || null,
+      };
+
+      await updatePaciente(pacienteDetalle.id_paciente, updates);
+      const pacienteActualizado = { ...pacienteDetalle, ...updates } as Paciente;
+      setPacienteDetalle(pacienteActualizado);
+      setIsEditandoPaciente(false);
+      setPacienteForm(null);
+      await loadCitas();
+      toast.success('Datos del paciente actualizados');
+    } catch (error) {
+      console.error('Error al actualizar el paciente desde el dashboard:', error);
+      toast.error('No se pudieron actualizar los datos del paciente');
+    } finally {
+      setIsGuardandoPaciente(false);
+    }
+  };
+
   const citasOrdenadas = useMemo(() =>
     [...citas].sort((a, b) =>
       ORDEN_ESTADO.indexOf(a.estado_cita) - ORDEN_ESTADO.indexOf(b.estado_cita) ||
@@ -209,6 +326,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const [tieneSeguroMedico, setTieneSeguroMedico] = useState('');
   const [fotoBase64, setFotoBase64]               = useState('');
   const [fotoNombre, setFotoNombre]               = useState('');
+  const [isDraggingFoto, setIsDraggingFoto] = useState(false);
   const [isUploadingFoto, setIsUploadingFoto]     = useState(false);
   const [isConfirmando, setIsConfirmando]         = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -224,12 +342,10 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     setTieneSeguroMedico(cita.tiene_seguro_medico || '');
     setFotoBase64('');
     setFotoNombre('');
+    setIsDraggingFoto(false);
   };
 
-  const handleSeleccionarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const procesarFotoPedido = (file: File) => {
     if (!MIME_IMAGEN_PERMITIDOS.includes(file.type.toLowerCase())) {
       toast.error('Solo se permiten imágenes');
       return;
@@ -279,6 +395,19 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     }
   };
 
+  const handleSeleccionarFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) procesarFotoPedido(file);
+    e.target.value = '';
+  };
+
+  const handleDropFoto = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingFoto(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) procesarFotoPedido(file);
+  };
+
   const handleConfirmar = async () => {
     if (!citaAConfirmar || !puedeConfirmar) return;
     setIsConfirmando(true);
@@ -322,6 +451,17 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
     }
   };
 
+  const handleVerFotoDesdeConfirmacion = () => {
+    if (!citaAConfirmar) return;
+    if (fotoBase64) {
+      setCitaFoto(citaAConfirmar);
+      setFotoVisualizando(fotoBase64);
+      setIsLoadingFoto(false);
+      return;
+    }
+    handleVerFoto(citaAConfirmar);
+  };
+
   const handleDescargarFoto = () => {
     if (!fotoVisualizando || !citaFoto) return;
 
@@ -359,9 +499,25 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   };
 
   const abrirPdf = async (storagePath: string) => {
+    const ventanaPdf = window.open('about:blank', '_blank');
+
+    if (!ventanaPdf) {
+      toast.error('El navegador bloqueó la ventana del PDF. Habilita las ventanas emergentes para este sitio.');
+      return;
+    }
+
+    ventanaPdf.opener = null;
+    ventanaPdf.document.title = 'Cargando informe PDF...';
+    ventanaPdf.document.body.innerHTML = '<p style="font-family: sans-serif; padding: 24px;">Cargando informe PDF...</p>';
+
     const url = await generarUrlFirmadaPdf(storagePath);
-    if (url) window.open(url, '_blank');
-    else toast.error('No se pudo generar el enlace del PDF');
+    if (url) {
+      ventanaPdf.location.replace(url);
+      return;
+    }
+
+    ventanaPdf.close();
+    toast.error('No se pudo abrir el PDF. Verifica los permisos del almacenamiento.');
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -476,7 +632,6 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                     <TableHead>Servicio</TableHead>
                     <TableHead>Paciente</TableHead>
                     <TableHead>Médico solicitante</TableHead>
-                    <TableHead>N° Registro</TableHead>
                     <TableHead>Tiene seguro médico</TableHead>
                     <TableHead>Foto pedido</TableHead>
                     <TableHead>Estado</TableHead>
@@ -509,11 +664,21 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                           <div className="text-xs text-gray-500">{cita.servicio?.area}</div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1 text-sm">
-                            <User className="size-3 text-gray-400 flex-shrink-0" />
-                            <span>{cita.paciente?.nombres} {cita.paciente?.apellidos}</span>
-                          </div>
-                          <div className="text-xs text-gray-500 ml-4">{cita.paciente?.cedula}</div>
+                          <button
+                            type="button"
+                            onClick={() => handleVerPaciente(cita)}
+                            className="group min-w-[170px] rounded-md px-2 py-1.5 text-left transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            aria-label={`Ver datos de ${cita.paciente?.nombres} ${cita.paciente?.apellidos}`}
+                          >
+                            <span className="flex items-center gap-1.5 text-sm font-medium text-gray-900 group-hover:text-blue-700">
+                              <User className="size-3.5 flex-shrink-0 text-blue-500" />
+                              <span>{cita.paciente?.nombres} {cita.paciente?.apellidos}</span>
+                            </span>
+                            <span className="ml-5 flex items-center gap-1 text-xs text-gray-500">
+                              {cita.paciente?.cedula}
+                              <Eye className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                            </span>
+                          </button>
                         </TableCell>
 
                         {/* Médico solicitante */}
@@ -523,15 +688,6 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                               <Stethoscope className="size-3 text-gray-400 flex-shrink-0" />
                               <span className="font-medium">{cita.medico_solicitante}</span>
                             </div>
-                          ) : (
-                            <span className="text-xs text-gray-300">—</span>
-                          )}
-                        </TableCell>
-
-                        {/* N° Registro */}
-                        <TableCell>
-                          {cita.numero_registro_medico ? (
-                            <span className="text-sm font-mono">{cita.numero_registro_medico}</span>
                           ) : (
                             <span className="text-xs text-gray-300">—</span>
                           )}
@@ -569,81 +725,86 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                             {cfg.label}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex gap-1 justify-end flex-wrap">
+                        <TableCell className="whitespace-nowrap text-right">
+                          <div className="flex flex-nowrap justify-end gap-1">
                             {/* "Ver foto" ya está en la columna Foto pedido */}
                             {cita.estado_cita === 'agendada' && (
                               <Button
-                                size="sm"
+                                size="icon"
                                 variant="outline"
-                                className="gap-1 text-blue-600 border-blue-300 hover:bg-blue-50 text-xs"
+                                className="size-8 border-blue-300 text-blue-600 hover:bg-blue-50"
                                 disabled={!accionableEnFechaPermitida}
-                                title={!accionableEnFechaPermitida ? 'No disponible para citas pasadas' : undefined}
+                                title={accionableEnFechaPermitida ? 'Confirmar cita' : 'Confirmar no disponible para citas pasadas'}
+                                aria-label="Confirmar cita"
                                 onClick={() => abrirConfirmacion(cita)}
                               >
-                                <CheckCircle className="size-3" /> Confirmar
+                                <CheckCircle className="size-4" />
                               </Button>
                             )}
                             {accionable && (
                               <>
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   variant="ghost"
-                                  className="gap-1 text-xs"
+                                  className="size-8"
                                   disabled={!accionableEnFechaPermitida}
-                                  title={!accionableEnFechaPermitida ? 'No disponible para citas pasadas' : undefined}
+                                  title={accionableEnFechaPermitida ? 'Editar cita' : 'Editar no disponible para citas pasadas'}
+                                  aria-label="Editar cita"
                                   onClick={() => handleEditar(cita)}
                                 >
-                                  <Pencil className="size-3" /> Editar
+                                  <Pencil className="size-4" />
                                 </Button>
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   variant="ghost"
-                                  className="gap-1 text-xs text-red-600 hover:bg-red-50"
+                                  className="size-8 text-red-600 hover:bg-red-50 hover:text-red-700"
                                   disabled={!accionableEnFechaPermitida}
-                                  title={!accionableEnFechaPermitida ? 'No disponible para citas pasadas' : undefined}
+                                  title={accionableEnFechaPermitida ? 'Cancelar cita' : 'Cancelar no disponible para citas pasadas'}
+                                  aria-label="Cancelar cita"
                                   onClick={() => abrirCancelacion(cita)}
                                 >
-                                  <XCircle className="size-3" /> Cancelar
+                                  <XCircle className="size-4" />
                                 </Button>
                               </>
                             )}
                             {puedeFinalizarCitas && !['cancelada', 'no_asistio', 'finalizado'].includes(cita.estado_cita) && (
                               <Button
-                                size="sm"
+                                size="icon"
                                 variant="outline"
-                                className="gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50 text-xs"
+                                className="size-8 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                                 disabled={!accionesPermitidas}
-                                title={!accionesPermitidas ? 'No disponible para citas pasadas' : undefined}
+                                title={accionesPermitidas ? 'Finalizar cita' : 'Finalizar no disponible para citas pasadas'}
+                                aria-label="Finalizar cita"
                                 onClick={() => abrirModalFinalizar(cita, 'finalizar')}
                               >
-                                <FileText className="size-3" /> Finalizar
+                                <FileText className="size-4" />
                               </Button>
                             )}
                             {cita.estado_cita === 'finalizado' && (
                               <>
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   variant="outline"
-                                  className="gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50 text-xs"
+                                  className="size-8 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                                  title="Ver PDF del resultado"
+                                  aria-label="Ver PDF del resultado"
                                   onClick={() => abrirPdf(cita.url_pdf_resultado!)}
                                 >
-                                  <Eye className="size-3" /> Ver PDF
+                                  <Eye className="size-4" />
                                 </Button>
                                 {puedeFinalizarCitas && (
                                   <Button
-                                    size="sm"
+                                    size="icon"
                                     variant="ghost"
-                                    className="gap-1 text-xs"
+                                    className="size-8"
+                                    title="Reemplazar PDF del resultado"
+                                    aria-label="Reemplazar PDF del resultado"
                                     onClick={() => abrirModalFinalizar(cita, 'reemplazar')}
                                   >
-                                    <FileText className="size-3" /> Reemplazar
+                                    <RefreshCw className="size-4" />
                                   </Button>
                                 )}
                               </>
-                            )}
-                            {!accionable && cita.estado_cita !== 'finalizado' && (
-                              <span className="text-xs text-gray-400 italic pr-2">{cfg.label}</span>
                             )}
                           </div>
                         </TableCell>
@@ -656,6 +817,236 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog de información del paciente */}
+      <Dialog
+        open={isPacienteDetalleOpen}
+        onOpenChange={open => {
+          setIsPacienteDetalleOpen(open);
+          if (!open) {
+            setPacienteDetalle(null);
+            setPacienteForm(null);
+            setIsEditandoPaciente(false);
+          }
+        }}
+      >
+        <DialogContent
+          className="flex flex-col gap-0 overflow-hidden p-0"
+          style={{
+            top: '1rem',
+            right: '1rem',
+            bottom: '1rem',
+            left: '1rem',
+            width: 'auto',
+            height: 'auto',
+            maxWidth: '42rem',
+            maxHeight: 'none',
+            margin: '0 auto',
+            translate: 'none',
+          }}
+        >
+          <DialogHeader className="shrink-0 border-b bg-gray-50 px-6 py-5 pr-12">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <span className="flex size-9 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+                <User className="size-4" />
+              </span>
+              Información del paciente
+            </DialogTitle>
+            <DialogDescription>
+              Datos personales y de contacto registrados en la historia clínica.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingPaciente ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-blue-600">
+              <Loader2 className="size-8 animate-spin" />
+              <span className="text-sm">Cargando datos del paciente...</span>
+            </div>
+          ) : pacienteDetalle && isEditandoPaciente && pacienteForm ? (
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 py-5">
+              <div>
+                <p className="text-lg font-semibold text-gray-950">Editar datos del paciente</p>
+                <p className="mt-1 text-sm text-gray-500">Los campos marcados con * son obligatorios.</p>
+              </div>
+
+              <section>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Datos personales</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-cedula">Cédula *</Label>
+                    <Input id="paciente-cedula" value={pacienteForm.cedula} onChange={e => actualizarCampoPaciente('cedula', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-fecha-nacimiento">Fecha de nacimiento *</Label>
+                    <Input id="paciente-fecha-nacimiento" type="date" value={pacienteForm.fecha_nacimiento} onChange={e => actualizarCampoPaciente('fecha_nacimiento', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-nombres">Nombres *</Label>
+                    <Input id="paciente-nombres" className="uppercase" value={pacienteForm.nombres} onChange={e => actualizarCampoPaciente('nombres', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-apellidos">Apellidos *</Label>
+                    <Input id="paciente-apellidos" className="uppercase" value={pacienteForm.apellidos} onChange={e => actualizarCampoPaciente('apellidos', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-sexo">Sexo *</Label>
+                    <Select value={pacienteForm.sexo} onValueChange={value => actualizarCampoPaciente('sexo', value as Paciente['sexo'])}>
+                      <SelectTrigger id="paciente-sexo"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="M">Masculino</SelectItem>
+                        <SelectItem value="F">Femenino</SelectItem>
+                        <SelectItem value="Otro">Otro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-estado-civil">Estado civil</Label>
+                    <Input id="paciente-estado-civil" value={pacienteForm.estado_civil ?? ''} onChange={e => actualizarCampoPaciente('estado_civil', e.target.value)} />
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Contacto</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-telefono">Teléfono celular</Label>
+                    <Input id="paciente-telefono" type="tel" value={pacienteForm.telefono ?? ''} onChange={e => actualizarCampoPaciente('telefono', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-telefono-fijo">Teléfono fijo</Label>
+                    <Input id="paciente-telefono-fijo" type="tel" value={pacienteForm.telefono_fijo ?? ''} onChange={e => actualizarCampoPaciente('telefono_fijo', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="paciente-email">Correo electrónico</Label>
+                    <Input id="paciente-email" type="email" value={pacienteForm.email ?? ''} onChange={e => actualizarCampoPaciente('email', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="paciente-direccion">Dirección</Label>
+                    <Input id="paciente-direccion" value={pacienteForm.direccion ?? ''} onChange={e => actualizarCampoPaciente('direccion', e.target.value)} />
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Contacto de emergencia</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="paciente-emergencia-nombre">Nombre</Label>
+                    <Input id="paciente-emergencia-nombre" value={pacienteForm.contacto_emergencia_nombre ?? ''} onChange={e => actualizarCampoPaciente('contacto_emergencia_nombre', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-emergencia-parentesco">Parentesco</Label>
+                    <Input id="paciente-emergencia-parentesco" value={pacienteForm.contacto_emergencia_parentesco ?? ''} onChange={e => actualizarCampoPaciente('contacto_emergencia_parentesco', e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="paciente-emergencia-telefono">Teléfono</Label>
+                    <Input id="paciente-emergencia-telefono" type="tel" value={pacienteForm.contacto_emergencia_telefono ?? ''} onChange={e => actualizarCampoPaciente('contacto_emergencia_telefono', e.target.value)} />
+                  </div>
+                </div>
+              </section>
+            </div>
+          ) : pacienteDetalle ? (
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 py-5">
+              <div>
+                <p className="text-xl font-semibold text-gray-950">
+                  {pacienteDetalle.nombres} {pacienteDetalle.apellidos}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                  <Badge variant="outline" className="font-normal">
+                    Historia clínica #{pacienteDetalle.id_paciente}
+                  </Badge>
+                  <span>{pacienteDetalle.estado === 'activo' ? 'Paciente activo' : 'Paciente inactivo'}</span>
+                </div>
+              </div>
+
+              <section aria-labelledby="datos-personales-title">
+                <h3 id="datos-personales-title" className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Datos personales
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { icon: IdCard, label: 'Cédula', value: pacienteDetalle.cedula },
+                    { icon: Cake, label: 'Fecha de nacimiento', value: `${new Date(`${pacienteDetalle.fecha_nacimiento}T00:00:00`).toLocaleDateString('es-EC')} · ${calcularEdad(pacienteDetalle.fecha_nacimiento)} años` },
+                    { icon: User, label: 'Sexo', value: pacienteDetalle.sexo === 'M' ? 'Masculino' : pacienteDetalle.sexo === 'F' ? 'Femenino' : pacienteDetalle.sexo },
+                    { icon: Users, label: 'Estado civil', value: pacienteDetalle.estado_civil },
+                  ].map(({ icon: Icono, label, value }) => (
+                    <div key={label} className="flex gap-3 rounded-lg border border-gray-200 p-3">
+                      <Icono className="mt-0.5 size-4 flex-shrink-0 text-blue-600" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-gray-500">{label}</p>
+                        <p className="break-words text-sm font-medium text-gray-900">{value || 'No registrado'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section aria-labelledby="contacto-title">
+                <h3 id="contacto-title" className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Contacto
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { icon: Phone, label: 'Teléfono celular', value: pacienteDetalle.telefono },
+                    { icon: Phone, label: 'Teléfono fijo', value: pacienteDetalle.telefono_fijo },
+                    { icon: Mail, label: 'Correo electrónico', value: pacienteDetalle.email },
+                    { icon: MapPin, label: 'Dirección', value: pacienteDetalle.direccion },
+                  ].map(({ icon: Icono, label, value }) => (
+                    <div key={label} className="flex gap-3 rounded-lg border border-gray-200 p-3">
+                      <Icono className="mt-0.5 size-4 flex-shrink-0 text-blue-600" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-gray-500">{label}</p>
+                        <p className="break-words text-sm font-medium text-gray-900">{value || 'No registrado'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section aria-labelledby="emergencia-title">
+                <h3 id="emergencia-title" className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Contacto de emergencia
+                </h3>
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+                  <p className="font-medium text-gray-900">{pacienteDetalle.contacto_emergencia_nombre || 'No registrado'}</p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {[pacienteDetalle.contacto_emergencia_parentesco, pacienteDetalle.contacto_emergencia_telefono]
+                      .filter(Boolean)
+                      .join(' · ') || 'Sin parentesco ni teléfono registrados'}
+                  </p>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          <DialogFooter className="shrink-0 border-t bg-gray-50 px-6 py-4">
+            {isEditandoPaciente ? (
+              <>
+                <Button
+                  variant="outline"
+                  disabled={isGuardandoPaciente}
+                  onClick={() => { setIsEditandoPaciente(false); setPacienteForm(null); }}
+                >
+                  Cancelar
+                </Button>
+                <Button disabled={isGuardandoPaciente} onClick={handleGuardarPaciente}>
+                  {isGuardandoPaciente ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle className="size-4" />}
+                  Guardar cambios
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setIsPacienteDetalleOpen(false)}>Cerrar</Button>
+                <Button onClick={iniciarEdicionPaciente} disabled={!pacienteDetalle || isLoadingPaciente}>
+                  <Pencil className="size-4" />
+                  Editar datos
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Tarjetas estadísticas */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -676,7 +1067,13 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
       </div>
 
       {/* Dialog de confirmación */}
-      <Dialog open={!!citaAConfirmar} onOpenChange={open => !open && setCitaAConfirmar(null)}>
+      <Dialog open={!!citaAConfirmar} onOpenChange={open => {
+        if (!open) {
+          setCitaAConfirmar(null);
+          setFotoBase64('');
+          setFotoNombre('');
+        }
+      }}>
         <DialogContent className="top-4 bottom-4 translate-y-0 max-h-none max-w-md overflow-y-auto p-6">
           <DialogHeader className="pr-8">
             <DialogTitle>Confirmar cita</DialogTitle>
@@ -729,32 +1126,82 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
               {/* Fotografía del pedido */}
               <div className="space-y-1.5">
-                <Label>Fotografía del pedido</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Fotografía del pedido</Label>
+                  {(fotoBase64 || citaAConfirmar.tiene_foto_pedido) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      title="Visualizar fotografía"
+                      onClick={handleVerFotoDesdeConfirmacion}
+                    >
+                      <Eye className="size-3.5" />
+                      Ver foto
+                    </Button>
+                  )}
+                </div>
                 <div
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={(fotoBase64 || citaAConfirmar.tiene_foto_pedido) ? 'Reemplazar fotografía del pedido' : 'Seleccionar fotografía del pedido'}
+                  className={`cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                    isDraggingFoto ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                  }`}
                   onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  onDragEnter={e => { e.preventDefault(); setIsDraggingFoto(true); }}
+                  onDragOver={e => { e.preventDefault(); setIsDraggingFoto(true); }}
+                  onDragLeave={e => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDraggingFoto(false);
+                  }}
+                  onDrop={handleDropFoto}
                 >
                   {isUploadingFoto ? (
                     <div className="flex items-center justify-center gap-2 text-blue-600">
                       <Loader2 className="size-5 animate-spin" />
                       <span className="text-sm">Procesando imagen...</span>
                     </div>
-                  ) : fotoNombre ? (
+                  ) : fotoBase64 ? (
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-center gap-2 text-blue-700">
                         <Image className="size-5" />
                         <span className="max-w-full truncate text-sm font-medium">{fotoNombre}</span>
                       </div>
-                      <p className="text-xs text-gray-500">Haz clic para cambiar el archivo</p>
+                      <p className="text-xs text-gray-500">
+                        {isDraggingFoto ? 'Suelta la imagen para reemplazarla' : 'Nueva fotografía seleccionada · haz clic o arrastra otra para cambiarla'}
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2 text-gray-500">
                       <Image className="size-8 mx-auto opacity-40" />
-                      <p className="text-sm">Haz clic para seleccionar la fotografía del pedido</p>
+                      <p className="text-sm">
+                        {isDraggingFoto
+                          ? 'Suelta la imagen para cargarla'
+                          : citaAConfirmar.tiene_foto_pedido
+                            ? 'Haz clic o arrastra una nueva fotografía para reemplazar la registrada'
+                            : 'Haz clic o arrastra aquí la fotografía del pedido'}
+                      </p>
                       <p className="text-xs">JPG, PNG, WEBP — máximo 5 MB</p>
                     </div>
                   )}
                 </div>
+                {fotoBase64 && (
+                  <button
+                    type="button"
+                    className="text-xs text-gray-600 underline underline-offset-2 hover:text-gray-900"
+                    onClick={() => { setFotoBase64(''); setFotoNombre(''); }}
+                  >
+                    {citaAConfirmar.tiene_foto_pedido
+                      ? 'Descartar reemplazo y conservar la fotografía registrada'
+                      : 'Quitar fotografía seleccionada'}
+                  </button>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -812,8 +1259,22 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
       {/* Dialog visor de foto del pedido */}
       <Dialog open={!!citaFoto} onOpenChange={open => { if (!open) { setCitaFoto(null); setFotoVisualizando(null); } }}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent
+          className="flex flex-col gap-0 overflow-hidden p-0"
+          style={{
+            top: '1rem',
+            right: '1rem',
+            bottom: '1rem',
+            left: '1rem',
+            width: 'auto',
+            height: 'auto',
+            maxWidth: '48rem',
+            maxHeight: 'none',
+            margin: '0 auto',
+            translate: 'none',
+          }}
+        >
+          <DialogHeader className="shrink-0 border-b px-6 py-5 pr-12">
             <DialogTitle className="flex items-center gap-2">
               <Image className="size-4 text-indigo-600" />
               Fotografía del pedido
@@ -823,8 +1284,8 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
             </DialogDescription>
           </DialogHeader>
           {citaFoto && (
-            <div className="space-y-3">
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm grid grid-cols-2 gap-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-6 py-4">
+              <div className="grid shrink-0 grid-cols-1 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm sm:grid-cols-2">
                 <div>
                   <div className="text-xs text-gray-500">Paciente</div>
                   <div className="font-medium">{citaFoto.paciente?.nombres} {citaFoto.paciente?.apellidos}</div>
@@ -842,7 +1303,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                   <div className="font-medium">{citaFoto.numero_registro_medico || '—'}</div>
                 </div>
               </div>
-              <div className="flex items-center justify-center min-h-[200px] bg-gray-50 border rounded-lg">
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border bg-gray-50 p-2">
                 {isLoadingFoto ? (
                   <div className="flex flex-col items-center gap-2 text-blue-600">
                     <Loader2 className="size-8 animate-spin" />
@@ -852,7 +1313,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
                   <img
                     src={fotoVisualizando}
                     alt="Pedido médico"
-                    className="max-h-[55vh] max-w-full object-contain rounded"
+                    className="h-full max-h-full w-full object-contain rounded"
                     onError={() => {
                       setFotoVisualizando(null);
                       toast.error('La fotografía guardada no se puede visualizar. Revisa el formato de la imagen.');
@@ -878,7 +1339,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-gray-50 px-6 py-4">
             <Button variant="outline" onClick={() => { setCitaFoto(null); setFotoVisualizando(null); }}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>

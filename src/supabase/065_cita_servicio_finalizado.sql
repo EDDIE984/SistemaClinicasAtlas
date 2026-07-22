@@ -27,9 +27,5 @@ COMMENT ON COLUMN public.cita_servicio.url_pdf_resultado
 COMMENT ON COLUMN public.cita_servicio.fecha_finalizada
   IS 'Fecha y hora en que la cita pasó a estado finalizado al subir el PDF de resultado.';
 
--- ============================================
--- ACCIÓN MANUAL REQUERIDA EN SUPABASE DASHBOARD:
--- 1. Ir a Storage → Create bucket
--- 2. Nombre: resultados-servicios
--- 3. Tipo: Private (no marcar Public)
--- ============================================
+-- El bucket privado y sus políticas se crean en la migración
+-- 066_storage_resultados_servicios.sql.

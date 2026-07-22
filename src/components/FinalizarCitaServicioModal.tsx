@@ -12,11 +12,12 @@ interface Props {
   onSuccess: () => void;
   cita: CitaServicioCompleta;
   mode: 'finalizar' | 'reemplazar';
+  notasCitaAlFinalizar?: string;
 }
 
 const MAX_SIZE_MB = 10;
 
-export function FinalizarCitaServicioModal({ isOpen, onClose, onSuccess, cita, mode }: Props) {
+export function FinalizarCitaServicioModal({ isOpen, onClose, onSuccess, cita, mode, notasCitaAlFinalizar }: Props) {
   const idCompania = parseInt(localStorage.getItem('currentCompaniaId') || '0');
   const [archivo, setArchivo] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -48,7 +49,7 @@ export function FinalizarCitaServicioModal({ isOpen, onClose, onSuccess, cita, m
     try {
       let result;
       if (mode === 'finalizar') {
-        result = await finalizarCitaServicio(cita.id_cita_servicio, archivo, idCompania);
+        result = await finalizarCitaServicio(cita.id_cita_servicio, archivo, idCompania, notasCitaAlFinalizar);
       } else {
         result = await reemplazarPdfCitaServicio(
           cita.id_cita_servicio,
@@ -62,6 +63,13 @@ export function FinalizarCitaServicioModal({ isOpen, onClose, onSuccess, cita, m
         toast.success(mode === 'finalizar' ? 'Cita finalizada con PDF' : 'PDF reemplazado exitosamente');
         onSuccess();
       } else {
+        toast.error('Error al procesar el PDF. Intente nuevamente.');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'STORAGE_BUCKET_NOT_FOUND') {
+        toast.error('El almacenamiento de informes PDF no está configurado. Ejecuta la migración 066 en Supabase.');
+      } else {
+        console.error('Error al procesar el informe PDF:', error);
         toast.error('Error al procesar el PDF. Intente nuevamente.');
       }
     } finally {
@@ -94,7 +102,7 @@ export function FinalizarCitaServicioModal({ isOpen, onClose, onSuccess, cita, m
           {/* Resumen de la cita */}
           <div className="rounded-md bg-muted px-4 py-3 text-sm space-y-1">
             <div><span className="font-medium">Paciente:</span> {pacienteNombre}</div>
-            <div><span className="font-medium">Servicio:</span> {cita.servicio?.nombre ?? '—'}</div>
+            <div><span className="font-medium">Servicio:</span> {cita.servicio?.descripcion ?? '—'}</div>
             <div><span className="font-medium">Fecha:</span> {cita.fecha_cita} {cita.hora_inicio}</div>
           </div>
 

@@ -30,6 +30,7 @@ import {
   MapPin,
   ArrowLeft,
   Save,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCitasServicio } from '../hooks/useCitasServicio';
@@ -37,6 +38,7 @@ import { useSucursales, useServicios } from '../hooks/useConfiguraciones';
 import { AgendarCitaServicioModal } from './AgendarCitaServicioModal';
 import { getFotoPedido } from '../lib/citaServicioService';
 import type { CitaServicioCompleta } from '../lib/configuracionesService';
+import { FinalizarCitaServicioModal } from './FinalizarCitaServicioModal';
 
 interface AgendaServiciosViewProps {
   currentUser: {
@@ -195,7 +197,7 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
   const fechaDesde = vistaActual === 'semana' ? semanaDesde : listaDesde;
   const fechaHasta = vistaActual === 'semana' ? semanaHasta : listaHasta;
 
-  const { citas, isLoading, crearCita, actualizarCita, cancelarCita } = useCitasServicio({
+  const { citas, isLoading, loadCitas, crearCita, actualizarCita, cancelarCita } = useCitasServicio({
     fechaDesde,
     fechaHasta,
     idSucursal: idSucursalNum,
@@ -242,7 +244,8 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
   const [isAbriendoFoto, setIsAbriendoFoto] = useState(false);
   const [citaAtencion, setCitaAtencion] = useState<CitaServicioCompleta | null>(null);
   const [urlInforme, setUrlInforme] = useState('');
-  const [observacionesAtencion, setObservacionesAtencion] = useState('');
+  const [indicacionesMedicas, setIndicacionesMedicas] = useState('');
+  const [isFinalizarAtencionOpen, setIsFinalizarAtencionOpen] = useState(false);
 
   const handleCancelarConfirmar = async () => {
     if (!citaACancelar) return;
@@ -293,7 +296,7 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
 
     setCitaAtencion(cita);
     setUrlInforme('');
-    setObservacionesAtencion('');
+    setIndicacionesMedicas('');
     cerrarDetalleServicio();
   };
 
@@ -338,6 +341,11 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
       return;
     }
 
+    if (!indicacionesMedicas.trim()) {
+      toast.error('Ingresa las indicaciones médicas antes de guardar');
+      return;
+    }
+
     if (!esUrlValida(urlInforme)) {
       toast.error('Ingresa una URL válida para el informe');
       return;
@@ -354,7 +362,7 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
     const nuevasNotas = [
       `Cambio a estado atendida: ${fechaAtendida}`,
       urlInforme.trim() ? `URL informe: ${urlInforme.trim()}` : '',
-      observacionesAtencion.trim() ? `Observaciones atención: ${observacionesAtencion.trim()}` : '',
+      `Indicaciones médicas: ${indicacionesMedicas.trim()}`,
     ].filter(Boolean).join('\n');
 
     setIsProcesandoAccion(true);
@@ -368,13 +376,25 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
         toast.success('Atención guardada');
         setCitaAtencion(null);
         setUrlInforme('');
-        setObservacionesAtencion('');
+        setIndicacionesMedicas('');
       } else {
         toast.error('No se pudo guardar la atención');
       }
     } finally {
       setIsProcesandoAccion(false);
     }
+  };
+
+  const handleAbrirSubirInformePdf = () => {
+    if (!indicacionesMedicas.trim()) {
+      toast.error('Ingresa las indicaciones médicas antes de subir el informe PDF');
+      return;
+    }
+    if (!esUrlValida(urlInforme)) {
+      toast.error('Ingresa una URL válida para el informe');
+      return;
+    }
+    setIsFinalizarAtencionOpen(true);
   };
 
   const handleCancelarServicioConObservacion = async () => {
@@ -559,22 +579,36 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="observaciones-atencion">Observaciones</Label>
+              <Label htmlFor="indicaciones-medicas">Indicaciones médicas *</Label>
               <Textarea
-                id="observaciones-atencion"
-                value={observacionesAtencion}
-                onChange={e => setObservacionesAtencion(e.target.value)}
-                placeholder="Ingresa observaciones de la atención"
+                id="indicaciones-medicas"
+                value={indicacionesMedicas}
+                onChange={e => setIndicacionesMedicas(e.target.value)}
+                placeholder="Ingresa las indicaciones médicas para el paciente"
                 rows={5}
+                required
+                aria-describedby="indicaciones-medicas-ayuda"
               />
+              <p id="indicaciones-medicas-ayuda" className="text-xs text-gray-500">
+                Estas indicaciones se incluirán con el informe PDF enviado al correo del paciente.
+              </p>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[auto_auto_auto] sm:justify-end">
             <Button variant="outline" onClick={() => setCitaAtencion(null)} disabled={isProcesandoAccion}>
               Cancelar
             </Button>
-            <Button onClick={handleGuardarAtencion} disabled={isProcesandoAccion}>
+            <Button
+              variant="outline"
+              className="gap-2 border-blue-300 bg-blue-50 text-blue-700"
+              onClick={handleAbrirSubirInformePdf}
+              disabled={isProcesandoAccion || !indicacionesMedicas.trim()}
+            >
+              <FileText className="size-4" />
+              Subir informe PDF
+            </Button>
+            <Button onClick={handleGuardarAtencion} disabled={isProcesandoAccion || !indicacionesMedicas.trim()}>
               {isProcesandoAccion ? (
                 <Loader2 className="size-4 mr-2 animate-spin" />
               ) : (
@@ -584,6 +618,25 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
             </Button>
           </div>
         </Card>
+
+        <FinalizarCitaServicioModal
+          isOpen={isFinalizarAtencionOpen}
+          onClose={() => setIsFinalizarAtencionOpen(false)}
+          onSuccess={() => {
+            setIsFinalizarAtencionOpen(false);
+            setCitaAtencion(null);
+            setUrlInforme('');
+            setIndicacionesMedicas('');
+            loadCitas();
+          }}
+          cita={citaAtencion}
+          mode="finalizar"
+          notasCitaAlFinalizar={[
+            citaAtencion.notas_cita?.trim(),
+            urlInforme.trim() ? `URL informe: ${urlInforme.trim()}` : '',
+            `Indicaciones médicas: ${indicacionesMedicas.trim()}`,
+          ].filter(Boolean).join('\n')}
+        />
       </div>
     );
   }

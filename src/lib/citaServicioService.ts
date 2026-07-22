@@ -231,7 +231,8 @@ function normalizarFotoPedidoBase64(foto: string | null | undefined): string | n
 export async function finalizarCitaServicio(
   idCita: number,
   file: File,
-  idCompania: number
+  idCompania: number,
+  notasCita?: string
 ): Promise<CitaServicio | null> {
   try {
     const path = `${idCompania}/${idCita}/${Date.now()}-resultado.pdf`;
@@ -241,6 +242,9 @@ export async function finalizarCitaServicio(
 
     if (uploadError) {
       console.error('❌ Error al subir PDF al storage:', uploadError);
+      if (/bucket not found/i.test(uploadError.message)) {
+        throw new Error('STORAGE_BUCKET_NOT_FOUND');
+      }
       return null;
     }
 
@@ -248,9 +252,11 @@ export async function finalizarCitaServicio(
       estado_cita: 'finalizado',
       url_pdf_resultado: path,
       fecha_finalizada: new Date().toISOString(),
+      ...(notasCita ? { notas_cita: notasCita } : {}),
     });
   } catch (error) {
     console.error('❌ Error inesperado en finalizarCitaServicio:', error);
+    if (error instanceof Error && error.message === 'STORAGE_BUCKET_NOT_FOUND') throw error;
     return null;
   }
 }
@@ -271,6 +277,9 @@ export async function reemplazarPdfCitaServicio(
 
     if (uploadError) {
       console.error('❌ Error al subir nuevo PDF al storage:', uploadError);
+      if (/bucket not found/i.test(uploadError.message)) {
+        throw new Error('STORAGE_BUCKET_NOT_FOUND');
+      }
       return null;
     }
 
@@ -280,6 +289,7 @@ export async function reemplazarPdfCitaServicio(
     });
   } catch (error) {
     console.error('❌ Error inesperado en reemplazarPdfCitaServicio:', error);
+    if (error instanceof Error && error.message === 'STORAGE_BUCKET_NOT_FOUND') throw error;
     return null;
   }
 }
