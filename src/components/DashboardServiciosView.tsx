@@ -48,19 +48,7 @@ type PacienteEditForm = Pick<Paciente,
 >;
 
 // ─── Utilidades de fecha ──────────────────────────────────────────────────────
-function toISO(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
-function fechaMas(dias: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + dias);
-  return toISO(d);
-}
-
 // ─── Configuración de estados ─────────────────────────────────────────────────
-const ORDEN_ESTADO = ['agendada', 'confirmada', 'en_atencion', 'atendida', 'finalizado', 'cancelada', 'no_asistio'];
-
 const ESTADO_CONFIG: Record<string, {
   label: string;
   className: string;
@@ -96,6 +84,12 @@ function fechaHoyEcuadorISO(): string {
   const day = partes.find(parte => parte.type === 'day')?.value;
 
   return `${year}-${month}-${day}`;
+}
+
+function fechaEcuadorMasISO(dias: number): string {
+  const [year, month, day] = fechaHoyEcuadorISO().split('-').map(Number);
+  const fecha = new Date(Date.UTC(year, month - 1, day + dias));
+  return fecha.toISOString().slice(0, 10);
 }
 
 function permiteAccionesDashboardServicio(cita: CitaServicioCompleta): boolean {
@@ -147,8 +141,8 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   // ─── Filtros ─────────────────────────────────────────────────────────────
   const [filtroSucursal, setFiltroSucursal] = useState('todas');
   const [filtroServicio, setFiltroServicio]  = useState('todos');
-  const [desde, setDesde] = useState(toISO(new Date()));
-  const [hasta, setHasta] = useState(fechaMas(30));
+  const [desde, setDesde] = useState(fechaHoyEcuadorISO);
+  const [hasta, setHasta] = useState(() => fechaEcuadorMasISO(30));
 
   const idSucursalNum = filtroSucursal !== 'todas' ? parseInt(filtroSucursal) : undefined;
   const idServicioNum = filtroServicio !== 'todos'  ? parseInt(filtroServicio) : undefined;
@@ -268,9 +262,14 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
 
   const citasOrdenadas = useMemo(() =>
     [...citas].sort((a, b) =>
-      ORDEN_ESTADO.indexOf(a.estado_cita) - ORDEN_ESTADO.indexOf(b.estado_cita) ||
       a.fecha_cita.localeCompare(b.fecha_cita) ||
-      (a.hora_inicio ?? '').localeCompare(b.hora_inicio ?? '')
+      (a.servicio?.descripcion ?? '').localeCompare(
+        b.servicio?.descripcion ?? '',
+        'es',
+        { sensitivity: 'base' }
+      ) ||
+      (a.hora_inicio ?? '').localeCompare(b.hora_inicio ?? '') ||
+      a.id_cita_servicio - b.id_cita_servicio
     ),
   [citas]);
 
@@ -541,8 +540,8 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
           >
             <BookOpen className="size-4 mr-1" /> Manual
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-            <RefreshCw className="size-4 mr-1" /> Actualizar
+          <Button variant="outline" size="sm" onClick={() => void loadCitas()} disabled={isLoading}>
+            <RefreshCw className={`size-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} /> Actualizar
           </Button>
         </div>
       </div>

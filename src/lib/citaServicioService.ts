@@ -37,6 +37,8 @@ const SELECT_COMPLETO = `
   horario_servicio(*)
 `;
 
+const TAMANIO_PAGINA = 1000;
+
 export async function getCitasServicio(params: {
   fechaDesde: string;
   fechaHasta: string;
@@ -50,7 +52,8 @@ export async function getCitasServicio(params: {
       .gte('fecha_cita', params.fechaDesde)
       .lte('fecha_cita', params.fechaHasta)
       .order('fecha_cita', { ascending: true })
-      .order('hora_inicio', { ascending: true });
+      .order('hora_inicio', { ascending: true })
+      .order('id_cita_servicio', { ascending: true });
 
     if (params.idSucursal) {
       query = query.eq('id_sucursal', params.idSucursal);
@@ -64,13 +67,23 @@ export async function getCitasServicio(params: {
       query = query.eq('estado_cita', params.estadoCita);
     }
 
-    const { data, error } = await query;
-    if (error) {
-      console.error('❌ Error al obtener citas de servicio:', error);
-      return [];
+    const citas: CitaServicioCompleta[] = [];
+    let pagina = 0;
+
+    while (true) {
+      const primeraFila = pagina * TAMANIO_PAGINA;
+      const { data, error } = await query.range(primeraFila, primeraFila + TAMANIO_PAGINA - 1);
+      if (error) {
+        console.error('❌ Error al obtener citas de servicio:', error);
+        return [];
+      }
+
+      const filas = (data as CitaServicioCompleta[]) || [];
+      citas.push(...filas);
+      if (filas.length < TAMANIO_PAGINA) break;
+      pagina += 1;
     }
 
-    const citas = (data as CitaServicioCompleta[]) || [];
     if (citas.length === 0) return citas;
 
     let fotosQuery = (supabaseAdmin.from('cita_servicio') as any)
@@ -78,7 +91,8 @@ export async function getCitasServicio(params: {
       .gte('fecha_cita', params.fechaDesde)
       .lte('fecha_cita', params.fechaHasta)
       .not('foto_pedido_base64', 'is', null)
-      .neq('foto_pedido_base64', '');
+      .neq('foto_pedido_base64', '')
+      .order('id_cita_servicio', { ascending: true });
 
     if (params.idSucursal) {
       fotosQuery = fotosQuery.eq('id_sucursal', params.idSucursal);
@@ -92,14 +106,25 @@ export async function getCitasServicio(params: {
       fotosQuery = fotosQuery.eq('estado_cita', params.estadoCita);
     }
 
-    const { data: citasConFoto, error: fotosError } = await fotosQuery;
-    if (fotosError) {
-      console.error('❌ Error al verificar fotos de pedido:', fotosError);
-      return citas.map(cita => ({ ...cita, tiene_foto_pedido: false }));
+    const citasConFoto: Array<{ id_cita_servicio: number; foto_pedido_base64: string | null }> = [];
+    pagina = 0;
+
+    while (true) {
+      const primeraFila = pagina * TAMANIO_PAGINA;
+      const { data, error: fotosError } = await fotosQuery.range(primeraFila, primeraFila + TAMANIO_PAGINA - 1);
+      if (fotosError) {
+        console.error('❌ Error al verificar fotos de pedido:', fotosError);
+        return citas.map(cita => ({ ...cita, tiene_foto_pedido: false }));
+      }
+
+      const filas = (data as Array<{ id_cita_servicio: number; foto_pedido_base64: string | null }> | null) || [];
+      citasConFoto.push(...filas);
+      if (filas.length < TAMANIO_PAGINA) break;
+      pagina += 1;
     }
 
     const idsConFoto = new Set(
-      ((citasConFoto as Array<{ id_cita_servicio: number; foto_pedido_base64: string | null }> | null) || [])
+      citasConFoto
         .filter(cita => normalizarFotoPedidoBase64(cita.foto_pedido_base64) !== null)
         .map(cita => cita.id_cita_servicio)
     );
