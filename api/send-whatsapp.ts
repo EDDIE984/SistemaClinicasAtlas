@@ -26,6 +26,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({ to, text }),
     });
 
+    // Reenviar los encabezados de límite de WasenderAPI (la cola de recordatorios los usa para esperar)
+    for (const header of ['retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset']) {
+      const valor = response.headers.get(header);
+      if (valor) res.setHeader(header, valor);
+    }
+
     const raw = await response.text();
     let data: unknown = {};
     try {

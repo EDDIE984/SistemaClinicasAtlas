@@ -233,6 +233,13 @@ export function InterconsultasView({ currentUser }: InterconsultasViewProps) {
           </Button>
         </div>
 
+        <p className="text-sm text-gray-500">
+          Derivaciones de pacientes que un médico solicita a otro especialista durante una consulta.
+          Las interconsultas <span className="font-medium text-gray-700">internas</span> (médicos de la clínica) se agendan como
+          cita de consulta externa; las <span className="font-medium text-gray-700">externas</span> (especialistas fuera de la
+          clínica) solo se registran como referencia.
+        </p>
+
         {/* Filtros */}
         <div className="flex gap-3 flex-wrap">
           <div className="flex-1 min-w-[180px] space-y-1">

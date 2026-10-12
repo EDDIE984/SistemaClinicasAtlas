@@ -19,7 +19,7 @@ export interface Database {
           email: string
           telefono: string | null
           password: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR'
           fecha_ingreso: string
           estado: 'activo' | 'inactivo'
           created_at: string
@@ -33,7 +33,7 @@ export interface Database {
           email: string
           telefono?: string | null
           password?: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
@@ -47,7 +47,7 @@ export interface Database {
           email?: string
           telefono?: string | null
           password?: string
-          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN'
+          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
@@ -1008,4 +1008,63 @@ export interface InterconsultaCompleta extends Interconsulta {
     id_especialidad: number
     nombre: string
   } | null
+}
+
+// Tablas del chatbot externo. Se mantienen fuera de Database porque su esquema
+// es administrado por la integración de WhatsApp y no por las migraciones base.
+export interface ConversationDetail {
+  id: string;
+  remotejid: string | null;
+  telefono: string | null;
+  area: string | null;
+  humano: string | null;
+  chatbot: string | null;
+  created_at: string;
+  id_conversacion: number | null;
+  mensajeAgente: string | null;
+}
+
+export type TipoSolicitudChatbot = 'servicio' | 'consulta_externa' | 'desconocido';
+
+export interface DatosSolicitudChatbot {
+  tipo: TipoSolicitudChatbot;
+  pacienteNombre: string | null;
+  cedula: string | null;
+  telefono: string | null;
+  correo: string | null;
+  fecha: string | null;
+  hora: string | null;
+  servicio: string | null;
+  especialidad: string | null;
+  seguro: 'SI' | 'NO' | null;      // texto de "Seguro:" normalizado
+  fechaTexto: string | null;
+  horaTexto: string | null;
+}
+
+export interface SolicitudChatbot {
+  id_conversacion: number;
+  fecha_conversacion: string;
+  remote_jid: string | null;
+  id_detalle: string;
+  fecha_mensaje: string;
+  mensajeAgente: string;
+  datos: DatosSolicitudChatbot;
+}
+
+// Historial de recordatorios de cita por WhatsApp (071_recordatorio_whatsapp.sql)
+export interface RecordatorioWhatsApp {
+  id_recordatorio: number;
+  tipo_destinatario: 'PACIENTE' | 'MEDICO';
+  tipo_cita: 'CONSULTA_EXTERNA' | 'SERVICIO';
+  id_cita: number | null;
+  id_cita_servicio: number | null;
+  id_usuario_sucursal: number | null;
+  fecha_cita: string;
+  telefono: string;
+  mensaje: string;
+  estado: 'ENVIADO' | 'FALLIDO';
+  detalle_error: string | null;
+  intentos: number;
+  id_usuario_envio: number | null;
+  fecha_envio: string;
 }

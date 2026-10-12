@@ -443,6 +443,7 @@ export function UsuarioTabSupabase() {
                     <SelectItem value="secretaria">Secretaria</SelectItem>
                     <SelectItem value="USUARIO_IMANGE">Usuario Imagen</SelectItem>
                     <SelectItem value="GESTOR_IMAGEN">Gestor Imagen</SelectItem>
+                    <SelectItem value="GESTOR">Gestor</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -511,7 +512,7 @@ export function UsuarioTabSupabase() {
               </div>
             </div>
 
-            {formData.tipo_usuario !== 'GESTOR_IMAGEN' && (
+            {formData.tipo_usuario !== 'GESTOR_IMAGEN' && formData.tipo_usuario !== 'GESTOR' && (
               <div className="space-y-2">
                 <Label>Servicio {(formData.tipo_usuario === 'USUARIO_IMANGE' || formData.tipo_usuario === 'USUARIO_IMAGEN') ? '*' : ''}</Label>
                 <Select

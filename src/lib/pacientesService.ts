@@ -300,6 +300,51 @@ export async function getPacienteByCedula(cedula: string, id_compania?: number):
 }
 
 /**
+ * Buscar paciente por cédula sin filtrar por estado.
+ * Se usa al registrar un paciente cuando la BD rechaza la cédula por duplicada
+ * (p. ej. el paciente existe pero está inactivo), para continuar con ese registro.
+ */
+export async function getPacienteByCedulaCualquierEstado(cedula: string): Promise<Paciente | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('paciente')
+      .select('*')
+      .eq('cedula', cedula)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data as Paciente | null;
+  } catch (error) {
+    console.error('❌ Error al buscar paciente por cédula (cualquier estado):', error);
+    return null;
+  }
+}
+
+/**
+ * Datos del formulario de registro que se aplican a un paciente ya existente.
+ * Solo se envían los campos con valor, para no borrar datos previos.
+ */
+export function construirActualizacionPacienteExistente(datos: {
+  nombres?: string;
+  apellidos?: string;
+  fecha_nacimiento?: string;
+  sexo?: string;
+  telefono?: string;
+  email?: string;
+  contacto_emergencia_nombre?: string;
+  contacto_emergencia_parentesco?: string;
+  contacto_emergencia_direccion?: string;
+  contacto_emergencia_telefono?: string;
+}): Partial<Paciente> {
+  const actualizacion: Record<string, unknown> = { estado: 'activo' };
+  Object.entries(datos).forEach(([campo, valor]) => {
+    if (typeof valor === 'string' && valor.trim()) actualizacion[campo] = valor.trim();
+  });
+  return actualizacion as Partial<Paciente>;
+}
+
+/**
  * Crear un nuevo paciente
  */
 export async function createPaciente(paciente: Omit<Paciente, 'id_paciente' | 'created_at' | 'estado'>): Promise<Paciente | null> {

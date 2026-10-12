@@ -604,6 +604,7 @@ export function AgendaViewSupabase({ currentUser, onIniciarConsulta }: AgendaVie
         citaEditar={citaSeleccionada}
         tipoUsuario={currentUser?.tipo_usuario}
         currentUserName={currentUser?.name}
+        enviarConfirmacionWhatsApp={currentUser?.tipo_usuario === 'GESTOR'}
       />
 
       {/* Modal Cancelar Cita */}

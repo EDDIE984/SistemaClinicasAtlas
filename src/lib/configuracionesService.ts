@@ -71,7 +71,7 @@ export interface Servicio {
 // INTERFACES - USUARIOS
 // ========================================
 
-export type TipoUsuario = 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN';
+export type TipoUsuario = 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR';
 
 export interface Usuario {
   id_usuario: number;
@@ -785,6 +785,21 @@ export async function getUsuariosByTipo(tipoUsuario: TipoUsuario): Promise<Usuar
   }
 }
 
+export async function getUsuarioByCedula(cedula: string): Promise<Usuario | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('usuario')
+      .select('*')
+      .eq('cedula', cedula)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('❌ Error buscando usuario por cédula:', error);
+    throw error;
+  }
+}
+
 export async function createUsuario(usuario: Omit<Usuario, 'id_usuario' | 'created_at'>): Promise<Usuario | null> {
   try {
     console.log('➕ Creando usuario:', usuario.email);
@@ -1372,7 +1387,8 @@ export function formatearTipoUsuario(tipo: TipoUsuario): string {
     secretaria: 'Secretaria',
     USUARIO_IMANGE: 'Usuario Imagen',
     USUARIO_IMAGEN: 'Usuario Imagen',
-    GESTOR_IMAGEN: 'Gestor Imagen'
+    GESTOR_IMAGEN: 'Gestor Imagen',
+    GESTOR: 'Gestor'
   };
   return tipos[tipo] || tipo;
 }
@@ -1608,6 +1624,7 @@ export interface CitaServicio {
   fecha_no_asistio?: string | null;
   url_pdf_resultado?: string | null;
   fecha_finalizada?: string | null;
+  origen_agendamiento?: 'SISTEMA' | 'CHATBOT';
   created_at?: string;
   updated_at?: string;
   servicio?: Servicio;

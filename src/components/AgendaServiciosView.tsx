@@ -1200,6 +1200,7 @@ export function AgendaServiciosView({ currentUser, modoUsuarioServicio = false }
           fechaInicial={fechaPreseleccionada}
           idServicioInicial={idServicioNum}
           currentUserName={currentUser?.name}
+          enviarConfirmacionWhatsApp={currentUser?.tipo_usuario === 'GESTOR'}
           onSolicitarCancelacion={() => {
             const cita = citaParaEditar;
             setIsModalOpen(false);

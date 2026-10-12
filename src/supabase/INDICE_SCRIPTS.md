@@ -68,6 +68,11 @@ null value in column "id_usuario_cambio" violates not-null constraint
 | `ADD_*.sql` | Scripts para agregar tablas específicas |
 | `FIX_*.sql` | Fixes anteriores (ya aplicados) |
 | `CREATE_RPC_*.sql` | Funciones RPC (no usadas actualmente) |
+| `067_gestor_role.sql` | Agrega el rol `GESTOR` al constraint de tipos de usuario |
+| `068_fix_relacion_usuario_sucursal_servicio.sql` | Re-asegura el FK `usuario_sucursal.id_servicio -> servicio` y recarga el cache de esquema de PostgREST |
+| `069_conversacion_chatbot_estado_completado.sql` | Normaliza el CHECK de `conversacion_chatbot.estado` para permitir `pendiente`, `completado` y `cancelado` |
+| `070_cita_servicio_origen_agendamiento.sql` | Agrega `cita_servicio.origen_agendamiento` (`SISTEMA` / `CHATBOT`), igual que en `cita` |
+| `071_recordatorio_whatsapp.sql` | Crea `recordatorio_whatsapp`: historial de recordatorios de cita enviados por WhatsApp a pacientes y médicos |
 
 ---
 

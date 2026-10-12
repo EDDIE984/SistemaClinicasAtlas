@@ -485,7 +485,7 @@ export function DashboardServiciosView({ currentUser }: DashboardServiciosViewPr
   const [modalFinalizarMode, setModalFinalizarMode] = useState<'finalizar' | 'reemplazar'>('finalizar');
   const [modalFinalizarOpen, setModalFinalizarOpen] = useState(false);
 
-  const puedeFinalizarCitas = ['GESTOR_IMAGEN', 'administrativo'].includes(currentUser?.tipo_usuario || '');
+  const puedeFinalizarCitas = ['GESTOR_IMAGEN', 'administrativo', 'GESTOR'].includes(currentUser?.tipo_usuario || '');
 
   const abrirModalFinalizar = (cita: CitaServicioCompleta, mode: 'finalizar' | 'reemplazar') => {
     if (mode === 'finalizar' && !permiteAccionesDashboardServicio(cita)) {

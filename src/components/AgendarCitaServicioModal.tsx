@@ -7,15 +7,22 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
-import { Loader2, Search, User, ChevronLeft, XCircle, Image, AlertCircle } from 'lucide-react';
+import { Loader2, Search, User, ChevronLeft, XCircle, Image, AlertCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import { getPacienteByCedula, createPaciente } from '../lib/pacientesService';
+import {
+  getPacienteByCedula,
+  createPaciente,
+  updatePaciente,
+  getPacienteByCedulaCualquierEstado,
+  construirActualizacionPacienteExistente,
+} from '../lib/pacientesService';
 import { consultarCedulaRegistroCivil } from '../lib/registroCivilService';
 import { obtenerSlotsServicio } from '../lib/slotsServicioService';
 import { useServicios, useSucursales } from '../hooks/useConfiguraciones';
 import type { CitaServicioCompleta, CitaServicio, Servicio } from '../lib/configuracionesService';
 import type { Paciente } from '../lib/pacientesService';
 import type { SlotServicio } from '../lib/slotsServicioService';
+import { enviarConfirmacionCitaWhatsApp } from '../lib/whatsappService';
 
 interface AgendarCitaServicioModalProps {
   isOpen: boolean;
@@ -28,6 +35,18 @@ interface AgendarCitaServicioModalProps {
   idServicioInicial?: number | null;
   currentUserName?: string;
   onSolicitarCancelacion?: () => void;
+  prefill?: {
+    cedula?: string | null;
+    telefono?: string | null;
+    correo?: string | null;
+    servicioTexto?: string | null;
+    fecha?: string | null;
+    hora?: string | null;
+    seguro?: 'SI' | 'NO' | null;
+  } | null;
+  onCitaCreada?: (cita: CitaServicio) => void;
+  /** Envía la confirmación por WhatsApp al paciente al crear la cita (no al editar) */
+  enviarConfirmacionWhatsApp?: boolean;
 }
 
 type Step = 'paciente' | 'nuevoPaciente' | 'detalles';
@@ -107,6 +126,9 @@ export function AgendarCitaServicioModal({
   idServicioInicial,
   currentUserName,
   onSolicitarCancelacion,
+  prefill,
+  onCitaCreada,
+  enviarConfirmacionWhatsApp,
 }: AgendarCitaServicioModalProps) {
   const isEditing = !!citaEditar;
   const { servicios } = useServicios();
@@ -121,6 +143,9 @@ export function AgendarCitaServicioModal({
   const [isUploadingFoto, setIsUploadingFoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogContentRef = useRef<HTMLDivElement>(null);
+  const prefillPacienteAplicadoRef = useRef(false);
+  const prefillServicioAplicadoRef = useRef(false);
+  const prefillSlotAplicadoRef = useRef(false);
 
   // Paciente seleccionado
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState<Paciente | null>(null);
@@ -197,16 +222,25 @@ export function AgendarCitaServicioModal({
       setFotoNombre('');
       setStep('detalles');
     } else {
+      // Si el formulario se reinicia, los datos de la solicitud del chatbot deben volver a aplicarse
+      prefillPacienteAplicadoRef.current = false;
+      prefillServicioAplicadoRef.current = false;
+      prefillSlotAplicadoRef.current = false;
       setStep('paciente');
       setPacienteSeleccionado(null);
-      setCedulaBusqueda('');
+      setCedulaBusqueda(prefill?.cedula || '');
       setNuevoPaciente({
         ...getNuevoPacienteInicial(),
         id_sucursal: getSucursalInicialPaciente(),
         nombre_admisionista: nombreAdmisionista,
       });
       setIdServicio(idServicioInicial || serviciosActivos[0]?.id_servicio || 0);
-      setFecha(fechaInicial || new Date().toISOString().split('T')[0]);
+      // Fecha local (no UTC): después de las 19:00 en Ecuador, toISOString ya da el día siguiente
+      const ahora = new Date();
+      const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+      const fechaPrefill = prefill?.fecha && prefill.fecha >= hoy ? prefill.fecha : null;
+      if (prefill?.fecha && !fechaPrefill) toast.warning('La fecha solicitada ya pasó. Se usará la fecha actual.');
+      setFecha(fechaPrefill || fechaInicial || hoy);
       setSlotSeleccionado(null);
       setIdHorarioServicio(0);
       setMotivo('');
@@ -215,12 +249,34 @@ export function AgendarCitaServicioModal({
       setNotas('');
       setMedicoSolicitante('');
       setNumRegistro('');
-      setTieneSeguroMedico('');
+      setTieneSeguroMedico(prefill?.seguro || '');
       setFotoBase64('');
       setFotoNombre('');
       setSlots([]);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      prefillPacienteAplicadoRef.current = false;
+      prefillServicioAplicadoRef.current = false;
+      prefillSlotAplicadoRef.current = false;
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || isEditing || !prefill?.servicioTexto || !serviciosActivos.length || prefillServicioAplicadoRef.current) return;
+    prefillServicioAplicadoRef.current = true;
+    const texto = prefill.servicioTexto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+    const normalizarServicio = (valor: string) => valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+    const coincidencia = serviciosActivos.find(servicio => normalizarServicio(servicio.descripcion) === texto)
+      || serviciosActivos.find(servicio => normalizarServicio(servicio.descripcion).includes(texto) || texto.includes(normalizarServicio(servicio.descripcion)));
+    if (coincidencia) {
+      setIdServicio(coincidencia.id_servicio);
+    } else {
+      toast.warning(`No se encontró el servicio "${prefill.servicioTexto}". Selecciónelo manualmente.`);
+    }
+  }, [isOpen, isEditing, prefill, serviciosActivos.length]);
 
   useEffect(() => {
     if (!isOpen || step !== 'nuevoPaciente' || nuevoPaciente.id_sucursal || sucursales.length === 0) return;
@@ -256,6 +312,16 @@ export function AgendarCitaServicioModal({
         }
       }
       setSlots(slotsFlat);
+      if (!prefillSlotAplicadoRef.current && prefill?.hora && fecha === prefill.fecha) {
+        prefillSlotAplicadoRef.current = true;
+        const slot = slotsFlat.find(item => item.slot.hora_inicio.slice(0, 5) === prefill.hora && item.slot.disponible);
+        if (slot) {
+          setSlotSeleccionado(slot.slot);
+          setIdHorarioServicio(slot.id_horario);
+        } else {
+          toast.warning(`El horario solicitado (${prefill.hora}) no está disponible. Seleccione otro.`);
+        }
+      }
     } catch {
       setSlots([]);
     } finally {
@@ -263,9 +329,54 @@ export function AgendarCitaServicioModal({
     }
   };
 
+  // Consulta el Registro Civil y completa el formulario de nuevo paciente (también usado por el botón "Consultar")
+  const consultarRegistroCivilNuevoPaciente = async (cedula: string) => {
+    setIsLookingUpCedula(true);
+    try {
+      const datos = await consultarCedulaRegistroCivil(cedula);
+      if (datos) {
+        setNuevoPaciente(prev => ({
+          ...prev,
+          nombres: datos.nombres || prev.nombres,
+          apellidos: datos.apellidos || prev.apellidos,
+          fecha_nacimiento: datos.fecha_nacimiento || prev.fecha_nacimiento,
+          sexo: datos.sexo || prev.sexo,
+          direccion: datos.direccion || prev.direccion,
+          estado_civil: datos.estado_civil || prev.estado_civil,
+          nacionalidad: datos.nacionalidad || prev.nacionalidad,
+          lugar_nacimiento: datos.lugar_nacimiento || prev.lugar_nacimiento,
+          nivel_educacion: datos.nivel_educacion || prev.nivel_educacion,
+          ocupacion_profesion: datos.ocupacion_profesion || prev.ocupacion_profesion,
+          provincia: datos.provincia || prev.provincia,
+          canton: datos.canton || prev.canton,
+          parroquia: datos.parroquia || prev.parroquia,
+          barrio_sector: datos.barrio_sector || prev.barrio_sector,
+          calle_principal: datos.calle_principal || prev.calle_principal,
+          referencia_domicilio: datos.referencia_domicilio || prev.referencia_domicilio,
+        }));
+        toast.info('Datos del Registro Civil cargados. Complete los campos faltantes.');
+      } else {
+        toast.info('Paciente no encontrado. Complete los datos manualmente.');
+      }
+    } catch {
+      toast.info('No se pudo consultar el Registro Civil. Complete los datos manualmente.');
+    } finally {
+      setIsLookingUpCedula(false);
+    }
+  };
+
+  const handleReconsultarRegistroCivil = () => {
+    const cedula = nuevoPaciente.cedula.trim();
+    if (!/^\d{10}$/.test(cedula)) {
+      toast.warning('La cédula debe tener 10 dígitos para consultar el Registro Civil');
+      return;
+    }
+    void consultarRegistroCivilNuevoPaciente(cedula);
+  };
+
   // Buscar paciente por cédula
-  const handleBuscarPaciente = async () => {
-    const cedula = cedulaBusqueda.trim();
+  const handleBuscarPaciente = async (cedulaParam?: string) => {
+    const cedula = (cedulaParam ?? cedulaBusqueda).trim();
     if (!cedula) { toast.error('Ingrese una cédula'); return; }
 
     setIsSearching(true);
@@ -281,45 +392,53 @@ export function AgendarCitaServicioModal({
           cedula,
           id_sucursal: getSucursalInicialPaciente(),
           nombre_admisionista: nombreAdmisionista,
+          telefono: prefill?.telefono || '',
+          email: prefill?.correo?.toUpperCase() || '',
         };
         setNuevoPaciente(base);
         setStep('nuevoPaciente');
-        setIsLookingUpCedula(true);
-        try {
-          const datos = await consultarCedulaRegistroCivil(cedula);
-          if (datos) {
-            setNuevoPaciente(prev => ({
-              ...prev,
-              nombres: datos.nombres || prev.nombres,
-              apellidos: datos.apellidos || prev.apellidos,
-              fecha_nacimiento: datos.fecha_nacimiento || prev.fecha_nacimiento,
-              sexo: datos.sexo || prev.sexo,
-              direccion: datos.direccion || prev.direccion,
-              estado_civil: datos.estado_civil || prev.estado_civil,
-              nacionalidad: datos.nacionalidad || prev.nacionalidad,
-              lugar_nacimiento: datos.lugar_nacimiento || prev.lugar_nacimiento,
-              nivel_educacion: datos.nivel_educacion || prev.nivel_educacion,
-              ocupacion_profesion: datos.ocupacion_profesion || prev.ocupacion_profesion,
-              provincia: datos.provincia || prev.provincia,
-              canton: datos.canton || prev.canton,
-              parroquia: datos.parroquia || prev.parroquia,
-              barrio_sector: datos.barrio_sector || prev.barrio_sector,
-              calle_principal: datos.calle_principal || prev.calle_principal,
-              referencia_domicilio: datos.referencia_domicilio || prev.referencia_domicilio,
-            }));
-            toast.info('Datos del Registro Civil cargados. Complete los campos faltantes.');
-          } else {
-            toast.info('Paciente no encontrado. Complete los datos manualmente.');
-          }
-        } catch {
-          toast.info('No se pudo consultar el Registro Civil. Complete los datos manualmente.');
-        } finally {
-          setIsLookingUpCedula(false);
-        }
+        await consultarRegistroCivilNuevoPaciente(cedula);
       }
     } finally {
       setIsSearching(false);
     }
+  };
+
+  useEffect(() => {
+    if (!isOpen || isEditing || !prefill?.cedula || prefillPacienteAplicadoRef.current) return;
+    prefillPacienteAplicadoRef.current = true;
+    void handleBuscarPaciente(prefill.cedula);
+  }, [isOpen, isEditing, prefill?.cedula]);
+
+  // La cédula ya existe (p. ej. paciente inactivo o cédula corregida en el formulario):
+  // se actualiza ese paciente con los datos del formulario y se continúa con el agendamiento.
+  const continuarConPacienteExistente = async (cedula: string) => {
+    const existente = await getPacienteByCedulaCualquierEstado(cedula);
+    if (!existente) {
+      toast.error(`Ya existe un paciente con la cédula ${cedula}, pero no se pudo cargar`);
+      return;
+    }
+    const actualizacion = construirActualizacionPacienteExistente({
+      nombres: nuevoPaciente.nombres,
+      apellidos: nuevoPaciente.apellidos,
+      fecha_nacimiento: nuevoPaciente.fecha_nacimiento,
+      sexo: nuevoPaciente.sexo,
+      telefono: nuevoPaciente.telefono,
+      email: nuevoPaciente.email,
+      contacto_emergencia_nombre: nuevoPaciente.contacto_emergencia_nombre,
+      contacto_emergencia_parentesco: nuevoPaciente.contacto_emergencia_parentesco,
+      contacto_emergencia_direccion: nuevoPaciente.contacto_emergencia_direccion,
+      contacto_emergencia_telefono: nuevoPaciente.contacto_emergencia_telefono,
+    });
+    try {
+      await updatePaciente(existente.id_paciente, actualizacion);
+    } catch (error) {
+      toast.error(`El paciente ya existe y no se pudieron actualizar sus datos: ${error instanceof Error ? error.message : 'error desconocido'}`);
+      return;
+    }
+    toast.info('El paciente ya estaba registrado: se actualizaron sus datos y se continúa con el agendamiento');
+    setPacienteSeleccionado({ ...existente, ...actualizacion } as Paciente);
+    setStep('detalles');
   };
 
   const handleRegistrarPaciente = async () => {
@@ -395,6 +514,14 @@ export function AgendarCitaServicioModal({
       toast.success('Paciente registrado exitosamente');
       setPacienteSeleccionado(pacienteCreado);
       setStep('detalles');
+    } catch (error) {
+      // createPaciente lanza el error de la BD: mostrarlo en lugar de fallar en silencio
+      console.error('❌ Error al registrar paciente:', error);
+      if (error instanceof Error && error.message === 'CEDULA_DUPLICADA') {
+        await continuarConPacienteExistente(cedula);
+      } else {
+        toast.error(`No se pudo registrar el paciente: ${error instanceof Error ? error.message : 'error desconocido'}`);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -453,6 +580,21 @@ export function AgendarCitaServicioModal({
     reader.readAsDataURL(file);
   };
 
+  // Confirmación al paciente por WhatsApp; no bloquea ni revierte la cita si falla
+  const notificarCitaPorWhatsApp = async (fechaCita: string, horaCita: string) => {
+    const servicio = serviciosActivos.find(s => s.id_servicio === idServicio);
+    const sucursal = sucursales.find(s => s.id_sucursal === servicio?.id_sucursal);
+    const resultado = await enviarConfirmacionCitaWhatsApp(pacienteSeleccionado?.telefono, {
+      nombrePaciente: pacienteSeleccionado ? `${pacienteSeleccionado.nombres} ${pacienteSeleccionado.apellidos}` : null,
+      atencion: servicio?.descripcion || 'Servicio',
+      fecha: fechaCita,
+      horaInicio: horaCita,
+      sucursal: sucursal?.nombre,
+    });
+    if (resultado.enviado) toast.success('Confirmación enviada al paciente por WhatsApp');
+    else toast.warning(`La cita se agendó, pero no se envió el WhatsApp: ${resultado.motivo}`);
+  };
+
   const handleGuardar = async () => {
     if (!pacienteSeleccionado) { toast.error('Seleccione un paciente'); return; }
     if (!idServicio) { toast.error('Seleccione un servicio'); return; }
@@ -485,6 +627,8 @@ export function AgendarCitaServicioModal({
       tiene_seguro_medico: tieneSeguroMedico.trim(),
       fecha_confirmada: isEditing ? citaEditar?.fecha_confirmada || undefined : new Date().toISOString(),
       ...(fotoBase64 ? { foto_pedido_base64: fotoBase64 } : {}),
+      // Las citas directas toman el DEFAULT 'SISTEMA' de la BD; solo se envía el origen para el chatbot
+      ...(prefill && !isEditing ? { origen_agendamiento: 'CHATBOT' as const } : {}),
     };
 
     setIsSaving(true);
@@ -497,6 +641,8 @@ export function AgendarCitaServicioModal({
       }
       if (ok) {
         toast.success(isEditing ? 'Cita actualizada exitosamente' : 'Cita agendada exitosamente');
+        if (!isEditing) onCitaCreada?.(ok);
+        if (!isEditing && enviarConfirmacionWhatsApp) void notificarCitaPorWhatsApp(datosBase.fecha_cita, datosBase.hora_inicio);
         onCitaAgendada();
         onClose();
       } else {
@@ -524,6 +670,13 @@ export function AgendarCitaServicioModal({
           </DialogTitle>
         </DialogHeader>
 
+        {prefill && !isEditing && (
+          <div className="rounded-lg border bg-blue-50 px-3 py-2 text-sm text-gray-700">
+            Solicitud del chatbot: {prefill.servicioTexto || 'Servicio'} · {prefill.fecha || 'fecha por confirmar'} {prefill.hora || ''}
+            {prefill.seguro ? ` · Seguro: ${prefill.seguro}` : ''}
+          </div>
+        )}
+
         {/* PASO 1: BUSCAR PACIENTE */}
         {step === 'paciente' && (
           <div className="space-y-4">
@@ -536,7 +689,7 @@ export function AgendarCitaServicioModal({
                 onChange={e => setCedulaBusqueda(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleBuscarPaciente()}
               />
-              <Button onClick={handleBuscarPaciente} disabled={isSearching} variant="outline">
+              <Button onClick={() => handleBuscarPaciente()} disabled={isSearching} variant="outline">
                 {isSearching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               </Button>
             </div>
@@ -605,7 +758,18 @@ export function AgendarCitaServicioModal({
 
               <div className="space-y-2">
                 <Label>Cédula / Pasaporte *</Label>
-                <Input value={nuevoPaciente.cedula} onChange={e => setNuevoPaciente(p => ({ ...p, cedula: e.target.value }))} placeholder="0000000000" />
+                <div className="flex gap-2">
+                  <Input value={nuevoPaciente.cedula} onChange={e => setNuevoPaciente(p => ({ ...p, cedula: e.target.value }))} placeholder="0000000000" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleReconsultarRegistroCivil}
+                    disabled={isLookingUpCedula}
+                    title="Consultar nuevamente el Registro Civil"
+                  >
+                    {isLookingUpCedula ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2 hidden">

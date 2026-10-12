@@ -1,5 +1,5 @@
 // Modal para agendar citas integrado con Supabase
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -9,7 +9,7 @@ import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { usePacientes } from '../hooks/usePacientes';
 import { useHorarios } from '../hooks/useCitas';
-import { Plus, Search, Pencil, Edit, Loader2, FileText, Calendar, Clock, X, XCircle, Minimize2, Maximize2 } from 'lucide-react'; // Import icons
+import { Plus, UserPlus, Search, Pencil, Edit, Loader2, FileText, Calendar, Clock, X, XCircle, Minimize2, Maximize2 } from 'lucide-react'; // Import icons
 import { getAllPacientes } from '../lib/pacientesService';
 import { getAsignacionesCompletasByUsuario, getSucursalesByCompania, getMedicosBySucursal, type AsignacionCompleta } from '../lib/authService';
 import { createCita, updateCita, generarHorariosDisponibles, canModificarCita, type CitaCompleta } from '../lib/citasService';
@@ -17,6 +17,10 @@ import { asignarCitaInterconsulta } from '../lib/interconsultaService';
 import { updatePaciente } from '../lib/pacientesService'; // Import updatePaciente
 import { consultarCedulaRegistroCivil } from '../lib/registroCivilService'; // Import automatic ID lookup
 import { getAllEspecialidades, type Especialidad, getAllAseguradoras, type Aseguradora } from '../lib/configuracionesService'; // Import getAllEspecialidades and insurers
+import { PacientePorCedulaGestor } from './agenda/PacientePorCedulaGestor';
+import { GestionMedicosView } from './GestionMedicosView';
+import { enviarConfirmacionCitaWhatsApp } from '../lib/whatsappService';
+import type { Paciente } from '../lib/pacientesService';
 
 
 interface AgendarCitaModalProps {
@@ -29,6 +33,18 @@ interface AgendarCitaModalProps {
   currentUserName?: string;
   headerActions?: ReactNode;
   idInterconsulta?: number | null;
+  prefill?: {
+    cedula?: string | null;
+    telefono?: string | null;
+    correo?: string | null;
+    especialidadTexto?: string | null;
+    fecha?: string | null;
+    hora?: string | null;
+    seguro?: 'SI' | 'NO' | null;
+  } | null;
+  onCitaCreada?: (idCita: number) => void;
+  /** Envía la confirmación por WhatsApp al paciente al crear la cita (no al editar) */
+  enviarConfirmacionWhatsApp?: boolean;
 }
 
 const getNuevoPacienteInicial = () => ({
@@ -77,9 +93,14 @@ const getNuevoPacienteInicial = () => ({
   telefono_institucion_entrega: ''
 });
 
-export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUsuarioActual, citaEditar, tipoUsuario, currentUserName, headerActions, idInterconsulta }: AgendarCitaModalProps) {
+export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUsuarioActual, citaEditar, tipoUsuario, currentUserName, headerActions, idInterconsulta, prefill, onCitaCreada, enviarConfirmacionWhatsApp }: AgendarCitaModalProps) {
   const [windowState, setWindowState] = useState<'normal' | 'minimized'>('normal');
   const nombreAdmisionistaActual = currentUserName || localStorage.getItem('currentUserName') || '';
+  const prefillPacienteAplicadoRef = useRef(false);
+  const prefillEspecialidadAplicadaRef = useRef(false);
+  const prefillFechaAplicadaRef = useRef(false);
+  const prefillHoraAplicadaRef = useRef(false);
+  const [horaSolicitadaNoDisponible, setHoraSolicitadaNoDisponible] = useState('');
 
   useEffect(() => {
     if (isOpen && windowState === 'minimized') {
@@ -91,12 +112,15 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
   const [step, setStep] = useState<'paciente' | 'detalles' | 'nuevoPaciente'>('paciente');
   const modoEdicion = !!citaEditar;
-  const esSecretaria = tipoUsuario === 'secretaria';
+  const esSecretaria = tipoUsuario === 'secretaria' || tipoUsuario === 'GESTOR';
+  // GESTOR: el paso de paciente usa el mismo flujo que el modal de servicios (búsqueda por cédula y registro básico)
+  const esGestor = tipoUsuario === 'GESTOR';
 
   // Paso 1: Seleccin de paciente
   const [searchPaciente, setSearchPaciente] = useState('');
   const [selectedPacienteId, setSelectedPacienteId] = useState('');
   const [pacientes, setPacientes] = useState<any[]>([]);
+  const [pacientesCargados, setPacientesCargados] = useState(false);
 
   // Estado para nuevo paciente
   const [nuevoPaciente, setNuevoPaciente] = useState(getNuevoPacienteInicial());
@@ -141,6 +165,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
   // Cargar pacientes
   useEffect(() => {
     if (isOpen) {
+      setPacientesCargados(false);
       loadPacientes();
     }
   }, [isOpen]);
@@ -245,14 +270,92 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
   const loadPacientes = async () => {
     // Obtener id_compania desde localStorage para filtrar
     const companiaId = localStorage.getItem('currentCompaniaId');
-    if (companiaId) {
-      const { getPacientesByCompania } = await import('../lib/pacientesService');
-      const data = await getPacientesByCompania(parseInt(companiaId));
-      setPacientes(data);
-    } else {
-      const data = await getAllPacientes();
-      setPacientes(data);
+    try {
+      if (companiaId) {
+        const { getPacientesByCompania } = await import('../lib/pacientesService');
+        const data = await getPacientesByCompania(parseInt(companiaId));
+        setPacientes(data);
+      } else {
+        const data = await getAllPacientes();
+        setPacientes(data);
+      }
+    } finally {
+      setPacientesCargados(true);
     }
+  };
+
+  useEffect(() => {
+    if (!isOpen || citaEditar || esGestor || !prefill?.cedula || !pacientesCargados || prefillPacienteAplicadoRef.current) return;
+    prefillPacienteAplicadoRef.current = true;
+    const paciente = pacientes.find(item => item.cedula === prefill.cedula);
+    if (paciente) {
+      setSelectedPacienteId(paciente.id_paciente.toString());
+      setSearchPaciente(prefill.cedula);
+      setStep('detalles');
+      return;
+    }
+    setIsEditingPatient(false);
+    setNuevoPaciente({
+      ...getNuevoPacienteInicial(),
+      cedula: prefill.cedula,
+      telefono: prefill.telefono || '',
+      email: prefill.correo?.toUpperCase() || '',
+      nombre_admisionista: nombreAdmisionistaActual,
+    });
+    setStep('nuevoPaciente');
+    void handleBlurCedula(prefill.cedula);
+  }, [isOpen, citaEditar, prefill?.cedula, pacientesCargados]);
+
+  // Seguro indicado en la solicitud del chatbot: NO → "Sin Aseguradora" (id 1);
+  // SI → se deja vacío para que se elija la aseguradora (la validación de campos obligatorios lo exige)
+  useEffect(() => {
+    if (!isOpen || citaEditar || !prefill?.seguro) return;
+    setIdAseguradora(prefill.seguro === 'NO' ? '1' : '');
+  }, [isOpen, citaEditar, prefill?.seguro]);
+
+  // GESTOR: crear médico y horario sin salir del modal; al terminar se selecciona automáticamente
+  const [isNuevoMedicoOpen, setIsNuevoMedicoOpen] = useState(false);
+
+  const handleMedicoCreadoGestor = async ({ idUsuarioSucursal, idEspecialidad }: { idUsuarioSucursal: number; idEspecialidad: number | null }) => {
+    setIsNuevoMedicoOpen(false);
+    const medicos = await getMedicosBySucursal(parseInt(sucursalSecretaria));
+    setMedicosDisponibles(medicos);
+    const medico = medicos.find(item => item.id_usuario_sucursal === idUsuarioSucursal) || null;
+    if (!medico) {
+      toast.warning('El médico se registró, pero no aparece activo en esta sucursal. Verifique su estado.');
+      return;
+    }
+    setSelectedEspecialidad(idEspecialidad ? idEspecialidad.toString() : '');
+    setSelectedAsignacion(idUsuarioSucursal.toString());
+    setSelectedMedico(medico);
+    setFecha('');
+    setHoraInicio('');
+    toast.success(`Dr. ${medico.usuario.nombre} ${medico.usuario.apellido} seleccionado para la cita`);
+  };
+
+  // Confirmación al paciente por WhatsApp; no bloquea ni revierte la cita si falla
+  const notificarCitaPorWhatsApp = async (asignacion: AsignacionCompleta, fechaCita: string, horaCita: string) => {
+    const paciente = pacientes.find(p => p.id_paciente.toString() === selectedPacienteId);
+    const especialidad = especialidades.find(e => e.id_especialidad.toString() === selectedEspecialidad)?.nombre
+      || asignacion.especialidad
+      || 'Consulta externa';
+    const resultado = await enviarConfirmacionCitaWhatsApp(paciente?.telefono, {
+      nombrePaciente: paciente ? `${paciente.nombres} ${paciente.apellidos}` : null,
+      atencion: especialidad,
+      fecha: fechaCita,
+      horaInicio: horaCita,
+      profesional: asignacion.usuario ? `${asignacion.usuario.nombre} ${asignacion.usuario.apellido}` : null,
+      sucursal: asignacion.sucursal?.nombre,
+    });
+    if (resultado.enviado) toast.success('Confirmación enviada al paciente por WhatsApp');
+    else toast.warning(`La cita se agendó, pero no se envió el WhatsApp: ${resultado.motivo}`);
+  };
+
+  const handlePacienteConfirmadoGestor = (paciente: Paciente) => {
+    // getPacienteByCedula no filtra por compañía: asegurar que el paciente esté en la lista usada por el resumen
+    setPacientes(prev => prev.some(item => item.id_paciente === paciente.id_paciente) ? prev : [...prev, paciente]);
+    setSelectedPacienteId(paciente.id_paciente.toString());
+    setStep('detalles');
   };
 
   const loadAsignaciones = async () => {
@@ -288,14 +391,18 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
 
 
-      // Auto-seleccionar la primera sucursal
+      // Auto-seleccionar la primera sucursal (en solicitudes del chatbot, la sucursal activa del gestor)
       if (data.length > 0 && !modoEdicion) {
-        const primeraSucursal = (data as any)[0].id_sucursal.toString();
-        setSucursalSecretaria(primeraSucursal);
-        console.log('✅ Auto-seleccionada primera sucursal:', (data as any)[0].nombre);
+        const sucursalActualId = localStorage.getItem('currentSucursalId');
+        const sucursalPrefill = prefill && sucursalActualId
+          ? (data as any[]).find(sucursal => sucursal.id_sucursal.toString() === sucursalActualId)
+          : null;
+        const sucursalInicial = sucursalPrefill || (data as any)[0];
+        setSucursalSecretaria(sucursalInicial.id_sucursal.toString());
+        console.log('✅ Auto-seleccionada sucursal:', sucursalInicial.nombre);
 
-        // Cargar médicos de la primera sucursal
-        const medicos = await getMedicosBySucursal((data as any)[0].id_sucursal);
+        // Cargar médicos de la sucursal (sin resetear especialidad/médico/fecha ya elegidos)
+        const medicos = await getMedicosBySucursal(sucursalInicial.id_sucursal);
         console.log('✅ Médicos cargados automáticamente:', medicos.length);
         setMedicosDisponibles(medicos);
         // setAsignaciones(medicos); // No asignamos aún para obligar a seleccionar especialidad o médico
@@ -331,6 +438,22 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
     // o aquí si preferimos tener un estado separado de medicosFiltrados.
     // Usaremos un filtro en el render sobre medicosDisponibles.
   };
+
+  useEffect(() => {
+    if (!isOpen || citaEditar || !prefill?.especialidadTexto || !especialidades.length || prefillEspecialidadAplicadaRef.current) return;
+    prefillEspecialidadAplicadaRef.current = true;
+    const normalizar = (valor: string) => valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+    const texto = normalizar(prefill.especialidadTexto);
+    const especialidad = especialidades.find(item => normalizar(item.nombre) === texto)
+      || especialidades.find(item => normalizar(item.nombre).includes(texto) || texto.includes(normalizar(item.nombre)));
+    if (especialidad) {
+      handleEspecialidadChange(especialidad.id_especialidad.toString());
+      setMotivoConsulta(`Solicitud vía chatbot - ${especialidad.nombre}`);
+    } else {
+      toast.warning(`No se encontró la especialidad "${prefill.especialidadTexto}". Selecciónela manualmente.`);
+      setMotivoConsulta(`Solicitud vía chatbot - ${prefill.especialidadTexto}`);
+    }
+  }, [isOpen, citaEditar, prefill?.especialidadTexto, especialidades.length]);
 
   // Filtrar médicos según la especialidad seleccionada
   const medicosFiltrados = medicosDisponibles.filter(medico => {
@@ -384,6 +507,8 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
     selectedMedico?.sucursal.id_compania
   );
   const [citasDelDia, setCitasDelDia] = useState<any[]>([]);
+  // Clave "fecha|asignación" de las citas del día ya cargadas (para no usar horarios sin filtrar ocupados)
+  const [citasDelDiaCargadasKey, setCitasDelDiaCargadasKey] = useState('');
 
   console.log('💰 AgendarCitaModal - Precio recibido del hook:', precio);
   console.log('📅 AgendarCitaModal - Días de semana recibidos:', diasSemana.length);
@@ -416,11 +541,14 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
     const cargarCitasDia = async () => {
       if (fecha && selectedAsignacion && getCitasDelDia) {
         console.log('📅 Cargando citas para el día:', fecha);
+        setCitasDelDiaCargadasKey('');
         const citas = await getCitasDelDia(fecha);
         setCitasDelDia(citas);
+        setCitasDelDiaCargadasKey(`${fecha}|${selectedAsignacion}`);
         console.log('✅ Citas encontradas para el día:', citas.length);
       } else {
         setCitasDelDia([]);
+        setCitasDelDiaCargadasKey('');
       }
     };
 
@@ -506,6 +634,30 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
   const horariosDisponibles = getHorariosDisponibles();
 
+  useEffect(() => {
+    if (!isOpen || citaEditar || !prefill?.fecha || !selectedAsignacion || !diasSemana.length || prefillFechaAplicadaRef.current) return;
+    prefillFechaAplicadaRef.current = true;
+    if (isDiaDisponible(prefill.fecha)) {
+      setFecha(prefill.fecha);
+    } else {
+      toast.warning(`El médico no atiende el ${prefill.fecha}. Seleccione otra fecha.`);
+    }
+  }, [isOpen, citaEditar, prefill?.fecha, selectedAsignacion, diasSemana.length]);
+
+  useEffect(() => {
+    if (!isOpen || citaEditar || !prefill?.hora || !fecha || prefillHoraAplicadaRef.current) return;
+    // Esperar a que carguen las citas del día para que horariosDisponibles excluya los ocupados
+    if (citasDelDiaCargadasKey !== `${fecha}|${selectedAsignacion}`) return;
+    if (horariosDisponibles.includes(prefill.hora)) {
+      prefillHoraAplicadaRef.current = true;
+      setHoraInicio(prefill.hora);
+      setHoraSolicitadaNoDisponible('');
+    } else if (horariosDisponibles.length > 0) {
+      prefillHoraAplicadaRef.current = true;
+      setHoraSolicitadaNoDisponible(prefill.hora);
+    }
+  }, [isOpen, citaEditar, prefill?.hora, fecha, selectedAsignacion, citasDelDiaCargadasKey, horariosDisponibles.join('|')]);
+
   // Función para generar el rango de horario (ej: "8:00 - 8:30")
   const generarRangoHorario = (horaInicio: string, duracionMinutos: number): string => {
     const horaFin = calcularHoraFin(horaInicio, duracionMinutos.toString());
@@ -528,8 +680,8 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
   };
 
   // Consultar datos de registro civil al perder foco en cédula
-  const handleBlurCedula = async () => {
-    const cedula = nuevoPaciente.cedula.trim();
+  const handleBlurCedula = async (cedulaParam?: string) => {
+    const cedula = (cedulaParam ?? nuevoPaciente.cedula).trim();
     if (!cedula) return;
     if (cedula.length < 10) {
       toast.warning('Ingrese una cédula de al menos 10 dígitos para consultar datos');
@@ -950,13 +1102,18 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
           id_aseguradora: parseInt(idAseguradora),
           referencia: referencia,
           ...(idInterconsulta ? { id_interconsulta: idInterconsulta } : {}),
+          origen_agendamiento: prefill ? 'CHATBOT' : 'SISTEMA',
         });
 
         if (nuevaCita) {
           if (idInterconsulta) {
             await asignarCitaInterconsulta(idInterconsulta, nuevaCita.id_cita);
           }
+          onCitaCreada?.(nuevaCita.id_cita);
           toast.success('Cita agendada exitosamente');
+          if (enviarConfirmacionWhatsApp) {
+            void notificarCitaPorWhatsApp(asignacionSeleccionada, fecha, horaInicio);
+          }
           onCitaAgendada();
           handleClose();
         } else {
@@ -988,6 +1145,11 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
     setReferencia('');
     setNuevoPaciente(getNuevoPacienteInicial());
     setIsModificacionPermitida(true);
+    setHoraSolicitadaNoDisponible('');
+    prefillPacienteAplicadoRef.current = false;
+    prefillEspecialidadAplicadaRef.current = false;
+    prefillFechaAplicadaRef.current = false;
+    prefillHoraAplicadaRef.current = false;
     onClose();
   };
 
@@ -1024,7 +1186,22 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
             )}
           </DialogHeader>
 
-          {step === 'paciente' ? (
+          {prefill && !modoEdicion && (
+            <div className="rounded-lg border bg-blue-50 px-3 py-2 text-sm text-gray-700">
+              Solicitud del chatbot: {prefill.especialidadTexto || 'Consulta externa'} · {prefill.fecha || 'fecha por confirmar'} {prefill.hora || ''}
+              {prefill.seguro ? ` · Seguro: ${prefill.seguro}` : ''}
+            </div>
+          )}
+
+          {esGestor && step !== 'detalles' ? (
+            <PacientePorCedulaGestor
+              nombreAdmisionista={nombreAdmisionistaActual}
+              pacienteInicial={pacientes.find(p => p.id_paciente.toString() === selectedPacienteId) || null}
+              prefill={prefill}
+              onPacienteConfirmado={handlePacienteConfirmadoGestor}
+              onCancelar={handleClose}
+            />
+          ) : step === 'paciente' ? (
             <div className="space-y-4">
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -1128,7 +1305,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
                   <Input
                     value={nuevoPaciente.cedula}
                     onChange={(e) => setNuevoPaciente({ ...nuevoPaciente, cedula: e.target.value })}
-                    onBlur={handleBlurCedula}
+                    onBlur={() => handleBlurCedula()}
                     placeholder="0000000000"
                   />
                 </div>
@@ -1621,9 +1798,11 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
                     })()}
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={handleEditPaciente} className="h-8 w-8 p-0">
-                  <Pencil className="size-4 text-gray-500 hover:text-blue-600" />
-                </Button>
+                {!esGestor && (
+                  <Button variant="ghost" size="sm" onClick={handleEditPaciente} className="h-8 w-8 p-0">
+                    <Pencil className="size-4 text-gray-500 hover:text-blue-600" />
+                  </Button>
+                )}
               </div>
 
               {esSecretaria ? (
@@ -1664,7 +1843,15 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
                   {sucursalSecretaria && (
                     <div className="space-y-2">
-                      <Label>Médico *</Label>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label>Médico *</Label>
+                        {esGestor && (
+                          <Button type="button" variant="outline" size="sm" onClick={() => setIsNuevoMedicoOpen(true)}>
+                            <UserPlus className="size-4 mr-1" />
+                            Nuevo médico
+                          </Button>
+                        )}
+                      </div>
                       <Select value={selectedAsignacion} onValueChange={(val: string) => {
                           setSelectedAsignacion(val);
                           const medico = medicosFiltrados.find((m: AsignacionCompleta) => m.id_usuario_sucursal.toString() === val) || null;
@@ -1755,6 +1942,10 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
                 </div>
               )}
 
+              {horaSolicitadaNoDisponible && (
+                <p className="text-xs text-gray-700">Hora solicitada por el paciente: {horaSolicitadaNoDisponible} (no disponible)</p>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Tipo de Cita *</Label>
@@ -1773,6 +1964,9 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
 
                 <div className="space-y-2">
                   <Label>Aseguradora *</Label>
+                  {prefill?.seguro === 'SI' && !modoEdicion && (
+                    <p className="text-xs text-blue-600">El paciente indicó que tiene seguro: seleccione la aseguradora.</p>
+                  )}
                   <Select value={idAseguradora} onValueChange={setIdAseguradora}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar aseguradora" />
@@ -1825,6 +2019,7 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
             </div>
           )}
 
+          {!(esGestor && step !== 'detalles') && (
           <DialogFooter>
             {(step === 'detalles' || step === 'nuevoPaciente') && !modoEdicion && (
               <Button variant="outline" onClick={() => setStep('paciente')}>
@@ -1858,8 +2053,30 @@ export function AgendarCitaModalSupabase({ isOpen, onClose, onCitaAgendada, idUs
               </Button>
             )}
           </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
+
+      {esGestor && (
+        <Dialog open={isNuevoMedicoOpen} onOpenChange={setIsNuevoMedicoOpen}>
+          <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Nuevo médico y horario</DialogTitle>
+              <DialogDescription>
+                Al guardar el horario, el médico quedará seleccionado en la cita.
+              </DialogDescription>
+            </DialogHeader>
+            {isNuevoMedicoOpen && sucursalSecretaria && (
+              <GestionMedicosView
+                currentUser={{ id_sucursal: parseInt(sucursalSecretaria) }}
+                onTerminar={() => setIsNuevoMedicoOpen(false)}
+                onMedicoListo={handleMedicoCreadoGestor}
+                especialidadInicial={selectedEspecialidad ? parseInt(selectedEspecialidad) : null}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
 
       {isOpen && windowState === 'minimized' && (
         <div

@@ -8,7 +8,7 @@ export interface Usuario {
   apellido: string;
   email: string;
   password: string;
-  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN';
+  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR';
   telefono: string;
   cedula_profesional: string;
   estado: 'activo' | 'inactivo';
@@ -62,7 +62,7 @@ interface UsuarioSupabase {
   apellido: string;
   email: string;
   password: string;
-  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN';
+  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR';
   telefono: string | null;
   cedula_profesional: string | null;
   activo: boolean;
@@ -282,35 +282,27 @@ export async function getOpcionesIngresoAdministrador(
     }
 
     const { data, error } = await (supabase
-      .from('servicio' as any)
+      .from('sucursal' as any)
       .select(`
-        id_servicio,
         id_sucursal,
-        descripcion,
-        area,
+        nombre,
+        direccion,
+        telefono,
+        id_compania,
         estado,
-        sucursal:sucursal!inner (
-          id_sucursal,
+        compania:compania!inner (
+          id_compania,
           nombre,
           direccion,
           telefono,
-          id_compania,
-          estado,
-          compania:compania!inner (
-            id_compania,
-            nombre,
-            direccion,
-            telefono,
-            estado
-          )
+          estado
         )
       `)
       .eq('estado', 'activo')
-      .order('area', { ascending: true })
-      .order('descripcion', { ascending: true }) as any);
+      .order('nombre', { ascending: true }) as any);
 
     if (error) {
-      console.error('❌ Error al buscar servicios para administrador:', error);
+      console.error('❌ Error al buscar sucursales para administrador:', error);
       return asignacionesBase;
     }
 
@@ -323,43 +315,38 @@ export async function getOpcionesIngresoAdministrador(
       asignacionesPorSucursal.set(asignacion.id_sucursal, asignacion);
     });
 
-    return data.map((servicio: any) => {
-      const asignacionSucursal = asignacionesPorSucursal.get(servicio.id_sucursal) || asignacionBase;
+    return data.map((sucursal: any) => {
+      const asignacionSucursal = asignacionesPorSucursal.get(sucursal.id_sucursal) || asignacionBase;
 
       return {
         id_usuario_sucursal: asignacionSucursal.id_usuario_sucursal,
         id_usuario: usuario.id_usuario,
-        id_sucursal: servicio.id_sucursal,
-        id_servicio: servicio.id_servicio,
+        id_sucursal: sucursal.id_sucursal,
+        id_servicio: null,
         id_especialidad: asignacionSucursal.id_especialidad,
         especialidad: asignacionSucursal.especialidad || 'Sin especialidad',
         cargo: asignacionSucursal.cargo,
         estado: 'activo',
         sucursal: {
-          id_sucursal: servicio.sucursal.id_sucursal,
-          nombre: servicio.sucursal.nombre,
-          direccion: servicio.sucursal.direccion,
-          telefono: servicio.sucursal.telefono || '',
-          id_compania: servicio.sucursal.id_compania,
-          estado: servicio.sucursal.estado
+          id_sucursal: sucursal.id_sucursal,
+          nombre: sucursal.nombre,
+          direccion: sucursal.direccion,
+          telefono: sucursal.telefono || '',
+          id_compania: sucursal.id_compania,
+          estado: sucursal.estado
         },
-        servicio: {
-          id_servicio: servicio.id_servicio,
-          descripcion: servicio.descripcion,
-          area: servicio.area,
-          estado: servicio.estado
-        },
+        servicio: null,
         compania: {
-          id_compania: servicio.sucursal.compania.id_compania,
-          nombre: servicio.sucursal.compania.nombre,
-          direccion: servicio.sucursal.compania.direccion,
-          telefono: servicio.sucursal.compania.telefono || '',
-          estado: servicio.sucursal.compania.estado
+          id_compania: sucursal.compania.id_compania,
+          nombre: sucursal.compania.nombre,
+          direccion: sucursal.compania.direccion,
+          telefono: sucursal.compania.telefono || '',
+          estado: sucursal.compania.estado
         }
       };
     });
   } catch (error) {
-    console.error('❌ Error inesperado al buscar servicios para administrador:', error);
+    console.error('❌ Error inesperado al buscar sucursales para administrador:', error);
     return asignacionesBase;
   }
 }

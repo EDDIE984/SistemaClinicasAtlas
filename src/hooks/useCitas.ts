@@ -43,8 +43,8 @@ export function useCitas(idUsuario: number | null, fechaInicio: string, fechaFin
 
     let data;
 
-    // Si es SECRETARIA o ADMINISTRADOR, obtener todas las citas de la sucursal
-    if ((tipoUsuario === 'secretaria' || tipoUsuario === 'administrador') && idSucursalNumber) {
+    // Si es SECRETARIA, ADMINISTRADOR o GESTOR, obtener todas las citas de la sucursal
+    if ((tipoUsuario === 'secretaria' || tipoUsuario === 'administrador' || tipoUsuario === 'GESTOR') && idSucursalNumber) {
       console.log(`👩‍💼 useCitas - Cargando citas como ${tipoUsuario?.toUpperCase()}`);
       data = await getCitasBySucursalYFechas(idSucursalNumber, fechaInicio, fechaFin);
     } else {
