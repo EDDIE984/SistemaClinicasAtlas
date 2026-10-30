@@ -73,6 +73,12 @@ null value in column "id_usuario_cambio" violates not-null constraint
 | `069_conversacion_chatbot_estado_completado.sql` | Normaliza el CHECK de `conversacion_chatbot.estado` para permitir `pendiente`, `completado` y `cancelado` |
 | `070_cita_servicio_origen_agendamiento.sql` | Agrega `cita_servicio.origen_agendamiento` (`SISTEMA` / `CHATBOT`), igual que en `cita` |
 | `071_recordatorio_whatsapp.sql` | Crea `recordatorio_whatsapp`: historial de recordatorios de cita enviados por WhatsApp a pacientes y médicos |
+| `072_maternidad.sql` | Módulo Maternidad: perfil `maternidad`, tablas `maternidad_*` (aseguradoras, horarios, solicitudes, conversación, auditoría de correos), bucket `maternidad-cotizaciones`, vistas `vista_maternidad_horarios_disponibles` / `vista_maternidad_solicitudes` y RPC `fn_maternidad_registrar` (n8n) |
+| `073_maternidad_un_tour_por_turno.sql` | Maternidad: cupo = 1 en todos los turnos (un solo tour por turno) y default 1 |
+| `074_maternidad_presupuesto_particular.sql` | Maternidad: presupuesto de la aseguradora `OTRA / PARTICULAR` del formato MATERNIDAD-PARTICULAR (Cesárea y Parto normal) en `config_cotizacion.presupuesto` |
+| `075_maternidad_presupuesto_todas_aseguradoras.sql` | Maternidad: guarda el presupuesto del Excel (de `OTRA / PARTICULAR`) en todas las aseguradoras que aún no tienen valores propios |
+| `076_maternidad_cotizacion_numerada.sql` | Maternidad: tabla `maternidad_cotizacion` con número `COT-MAT-AAAA-NNNNNN` (trigger), valores, totales y PDF de cada cotización; `id_cotizacion_mat` en la auditoría de correos y última cotización en `vista_maternidad_solicitudes` |
+| `077_maternidad_quitar_conversacion.sql` | Maternidad: redefine `fn_maternidad_registrar` sin asociar conversación y elimina `maternidad_conversacion` (el flujo n8n guarda su propia conversación). Ejecutar después de desplegar la web |
 
 ---
 

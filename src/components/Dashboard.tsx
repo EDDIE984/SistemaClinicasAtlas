@@ -24,6 +24,10 @@ import {
   ScanLine,
   BellRing,
   CalendarCheck,
+  Baby,
+  CalendarClock,
+  ShieldCheck,
+  PieChart,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -44,6 +48,10 @@ import { DashboardServiciosView } from './DashboardServiciosView';
 import { GestionMedicosView } from './GestionMedicosView';
 import { SolicitudesChatbotView } from './SolicitudesChatbotView';
 import { RecordatoriosPacientesView } from './RecordatoriosPacientesView';
+import { MaternidadAgendaView } from './maternidad/MaternidadAgendaView';
+import { MaternidadReportesView } from './maternidad/MaternidadReportesView';
+import { MaternidadHorariosView } from './maternidad/MaternidadHorariosView';
+import { MaternidadAseguradorasView } from './maternidad/MaternidadAseguradorasView';
 import { getSolicitudesChatbotPendientes } from '../lib/solicitudesChatbotService';
 // import logoClinica from "figma:asset/535c4fa3c95ae864b14ba302621119ba18d73bbc.png";
 const logoClinica = 'https://clinicas-atlas.com/wp-content/uploads/2024/11/clinicas-atlas-ecuador.png';
@@ -64,7 +72,8 @@ interface DashboardProps {
   } | null;
 }
 
-type MenuItem = 'pacientes' | 'agenda' | 'agenda-servicios' | 'dashboard-servicios' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'chatbot-solicitudes' | 'recordatorios' | 'configuraciones' | 'planificacion' | 'interconsultas' | 'medicos-horarios';
+type MenuItem = 'pacientes' | 'agenda' | 'agenda-servicios' | 'dashboard-servicios' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'chatbot-solicitudes' | 'recordatorios' | 'configuraciones' | 'planificacion' | 'interconsultas' | 'medicos-horarios'
+  | 'maternidad-agenda' | 'maternidad-reportes' | 'maternidad-horarios' | 'maternidad-aseguradoras';
 
 // Navegación del GESTOR en dos niveles: módulo (padre) → pantallas (hijos)
 type ModuloGestor = 'consulta' | 'servicios' | 'chatbot' | 'recordatorios';
@@ -107,6 +116,7 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
     : currentUser?.tipo_usuario === 'medico' ? 'pacientes'
     : currentUser?.tipo_usuario === 'GESTOR_IMAGEN' ? 'dashboard-servicios'
     : currentUser?.tipo_usuario === 'GESTOR' ? 'agenda'
+    : currentUser?.tipo_usuario === 'maternidad' ? 'maternidad-agenda'
     : 'agenda'
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -132,6 +142,10 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
     { id: 'chatbot-solicitudes' as MenuItem, label: 'Chat Bot', icon: MessageSquare },
     { id: 'recordatorios' as MenuItem, label: 'Recordatorio Pacientes', icon: BellRing },
     { id: 'chatbot' as MenuItem, label: 'Chatbot', icon: Bot },
+    { id: 'maternidad-agenda' as MenuItem, label: 'Tours Maternidad', icon: Baby },
+    { id: 'maternidad-reportes' as MenuItem, label: 'Reportes Maternidad', icon: PieChart },
+    { id: 'maternidad-horarios' as MenuItem, label: 'Horarios Maternidad', icon: CalendarClock },
+    { id: 'maternidad-aseguradoras' as MenuItem, label: 'Aseguradoras Maternidad', icon: ShieldCheck },
     { id: 'configuraciones' as MenuItem, label: 'Configuraciones', icon: Settings },
   ];
 
@@ -151,6 +165,10 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
       return item.id === 'agenda'
         || item.id === 'interconsultas' || item.id === 'dashboard-servicios' || item.id === 'agenda-servicios'
         || item.id === 'medicos-horarios' || item.id === 'chatbot-solicitudes' || item.id === 'recordatorios';
+    }
+    // MATERNIDAD: solo el módulo de tours y cotizaciones de maternidad
+    if (currentUser?.tipo_usuario === 'maternidad') {
+      return item.id.startsWith('maternidad-');
     }
     // Si es secretaria: Agenda, Citas, Planificación e Interconsultas
     if (currentUser?.tipo_usuario === 'secretaria') {
@@ -263,6 +281,14 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
         return <RecordatoriosPacientesView currentUser={currentUser} />;
       case 'chatbot-solicitudes':
         return <SolicitudesChatbotView currentUser={currentUser} />;
+      case 'maternidad-agenda':
+        return <MaternidadAgendaView currentUser={currentUser} />;
+      case 'maternidad-reportes':
+        return <MaternidadReportesView currentUser={currentUser} />;
+      case 'maternidad-horarios':
+        return <MaternidadHorariosView />;
+      case 'maternidad-aseguradoras':
+        return <MaternidadAseguradorasView />;
       case 'configuraciones':
         return <ConfiguracionesViewSupabase />;
       default:

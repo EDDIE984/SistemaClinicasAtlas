@@ -19,7 +19,7 @@ export interface Database {
           email: string
           telefono: string | null
           password: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR' | 'maternidad'
           fecha_ingreso: string
           estado: 'activo' | 'inactivo'
           created_at: string
@@ -33,7 +33,7 @@ export interface Database {
           email: string
           telefono?: string | null
           password?: string
-          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR'
+          tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR' | 'maternidad'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
@@ -47,7 +47,7 @@ export interface Database {
           email?: string
           telefono?: string | null
           password?: string
-          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR'
+          tipo_usuario?: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR' | 'maternidad'
           fecha_ingreso?: string
           estado?: 'activo' | 'inactivo'
           created_at?: string
@@ -1067,4 +1067,149 @@ export interface RecordatorioWhatsApp {
   intentos: number;
   id_usuario_envio: number | null;
   fecha_envio: string;
+}
+
+// ========================================
+// Módulo Maternidad (072_maternidad.sql)
+// ========================================
+
+export type EstadoSolicitudMaternidad = 'solo_cotizacion' | 'agendada' | 'confirmada' | 'asistio' | 'no_asistio' | 'cancelada';
+
+// Presupuesto por aseguradora (config_cotizacion.presupuesto). Misma estructura que
+// ConfigPresupuestoMaternidad en api/_lib/presupuestoMembretado.ts, que arma el PDF.
+export interface ProcedimientoPresupuestoMaternidad {
+  procedimiento: string;
+  internacion: string;
+  clinica: number;
+  incluye: string[];
+  /** valor null = "A CONVENIR" (no suma al total) */
+  honorarios: { concepto: string; valor: number | null }[];
+  notas: string[];
+  abono: number | null;
+}
+
+export interface ConfigPresupuestoMaternidad {
+  procedimientos: ProcedimientoPresupuestoMaternidad[];
+  /** concepto con salto de línea = varias líneas con un solo valor; grupo = subtítulo previo */
+  adicionales: { concepto: string; valor: number; grupo?: string | null }[];
+  firma: { nombre: string; cargo: string; telefono: string };
+  especialidad?: string;
+}
+
+export interface ConfigCotizacionMaternidad {
+  presupuesto?: ConfigPresupuestoMaternidad;
+  [clave: string]: unknown;
+}
+
+export interface MaternidadAseguradora {
+  id_aseguradora_mat: number;
+  nombre: string;
+  orden: number;
+  config_cotizacion: ConfigCotizacionMaternidad | null;
+  estado: 'activo' | 'inactivo';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MaternidadHorario {
+  id_horario_mat: number;
+  dia_semana: number; // 1=Lunes … 7=Domingo
+  hora_inicio: string;
+  hora_fin: string;
+  cupo: number;
+  estado: 'activo' | 'inactivo';
+  created_at: string;
+  updated_at: string;
+}
+
+// Fila de vista_maternidad_horarios_disponibles
+export interface MaternidadHorarioDisponible {
+  id_horario_mat: number;
+  fecha: string;
+  fecha_formato: string;
+  dia_semana: number;
+  dia_nombre: string;
+  hora_inicio: string;
+  hora_fin: string;
+  horario: string;
+  cupo: number;
+  reservados: number;
+  disponibles: number;
+}
+
+export interface MaternidadSolicitud {
+  id_solicitud_mat: number;
+  nombre_madre: string;
+  cedula: string;
+  semanas_gestacion: number | null;
+  correo: string;
+  telefono: string;
+  medico_ginecologo: string | null;
+  id_aseguradora_mat: number | null;
+  id_horario_mat: number | null;
+  fecha_tour: string | null;
+  hora_inicio: string | null;
+  hora_fin: string | null;
+  fecha_agendamiento_tour: string | null;
+  estado: EstadoSolicitudMaternidad;
+  origen: 'CHATBOT' | 'SISTEMA';
+  remote_jid: string | null;
+  notas: string | null;
+  creado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Fila de vista_maternidad_solicitudes
+export interface MaternidadSolicitudVista extends MaternidadSolicitud {
+  aseguradora: string | null;
+  fecha_tour_formato: string | null;
+  dia_nombre: string | null;
+  horario: string | null;
+  ultimo_correo_estado: 'enviado' | 'error' | null;
+  ultimo_correo_fecha: string | null;
+  correos_enviados: number;
+  correos_error: number;
+  ultima_cotizacion: string | null;
+  ultima_cotizacion_fecha: string | null;
+  cotizaciones_emitidas: number;
+}
+
+// Cotización numerada (076_maternidad_cotizacion_numerada.sql)
+export interface MaternidadCotizacion {
+  id_cotizacion_mat: number;
+  numero_cotizacion: string;
+  id_solicitud_mat: number;
+  id_aseguradora_mat: number | null;
+  aseguradora: string | null;
+  tipo: 'cotizacion' | 'confirmacion_tour';
+  valores: ConfigPresupuestoMaternidad | null;
+  resumen: { procedimiento: string; total: number }[];
+  archivos: MaternidadAdjuntoCorreo[];
+  estado: 'generada' | 'enviada' | 'error';
+  fecha_emision: string;
+  fecha_envio: string | null;
+  veces_enviada: number;
+  generado_por: string | null;
+}
+
+export interface MaternidadAdjuntoCorreo {
+  tipo: 'presupuesto' | 'checklist' | 'boletin';
+  nombre: string;
+  path: string;
+}
+
+export interface MaternidadEnvioCorreo {
+  id_envio_mat: number;
+  id_solicitud_mat: number;
+  id_cotizacion_mat: number | null;
+  tipo: 'cotizacion' | 'confirmacion_tour';
+  destinatario: string;
+  asunto: string | null;
+  adjuntos: MaternidadAdjuntoCorreo[];
+  estado: 'enviado' | 'error';
+  message_id: string | null;
+  error_mensaje: string | null;
+  enviado_por: string;
+  created_at: string;
 }

@@ -20,6 +20,10 @@
       "destination": "/api/imagen-base64"
     },
     {
+      "source": "/api/maternidad-cotizacion",
+      "destination": "/api/maternidad-cotizacion"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

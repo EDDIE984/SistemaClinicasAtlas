@@ -458,3 +458,24 @@ El proyecto se despliega automáticamente en Vercel al hacer push a `main`.
 - Build: `npm run build` → output: `dist/`
 - Serverless functions: archivos en `api/`
 - SPA routing: rewrite configurado en `vercel.json`
+
+---
+
+## Módulo Maternidad (tours y cotizaciones)
+
+Módulo **independiente** (tablas `maternidad_*`); solo reutiliza `usuario` con el perfil `maternidad` (ve únicamente las pantallas `maternidad-*`; `administrativo` también las ve y crea estos usuarios desde Configuraciones → Usuarios).
+
+| Archivo | Rol |
+|---------|-----|
+| `src/supabase/072_maternidad.sql` | Tablas, bucket `maternidad-cotizaciones`, vistas y RPC |
+| `src/lib/maternidadService.ts` / `src/hooks/useMaternidad.ts` | Servicio, hooks e indicadores (calculados en cliente sobre las solicitudes filtradas) |
+| `src/components/maternidad/` | Agenda semanal, reportes (Excel + gráficas), horarios, aseguradoras, modal de registro y detalle |
+| `api/maternidad-cotizacion.ts` + `api/_lib/` | Genera 3 PDF (presupuesto, checklist, boletín), los sube a Storage, envía por SMTP y audita; `vista_previa: true` solo devuelve el presupuesto en base64 |
+
+- **Única escritura de solicitudes:** RPC `fn_maternidad_registrar` (web y endpoint). Sin fecha → `solo_cotizacion`; con fecha → valida cupo con bloqueo y pasa a `agendada`, actualizando la cotización abierta de la misma cédula/`remote_jid` en lugar de duplicarla.
+- **Flujo WhatsApp (n8n "Clinica Atlas Maternidad", fuera del repo):** llama `POST /api/maternidad-cotizacion` con `datos` (`cedula`, `correo`, `telefono`, `aseguradora`, `medico_ginecologo`, `remote_jid`, opcionales `nombre`, `semanas_gestacion`, `fecha_tour`, `hora_inicio`). El endpoint resuelve el nombre en el Registro Civil si no llega (`CEDULA_API_BASE_URL`/`CEDULA_API_KEY`), normaliza la aseguradora (sin coincidencia → `OTRA / PARTICULAR`), registra con la RPC y **siempre** envía la cotización (con tour → `confirmacion_tour`). Errores de la RPC → 400 `{ ok:false, error:'SIN_CUPO'|… }`. La conversación la guarda el propio flujo (`conversations_detail`); `maternidad_conversacion` se eliminó (077).
+- **Vistas (web):** `vista_maternidad_horarios_disponibles` (30 días, `disponibles`) y `vista_maternidad_solicitudes`.
+- **Cotizaciones numeradas:** tabla `maternidad_cotizacion` (076). Cada generación reserva un número `COT-MAT-AAAA-NNNNNN` (trigger), guarda los valores usados (`valores`), los totales (`resumen`), los PDF (`archivos`, bucket `maternidad-cotizaciones/<id_solicitud>/<numero>-<tipo>.pdf`), `fecha_emision` y `fecha_envio`. `id_cotizacion_mat` en el endpoint reenvía la misma cotización sin generar otra. El historial está en el detalle de la solicitud → pestaña Cotizaciones (Imprimir / Reenviar).
+- **Correo:** siempre al correo guardado en la solicitud; máx. 5 envíos/hora por solicitud. Variables Vercel: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- **Presupuesto por aseguradora:** los valores (procedimientos, clínica, honorarios —`null` = A CONVENIR—, incluye, notas, abono, adicionales, firma) viven en `maternidad_aseguradora.config_cotizacion.presupuesto` y se editan en Aseguradoras Maternidad → **Cotización** (con vista previa). `api/_lib/presupuestoMembretado.ts` dibuja el formato de `docs/formatos-cotizaciones/MATERNIDAD-PARTICULAR.xlsx` (hoja membretada, una página por procedimiento); sin presupuesto configurado se usa el genérico. Los tipos están duplicados en `src/lib/supabaseTypes.ts` (`ConfigPresupuestoMaternidad`) y en el api: mantenerlos iguales.
+- **CSS:** las utilidades que el módulo necesitaba y no existían se agregaron a mano al final de `src/index.css`.

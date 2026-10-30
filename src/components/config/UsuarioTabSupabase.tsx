@@ -428,7 +428,7 @@ export function UsuarioTabSupabase() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Tipo de Usuario *</Label>
+                <Label>Perfil de Usuario *</Label>
                 <Select
                   value={formData.tipo_usuario}
                   onValueChange={(value: TipoUsuario) => setFormData({ ...formData, tipo_usuario: value })}
@@ -444,6 +444,7 @@ export function UsuarioTabSupabase() {
                     <SelectItem value="USUARIO_IMANGE">Usuario Imagen</SelectItem>
                     <SelectItem value="GESTOR_IMAGEN">Gestor Imagen</SelectItem>
                     <SelectItem value="GESTOR">Gestor</SelectItem>
+                    <SelectItem value="maternidad">Maternidad</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -512,7 +513,7 @@ export function UsuarioTabSupabase() {
               </div>
             </div>
 
-            {formData.tipo_usuario !== 'GESTOR_IMAGEN' && formData.tipo_usuario !== 'GESTOR' && (
+            {formData.tipo_usuario !== 'GESTOR_IMAGEN' && formData.tipo_usuario !== 'GESTOR' && formData.tipo_usuario !== 'maternidad' && (
               <div className="space-y-2">
                 <Label>Servicio {(formData.tipo_usuario === 'USUARIO_IMANGE' || formData.tipo_usuario === 'USUARIO_IMAGEN') ? '*' : ''}</Label>
                 <Select

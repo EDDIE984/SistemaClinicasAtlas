@@ -8,7 +8,7 @@ export interface Usuario {
   apellido: string;
   email: string;
   password: string;
-  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR';
+  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR' | 'maternidad';
   telefono: string;
   cedula_profesional: string;
   estado: 'activo' | 'inactivo';
@@ -62,7 +62,7 @@ interface UsuarioSupabase {
   apellido: string;
   email: string;
   password: string;
-  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR';
+  tipo_usuario: 'medico' | 'administrativo' | 'enfermera' | 'secretaria' | 'USUARIO_IMANGE' | 'USUARIO_IMAGEN' | 'GESTOR_IMAGEN' | 'GESTOR' | 'maternidad';
   telefono: string | null;
   cedula_profesional: string | null;
   activo: boolean;

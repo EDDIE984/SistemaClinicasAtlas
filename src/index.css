@@ -3494,3 +3494,47 @@ html {
     height: 0;
   }
 }
+
+/* ── Utilidades agregadas a mano (módulo Maternidad) ──────────────────────────
+   Este CSS es estático (no hay build de Tailwind): estas clases no existían. */
+@layer utilities {
+  .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .h-5 { height: calc(var(--spacing) * 5); }
+  .px-0 { padding-inline: 0; }
+  .px-1 { padding-inline: calc(var(--spacing) * 1); }
+  .pb-0 { padding-bottom: 0; }
+  .py-16 { padding-block: calc(var(--spacing) * 16); }
+  .mr-0\.5 { margin-right: calc(var(--spacing) * 0.5); }
+  .min-h-\[300px\] { min-height: 300px; }
+  .min-w-\[46px\] { min-width: 46px; }
+  .min-w-\[900px\] { min-width: 900px; }
+  .max-h-\[50vh\] { max-height: 50vh; }
+  .rounded-b-lg { border-bottom-left-radius: var(--radius-lg, 0.5rem); border-bottom-right-radius: var(--radius-lg, 0.5rem); }
+  .border-t-0 { border-top-width: 0; }
+  .shadow-sm { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+  .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  .text-\[10px\] { font-size: 10px; }
+  .capitalize { text-transform: capitalize; }
+  .line-through { text-decoration-line: line-through; }
+  .bg-amber-100 { background-color: #fef3c7; }
+  .border-amber-200 { border-color: #fde68a; }
+  .border-purple-200 { border-color: #e9d5ff; }
+  .text-amber-600 { color: #d97706; }
+  .text-amber-800 { color: #92400e; }
+  .text-blue-800 { color: #1e40af; }
+  .text-green-800 { color: #166534; }
+  .text-purple-800 { color: #6b21a8; }
+  .text-red-800 { color: #991b1b; }
+  @media (hover: hover) {
+    .hover\:bg-gray-200:hover { background-color: var(--color-gray-200); }
+    .hover\:bg-white:hover { background-color: #fff; }
+  }
+  @media (width >= 48rem) {
+    .md\:col-span-2 { grid-column: span 2 / span 2; }
+    .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .md\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .md\:flex-row { flex-direction: row; }
+    .md\:items-center { align-items: center; }
+  }
+}
