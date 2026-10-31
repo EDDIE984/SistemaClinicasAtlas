@@ -100,11 +100,15 @@ export function MaternidadSolicitudDialog({
     }
   };
 
+  // Reenvía la última cotización (mismo número); si la solicitud aún no tiene ninguna, emite la primera
+  const ultimaCotizacion = cotizaciones[0] || null;
   const handleReenviar = async () => {
     setIsEnviando(true);
     try {
-      const envio = await enviarCotizacionMaternidad(solicitud.id_solicitud_mat, usuarioNombre, tieneTour ? 'confirmacion_tour' : 'cotizacion');
-      toast.success(`Cotización ${envio.numero_cotizacion || ''} enviada a ${solicitud.correo}`);
+      const envio = ultimaCotizacion
+        ? await enviarCotizacionMaternidad(solicitud.id_solicitud_mat, usuarioNombre, ultimaCotizacion.tipo, ultimaCotizacion.id_cotizacion_mat)
+        : await enviarCotizacionMaternidad(solicitud.id_solicitud_mat, usuarioNombre, tieneTour ? 'confirmacion_tour' : 'cotizacion');
+      toast.success(`Cotización ${envio.numero_cotizacion || ''} ${ultimaCotizacion ? 'reenviada' : 'enviada'} a ${solicitud.correo}`);
       onActualizado();
     } catch (error) {
       toast.error(`No se pudo enviar el correo: ${mensajeErrorMaternidad(error)}`);
@@ -146,15 +150,15 @@ export function MaternidadSolicitudDialog({
   };
 
   const dato = (etiqueta: string, valor?: string | number | null) => (
-    <div>
+    <div className="min-w-0">
       <Label className="text-xs text-gray-500">{etiqueta}</Label>
-      <p className="text-sm font-medium">{valor ?? '—'}</p>
+      <p className="text-sm font-medium break-words">{valor ?? '—'}</p>
     </div>
   );
 
   return (
     <Dialog open={!!solicitud} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="maternidad-dialog-ancho">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
             {solicitud.nombre_madre}
@@ -206,9 +210,14 @@ export function MaternidadSolicitudDialog({
                   {tieneTour ? 'Reagendar tour' : 'Agendar tour'}
                 </Button>
               )}
-              <Button variant="outline" onClick={handleReenviar} disabled={isEnviando}>
+              <Button
+                variant="outline"
+                onClick={handleReenviar}
+                disabled={isEnviando || isLoading}
+                title={ultimaCotizacion ? `Reenvía la cotización ${ultimaCotizacion.numero_cotizacion} a ${solicitud.correo}` : 'Emite y envía la primera cotización'}
+              >
                 {isEnviando ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Send className="size-4 mr-1" />}
-                Nueva cotización y enviar
+                {ultimaCotizacion ? 'Reenviar cotización' : 'Enviar cotización'}
               </Button>
             </div>
           </TabsContent>

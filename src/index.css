@@ -3525,6 +3525,23 @@ html {
   .text-green-800 { color: #166534; }
   .text-purple-800 { color: #6b21a8; }
   .text-red-800 { color: #991b1b; }
+  /* Diálogos del módulo: el DialogContent base trae sm:max-w-lg (512 px), que ganaba a max-w-2xl/3xl.
+     Se ajustan al alto y ancho de la pantalla; las tablas anchas se desplazan dentro de su contenedor,
+     no el diálogo completo (min-width: 0 en los hijos de la grilla). */
+  .maternidad-dialog-ancho,
+  .maternidad-dialog-medio {
+    max-width: calc(100vw - 2rem) !important;
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .maternidad-dialog-ancho { width: min(1100px, calc(100vw - 2rem)); }
+  .maternidad-dialog-medio { width: min(768px, calc(100vw - 2rem)); }
+  .maternidad-dialog-ancho > *,
+  .maternidad-dialog-medio > *,
+  .maternidad-dialog-ancho [data-slot="tabs"],
+  .maternidad-dialog-ancho [data-slot="tabs-content"] { min-width: 0; }
   @media (hover: hover) {
     .hover\:bg-gray-200:hover { background-color: var(--color-gray-200); }
     .hover\:bg-white:hover { background-color: #fff; }

@@ -236,7 +236,7 @@ export function MaternidadCotizacionConfigDialog({ aseguradora, aseguradoras, on
 
   return (
     <Dialog open={!!aseguradora} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="maternidad-dialog-medio">
         <DialogHeader>
           <DialogTitle>Cotización · {aseguradora.nombre}</DialogTitle>
           <DialogDescription>
