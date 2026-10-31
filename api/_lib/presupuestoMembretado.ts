@@ -14,6 +14,8 @@ export interface DatosPresupuestoMaternidad {
   correo: string;
   telefono: string;
   medicoGinecologo: string | null;
+  /** Fecha de emisión (ISO) al volver a armar una cotización existente; sin ella se usa la de hoy */
+  fechaEmision?: string | null;
 }
 
 // Misma estructura que ConfigPresupuestoMaternidad en src/lib/supabaseTypes.ts (la UI la edita)
@@ -51,16 +53,17 @@ const X_DER_VALOR = 440;
 const X_PRECIO = 400;
 const X_PRECIO_DER = 470;
 
-/** $1.130,00 (formato de la clínica) */
+/** $ 1,130.00 (formato del presupuesto de la clínica) */
 export const formatearUSD = (valor: number) =>
-  `$${valor.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+  `$ ${valor.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 
 // Helvetica (WinAnsi) no soporta emojis ni algunos símbolos
 const limpiar = (texto: string) => texto.replace(/[^\x20-\x7E -ÿ–—•]/g, '').trim();
 
-function fechaLarga(): string {
+/** "OCTUBRE 21, 2026" de la fecha indicada (fecha de emisión de la cotización) o de hoy */
+function fechaLarga(fecha?: string | null): string {
   const partes = new Intl.DateTimeFormat('es-EC', { timeZone: 'America/Guayaquil', day: 'numeric', month: 'long', year: 'numeric' })
-    .formatToParts(new Date());
+    .formatToParts(fecha ? new Date(fecha) : new Date());
   const dia = partes.find(p => p.type === 'day')?.value;
   const mes = partes.find(p => p.type === 'month')?.value?.toUpperCase();
   const anio = partes.find(p => p.type === 'year')?.value;
@@ -169,7 +172,7 @@ function dibujarPagina(
   const nombre = limpiar(datos.nombreMadre).toUpperCase();
   const medico = limpiar(datos.medicoGinecologo || '').toUpperCase();
   const filas: [string, string, string, string][] = [
-    ['FECHA:', fechaLarga(), 'Semanas de gestación:', datos.semanasGestacion ? String(datos.semanasGestacion) : ''],
+    ['FECHA:', fechaLarga(datos.fechaEmision),'Semanas de gestación:', datos.semanasGestacion ? String(datos.semanasGestacion) : ''],
     ['Paciente:', nombre ? `SRA. ${nombre}` : '', 'Correo electrónico :', datos.correo.toLowerCase()],
     ['Médico:', medico, 'Contacto :', datos.telefono],
     ['Especialidad:', config.especialidad || 'GINECÓLOGO', 'C.I:', datos.cedula],
@@ -209,7 +212,7 @@ function dibujarPagina(
   for (const honorario of proc.honorarios || []) {
     h.texto(honorario.concepto, X0, { tamano: 10, fuente: f.negrita });
     if (honorario.valor === null || honorario.valor === undefined) h.texto('A CONVENIR', X_PRECIO - 5, { tamano: 10, fuente: f.negrita });
-    else h.derecha(formatearUSD(honorario.valor).replace('$', '$  '), X_PRECIO + 55, { tamano: 10, fuente: f.negrita });
+    else h.derecha(formatearUSD(honorario.valor).replace('$ ', '$  '),X_PRECIO + 55, { tamano: 10, fuente: f.negrita });
     h.bajar(16);
   }
 
@@ -232,7 +235,7 @@ function dibujarPagina(
       h.bajar(15);
     }
     const lineas = adicional.concepto.split('\n').map(l => l.trim()).filter(Boolean);
-    const precio = formatearUSD(Number(adicional.valor) || 0).replace('$', '$  ');
+    const precio = formatearUSD(Number(adicional.valor) || 0).replace('$ ', '$  ');
     lineas.forEach((linea, i) => {
       h.texto(linea, X0, { tamano: 9, fuente: lineas.length > 1 ? f.normal : f.negrita });
       if (i === Math.floor((lineas.length - 1) / 2)) h.derecha(precio, X_PRECIO + 55, { tamano: 10, fuente: f.negrita });
@@ -251,7 +254,7 @@ function dibujarPagina(
     const espacio = f.normal.widthOfTextAtSize(' ', 9);
     let x = X0 + 49;
     x += h.texto('Como requisito para el ingreso, se deberá dejar un abono de', x, { tamano: 9 }) + espacio;
-    x += h.texto(`USD ${formatearUSD(Number(proc.abono)).replace('$', '')}`, x, { tamano: 9, fuente: f.negrita }) + espacio;
+    x += h.texto(`USD ${formatearUSD(Number(proc.abono)).replace('$ ', '')}`,x, { tamano: 9, fuente: f.negrita }) + espacio;
     h.texto('a cuenta del procedimiento.', x, { tamano: 9 });
     h.bajar(12);
   }
@@ -297,9 +300,10 @@ export async function generarPresupuestoMembretado(
     cursivaNegrita: await doc.embedFont(StandardFonts.HelveticaBoldOblique),
   };
   const imagenes = {
-    fondo: await doc.embedJpg(Buffer.from(FONDO_MEMBRETADO_MATERNIDAD_JPG, 'base64')),
-    logo: await doc.embedPng(Buffer.from(LOGO_CLINICAS_ATLAS_PNG, 'base64')),
-    telefono: await doc.embedPng(Buffer.from(ICONO_TELEFONO_PNG, 'base64')),
+    // pdf-lib acepta base64 directamente: el módulo funciona igual en Vercel y en el navegador
+    fondo: await doc.embedJpg(FONDO_MEMBRETADO_MATERNIDAD_JPG),
+    logo: await doc.embedPng(LOGO_CLINICAS_ATLAS_PNG),
+    telefono: await doc.embedPng(ICONO_TELEFONO_PNG),
   };
   const firma = { nombre: '', cargo: '', telefono: '', ...(config.firma || {}) };
   for (const procedimiento of config.procedimientos) {

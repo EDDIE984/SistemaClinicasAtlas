@@ -1,19 +1,20 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
-import { generarDocumentosMaternidad, type ConfigCotizacion } from './_lib/maternidadPlantillas';
+import { documentosFijosMaternidad, generarDocumentosMaternidad, type ConfigCotizacion } from './_lib/maternidadPlantillas';
 import { generarPresupuestoMembretado, tienePresupuestoConfigurado, totalProcedimiento } from './_lib/presupuestoMembretado';
+import { asuntoCorreoMaternidad, construirCorreoMaternidad } from './_lib/correoMaternidad';
 
-// Genera una cotización numerada (maternidad_cotizacion: COT-MAT-AAAA-NNNNNN) con los 3 PDF
-// (presupuesto, checklist, boletín), los guarda en Storage, los envía por correo a la paciente
-// y registra la auditoría en maternidad_envio_correo.
-// Con id_cotizacion_mat reenvía esa misma cotización (mismos PDF y número) sin generar otra.
+// Genera una cotización numerada (maternidad_cotizacion: COT-MAT-AAAA-NNNNNN), arma el presupuesto en PDF
+// en memoria y lo envía por correo a la paciente junto con el checklist y el boletín (diseños fijos de
+// api/_assets/maternidad); registra la auditoría en maternidad_envio_correo. No se guarda ningún archivo:
+// la cotización conserva los valores usados y el PDF se vuelve a armar cuando se necesita.
+// Con id_cotizacion_mat reenvía esa misma cotización (mismo número, fecha y valores) sin generar otra.
 // Con `datos` (sin id_solicitud_mat) primero registra la solicitud con fn_maternidad_registrar
 // (con o sin tour) y después envía la cotización: es el modo que usa el flujo de WhatsApp en n8n.
 // La web lo llama con id_solicitud_mat (registro, "Reenviar cotización" y el historial).
 // Siempre envía al correo guardado en la solicitud, nunca a uno recibido en la petición.
 
-const BUCKET = 'maternidad-cotizaciones';
 const MAX_ENVIOS_POR_HORA = 5;
 
 function getSupabaseConfig() {
@@ -98,32 +99,6 @@ async function consultarNombreRegistroCivil(cedula: string): Promise<string | nu
 }
 
 const CODIGOS_RPC = ['DATOS_INCOMPLETOS', 'CORREO_INVALIDO', 'ASEGURADORA_INVALIDA', 'HORARIO_INVALIDO', 'FECHA_PASADA', 'SIN_CUPO'];
-
-const escaparHtml = (texto: string) =>
-  texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-function construirCorreo(nombre: string, aseguradora: string, tour: string | null) {
-  const nombreHtml = escaparHtml(nombre);
-  const bloqueTour = tour
-    ? `<p style="background:#f5f3ff;border-left:4px solid #9333ea;padding:12px;margin:16px 0">
-         <strong>Su tour de maternidad está agendado:</strong><br>${escaparHtml(tour)}
-       </p>
-       <p>Le recomendamos llegar 10 minutos antes y traer su cédula de identidad.</p>`
-    : `<p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px;margin:16px 0">
-         <strong>¿Ya conoce nuestras instalaciones?</strong><br>
-         Agende su tour de maternidad respondiendo a nuestro WhatsApp y conozca salas de parto, habitaciones y neonatología.
-       </p>`;
-  return `
-  <div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;max-width:600px;margin:auto">
-    <h2 style="color:#9333ea;margin-bottom:4px">Clínica Atlas · Maternidad</h2>
-    <p>Estimada <strong>${nombreHtml}</strong>:</p>
-    <p>Gracias por su interés en el plan de maternidad de Clínica Atlas. Adjuntamos la cotización para su aseguradora
-       <strong>${escaparHtml(aseguradora)}</strong> junto con el checklist para el día del parto y nuestro boletín informativo.</p>
-    ${bloqueTour}
-    <p>Si tiene preguntas, responda a este correo o escríbanos por WhatsApp.</p>
-    <p style="color:#6b7280;font-size:12px;margin-top:24px">Clínica Atlas · Ecuador</p>
-  </div>`;
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -254,11 +229,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   });
   const aseguradoraSolicitud: string = solicitud.aseguradora?.nombre || 'su aseguradora';
 
-  const asuntoDe = (tipo: string, numero: string) =>
-    `${tipo === 'confirmacion_tour'
-      ? 'Clínica Atlas · Confirmación de tour de maternidad y cotización'
-      : 'Clínica Atlas · Cotización de maternidad'} ${numero}`;
-
   const registrarAuditoria = (fila: Record<string, unknown>) =>
     supabase.from('maternidad_envio_correo').insert({
       id_solicitud_mat: idSolicitud,
@@ -267,16 +237,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ...fila,
     });
 
-  const enviarCorreo = (asunto: string, aseguradora: string, tour: string | null, archivos: { nombre: string; contenido: Buffer }[]) =>
-    transporte.sendMail({
+  // `archivos` = el presupuesto de la cotización; el checklist y el boletín se agregan siempre
+  const enviarCorreo = (
+    asunto: string,
+    numeroCotizacion: string,
+    aseguradora: string,
+    tour: string | null,
+    archivos: { nombre: string; contenido: Uint8Array }[],
+  ) => {
+    const correo = construirCorreoMaternidad({ nombreMadre: solicitud.nombre_madre, numeroCotizacion, aseguradora, tour });
+    const pdfs = [...archivos, ...documentosFijosMaternidad()];
+    return transporte.sendMail({
       from: SMTP_FROM || SMTP_USER,
       to: solicitud.correo,
       subject: asunto,
-      html: construirCorreo(solicitud.nombre_madre, aseguradora, tour),
-      attachments: archivos.map(a => ({ filename: a.nombre, content: a.contenido, contentType: 'application/pdf' })),
+      html: correo.html,
+      text: correo.text,
+      attachments: [
+        ...pdfs.map(a => ({ filename: a.nombre, content: Buffer.from(a.contenido), contentType: 'application/pdf' })),
+        ...correo.imagenes,
+      ],
+    });
+  };
+
+  // El presupuesto no se guarda: se arma en memoria con los datos de la solicitud y los valores de la cotización
+  const armarPresupuesto = (numeroCotizacion: string, config: ConfigCotizacion, tour: string | null, fechaEmision?: string | null) =>
+    generarDocumentosMaternidad({
+      idSolicitud,
+      numeroCotizacion,
+      fechaEmision,
+      nombreMadre: solicitud.nombre_madre,
+      cedula: solicitud.cedula,
+      semanasGestacion: solicitud.semanas_gestacion,
+      correo: solicitud.correo,
+      telefono: solicitud.telefono,
+      medicoGinecologo: solicitud.medico_ginecologo,
+      aseguradora: aseguradoraSolicitud,
+      tour,
+      config,
     });
 
-  // ── Reenvío de una cotización existente: mismos PDF y mismo número ─────────
+  // Auditoría: solo los nombres de los adjuntos (ningún archivo queda guardado)
+  const nombresAdjuntos = (documentos: { tipo: string; nombre: string }[]) =>
+    [...documentos, ...documentosFijosMaternidad()].map(d => ({ tipo: d.tipo, nombre: d.nombre }));
+
+  // ── Reenvío de una cotización existente: se vuelve a armar con el mismo número, fecha y valores ──
   if (body.id_cotizacion_mat) {
     const { data: cot } = await supabase
       .from('maternidad_cotizacion')
@@ -286,19 +291,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .single();
     if (!cot) return res.status(404).json({ ok: false, error: 'La cotización no existe para esta solicitud' });
 
-    const asunto = asuntoDe(cot.tipo, cot.numero_cotizacion);
+    const asunto = asuntoCorreoMaternidad(cot.tipo, cot.numero_cotizacion);
+    const tour = cot.tipo === 'confirmacion_tour'
+      ? formatearTour(solicitud.fecha_tour, solicitud.hora_inicio, solicitud.hora_fin)
+      : null;
+    let adjuntos: { tipo: string; nombre: string }[] = [];
     try {
-      const archivos: { nombre: string; contenido: Buffer }[] = [];
-      for (const archivo of (cot.archivos || []) as { nombre: string; path: string }[]) {
-        const { data, error } = await supabase.storage.from(BUCKET).download(archivo.path);
-        if (error || !data) throw new Error(`No se encontró el archivo ${archivo.nombre}`);
-        archivos.push({ nombre: archivo.nombre, contenido: Buffer.from(await data.arrayBuffer()) });
-      }
-      if (archivos.length === 0) throw new Error('La cotización no tiene archivos guardados');
-      const tour = cot.tipo === 'confirmacion_tour'
-        ? formatearTour(solicitud.fecha_tour, solicitud.hora_inicio, solicitud.hora_fin)
-        : null;
-      const info = await enviarCorreo(asunto, cot.aseguradora || aseguradoraSolicitud, tour, archivos);
+      const config: ConfigCotizacion = cot.valores ? { presupuesto: cot.valores } : {};
+      const documentos = await armarPresupuesto(cot.numero_cotizacion, config, tour, cot.fecha_emision);
+      adjuntos = nombresAdjuntos(documentos);
+      const info = await enviarCorreo(asunto, cot.numero_cotizacion, cot.aseguradora || aseguradoraSolicitud, tour, documentos);
       await supabase.from('maternidad_cotizacion').update({
         estado: 'enviada',
         fecha_envio: new Date().toISOString(),
@@ -306,7 +308,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updated_at: new Date().toISOString(),
       }).eq('id_cotizacion_mat', cot.id_cotizacion_mat);
       await registrarAuditoria({
-        id_cotizacion_mat: cot.id_cotizacion_mat, tipo: cot.tipo, asunto, adjuntos: cot.archivos,
+        id_cotizacion_mat: cot.id_cotizacion_mat, tipo: cot.tipo, asunto, adjuntos,
         estado: 'enviado', message_id: info.messageId || null,
       });
       return res.status(200).json({ ok: true, numero_cotizacion: cot.numero_cotizacion, destinatario: solicitud.correo, reenvio: true });
@@ -314,7 +316,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mensaje = error instanceof Error ? error.message : String(error);
       console.error('❌ Error al reenviar cotización de maternidad:', error);
       await registrarAuditoria({
-        id_cotizacion_mat: cot.id_cotizacion_mat, tipo: cot.tipo, asunto, adjuntos: cot.archivos,
+        id_cotizacion_mat: cot.id_cotizacion_mat, tipo: cot.tipo, asunto, adjuntos,
         estado: 'error', error_mensaje: mensaje.slice(0, 1000),
       });
       return res.status(502).json({ ok: false, error: mensaje });
@@ -330,7 +332,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const config = (solicitud.aseguradora?.config_cotizacion || {}) as ConfigCotizacion;
   const valores = tienePresupuestoConfigurado(config.presupuesto) ? config.presupuesto : null;
 
-  // Reserva el número correlativo antes de generar los PDF (va impreso en ellos)
+  // Reserva el número correlativo antes de armar el PDF (va impreso en él). `valores` guarda la copia
+  // de la configuración usada, para volver a armar exactamente el mismo presupuesto cuando se necesite.
   const { data: cotizacion, error: errorCotizacion } = await supabase
     .from('maternidad_cotizacion')
     .insert({
@@ -342,49 +345,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       resumen: (valores?.procedimientos || []).map(p => ({ procedimiento: p.procedimiento, total: totalProcedimiento(p) })),
       generado_por: enviadoPor,
     })
-    .select('id_cotizacion_mat, numero_cotizacion')
+    .select('id_cotizacion_mat, numero_cotizacion, fecha_emision')
     .single();
   if (errorCotizacion || !cotizacion) {
     return res.status(500).json({ ok: false, error: `No se pudo crear la cotización: ${errorCotizacion?.message || ''}` });
   }
   const numero: string = cotizacion.numero_cotizacion;
-  const asunto = asuntoDe(tipo, numero);
+  const asunto = asuntoCorreoMaternidad(tipo, numero);
 
-  const adjuntos: { tipo: string; nombre: string; path: string }[] = [];
+  let adjuntos: { tipo: string; nombre: string }[] = [];
   try {
-    const documentos = await generarDocumentosMaternidad({
-      idSolicitud,
-      numeroCotizacion: numero,
-      nombreMadre: solicitud.nombre_madre,
-      cedula: solicitud.cedula,
-      semanasGestacion: solicitud.semanas_gestacion,
-      correo: solicitud.correo,
-      telefono: solicitud.telefono,
-      medicoGinecologo: solicitud.medico_ginecologo,
-      aseguradora: aseguradoraSolicitud,
-      tour,
-      config,
-    });
-
-    for (const documento of documentos) {
-      const path = `${idSolicitud}/${numero}-${documento.tipo}.pdf`;
-      const { error } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, Buffer.from(documento.contenido), { contentType: 'application/pdf', upsert: true });
-      if (error) throw new Error(`No se pudo guardar ${documento.nombre}: ${error.message}`);
-      adjuntos.push({ tipo: documento.tipo, nombre: documento.nombre, path });
-    }
-    // Los PDF quedan guardados aunque luego falle el correo (se pueden reimprimir o reenviar)
-    await supabase.from('maternidad_cotizacion')
-      .update({ archivos: adjuntos, updated_at: new Date().toISOString() })
-      .eq('id_cotizacion_mat', cotizacion.id_cotizacion_mat);
-
-    const info = await enviarCorreo(
-      asunto,
-      aseguradoraSolicitud,
-      tour,
-      documentos.map(d => ({ nombre: d.nombre, contenido: Buffer.from(d.contenido) })),
-    );
+    const documentos = await armarPresupuesto(numero, config, tour, cotizacion.fecha_emision);
+    adjuntos = nombresAdjuntos(documentos);
+    const info = await enviarCorreo(asunto, numero, aseguradoraSolicitud, tour, documentos);
 
     await supabase.from('maternidad_cotizacion').update({
       estado: 'enviada',

@@ -14,7 +14,7 @@ import {
   enviarCotizacionMaternidad,
   getCotizacionesBySolicitud,
   getEnviosCorreoBySolicitud,
-  getUrlAdjuntoMaternidad,
+  generarPdfCotizacionMaternidad,
   mensajeErrorMaternidad,
   updateEstadoSolicitudMaternidad,
 } from '../../lib/maternidadService';
@@ -50,6 +50,7 @@ export function MaternidadSolicitudDialog({
   const [envios, setEnvios] = useState<MaternidadEnvioCorreo[]>([]);
   const [cotizaciones, setCotizaciones] = useState<MaternidadCotizacion[]>([]);
   const [reenviandoId, setReenviandoId] = useState<number | null>(null);
+  const [imprimiendoId, setImprimiendoId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEnviando, setIsEnviando] = useState(false);
   const [estado, setEstado] = useState<EstadoSolicitudMaternidad>('solo_cotizacion');
@@ -131,11 +132,16 @@ export function MaternidadSolicitudDialog({
   const numeroDeCotizacion = (id: number | null) =>
     cotizaciones.find(c => c.id_cotizacion_mat === id)?.numero_cotizacion || '—';
 
-  const handleAbrirAdjunto = async (path: string) => {
+  // El presupuesto no se guarda: se vuelve a armar con el número, la fecha y los valores de la cotización
+  const handleImprimir = async (cotizacion: MaternidadCotizacion) => {
+    if (!solicitud) return;
+    setImprimiendoId(cotizacion.id_cotizacion_mat);
     try {
-      window.open(await getUrlAdjuntoMaternidad(path), '_blank', 'noopener');
+      window.open(await generarPdfCotizacionMaternidad(solicitud, cotizacion), '_blank', 'noopener');
     } catch {
-      toast.error('No se pudo abrir el archivo');
+      toast.error('No se pudo generar el presupuesto');
+    } finally {
+      setImprimiendoId(null);
     }
   };
 
@@ -227,7 +233,6 @@ export function MaternidadSolicitudDialog({
                 </TableHeader>
                 <TableBody>
                   {cotizaciones.map(c => {
-                    const presupuesto = (c.archivos || []).find(a => a.tipo === 'presupuesto');
                     return (
                       <TableRow key={c.id_cotizacion_mat}>
                         <TableCell className="font-mono text-xs font-semibold whitespace-nowrap">{c.numero_cotizacion}</TableCell>
@@ -253,31 +258,34 @@ export function MaternidadSolicitudDialog({
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex flex-wrap justify-end gap-1">
-                            {presupuesto && (
-                              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => handleAbrirAdjunto(presupuesto.path)} title="Ver / imprimir el presupuesto">
-                                <Printer className="size-3 mr-1" /> Imprimir
-                              </Button>
-                            )}
-                            {(c.archivos || []).filter(a => a.tipo !== 'presupuesto').map(a => (
-                              <Button key={a.path} size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => handleAbrirAdjunto(a.path)}>
-                                <FileText className="size-3 mr-1" />{ETIQUETA_ADJUNTO[a.tipo] || a.nombre}
-                              </Button>
-                            ))}
-                            {(c.archivos || []).length > 0 && (
+                            {c.valores && (
                               <Button
                                 size="sm"
-                                variant="ghost"
+                                variant="outline"
                                 className="h-7 px-2 text-xs"
-                                disabled={reenviandoId !== null}
-                                onClick={() => handleReenviarExistente(c)}
-                                title="Reenviar esta misma cotización (mismo número)"
+                                disabled={imprimiendoId !== null}
+                                onClick={() => handleImprimir(c)}
+                                title="Ver / imprimir el presupuesto"
                               >
-                                {reenviandoId === c.id_cotizacion_mat
+                                {imprimiendoId === c.id_cotizacion_mat
                                   ? <Loader2 className="size-3 mr-1 animate-spin" />
-                                  : <RotateCcw className="size-3 mr-1" />}
-                                Reenviar
+                                  : <Printer className="size-3 mr-1" />}
+                                Imprimir
                               </Button>
                             )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              disabled={reenviandoId !== null}
+                              onClick={() => handleReenviarExistente(c)}
+                              title="Reenviar esta misma cotización (mismo número)"
+                            >
+                              {reenviandoId === c.id_cotizacion_mat
+                                ? <Loader2 className="size-3 mr-1 animate-spin" />
+                                : <RotateCcw className="size-3 mr-1" />}
+                              Reenviar
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -322,9 +330,9 @@ export function MaternidadSolicitudDialog({
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {(e.adjuntos || []).map(a => (
-                            <Button key={a.path} size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleAbrirAdjunto(a.path)}>
+                            <Badge key={`${a.tipo}-${a.nombre}`} variant="outline" className="text-xs font-normal">
                               <FileText className="size-3 mr-1" />{ETIQUETA_ADJUNTO[a.tipo] || a.nombre}
-                            </Button>
+                            </Badge>
                           ))}
                         </div>
                       </TableCell>

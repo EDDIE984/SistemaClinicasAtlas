@@ -1196,7 +1196,8 @@ export interface MaternidadCotizacion {
 export interface MaternidadAdjuntoCorreo {
   tipo: 'presupuesto' | 'checklist' | 'boletin';
   nombre: string;
-  path: string;
+  /** Solo en registros antiguos: los PDF ya no se guardan en Storage */
+  path?: string;
 }
 
 export interface MaternidadEnvioCorreo {

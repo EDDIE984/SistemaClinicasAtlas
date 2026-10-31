@@ -17,7 +17,6 @@ import type {
 // Las tablas de maternidad no están en el tipo Database generado
 const tabla = (nombre: string) => (supabaseAdmin.from(nombre as any) as any);
 
-export const BUCKET_COTIZACIONES_MATERNIDAD = 'maternidad-cotizaciones';
 
 export const ESTADOS_SOLICITUD_MATERNIDAD: { value: EstadoSolicitudMaternidad; label: string }[] = [
   { value: 'solo_cotizacion', label: 'Solo cotización' },
@@ -396,16 +395,31 @@ export async function getCotizacionesBySolicitud(idSolicitud: number): Promise<M
   }
 }
 
-/** URL temporal (1 h) para abrir un PDF de cotización del bucket privado */
-export async function getUrlAdjuntoMaternidad(path: string): Promise<string> {
+/**
+ * Vuelve a armar en el navegador el presupuesto de una cotización (los PDF no se guardan):
+ * mismo número, fecha de emisión y valores, con los datos actuales de la solicitud. Devuelve una URL blob.
+ */
+export async function generarPdfCotizacionMaternidad(
+  solicitud: Pick<MaternidadSolicitud, 'nombre_madre' | 'cedula' | 'semanas_gestacion' | 'correo' | 'telefono' | 'medico_ginecologo'>,
+  cotizacion: Pick<MaternidadCotizacion, 'numero_cotizacion' | 'fecha_emision' | 'valores'>,
+): Promise<string> {
   try {
-    const { data, error } = await supabaseAdmin.storage
-      .from(BUCKET_COTIZACIONES_MATERNIDAD)
-      .createSignedUrl(path, 3600);
-    if (error) throw error;
-    return data.signedUrl;
+    if (!cotizacion.valores) throw new Error('La cotización no tiene valores de presupuesto');
+    // Import dinámico: el logo y la hoja membretada solo se descargan al imprimir
+    const { generarPresupuestoMembretado } = await import('../../api/_lib/presupuestoMembretado');
+    const pdf = await generarPresupuestoMembretado({
+      numeroCotizacion: cotizacion.numero_cotizacion,
+      fechaEmision: cotizacion.fecha_emision,
+      nombreMadre: solicitud.nombre_madre,
+      cedula: solicitud.cedula,
+      semanasGestacion: solicitud.semanas_gestacion,
+      correo: solicitud.correo,
+      telefono: solicitud.telefono,
+      medicoGinecologo: solicitud.medico_ginecologo,
+    }, cotizacion.valores);
+    return URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }));
   } catch (error) {
-    console.error('❌ Error al obtener URL del adjunto de maternidad:', error);
+    console.error('❌ Error al generar el PDF de la cotización de maternidad:', error);
     throw error;
   }
 }

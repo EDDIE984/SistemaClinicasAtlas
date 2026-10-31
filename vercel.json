@@ -2,6 +2,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "functions": {
+    "api/maternidad-cotizacion.ts": {
+      "includeFiles": "api/_assets/maternidad/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/consulta-cedula",
