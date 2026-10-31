@@ -12,6 +12,7 @@ import { Copy, Eye, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAseguradoraMaternidadById, updateAseguradoraMaternidad, vistaPreviaPresupuestoMaternidad } from '../../lib/maternidadService';
 import type { ConfigPresupuestoMaternidad, MaternidadAseguradora } from '../../lib/supabaseTypes';
+import { formatearUSD } from './maternidadUtils';
 
 interface MaternidadCotizacionConfigDialogProps {
   aseguradora: MaternidadAseguradora | null;
@@ -63,8 +64,6 @@ const aNumero = (valor: string) => {
   return limpio === '' ? null : Number(limpio);
 };
 const lineas = (texto: string) => texto.split('\n').map(l => l.trim()).filter(Boolean);
-const formatearUSD = (valor: number) =>
-  `$${valor.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
 
 // Las cotizaciones de maternidad son siempre estas dos (una página del PDF cada una)
 const PROCEDIMIENTOS_FIJOS = ['CESÁREA', 'PARTO NORMAL'];

@@ -86,5 +86,9 @@ export function formatFechaHora(valor?: string | null): string {
   });
 }
 
+/** $ 1,390.00 — mismo formato que el presupuesto en PDF (api/_lib/presupuestoMembretado.ts) */
+export const formatearUSD = (valor: number) =>
+  `$ ${(Number(valor) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+
 export const formatHorario = (inicio?: string | null, fin?: string | null) =>
   inicio ? `${inicio.slice(0, 5)}${fin ? ` - ${fin.slice(0, 5)}` : ''}` : '—';

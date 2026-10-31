@@ -3,11 +3,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Label } from '../ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Loader2, Send, CalendarCheck, FileText, Mail, Printer, RotateCcw, Receipt } from 'lucide-react';
+import { Loader2, Send, CalendarCheck, FileText, Mail, Printer, RotateCcw, Receipt, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ESTADOS_SOLICITUD_MATERNIDAD,
@@ -24,7 +24,7 @@ import type {
   MaternidadEnvioCorreo,
   MaternidadSolicitudVista,
 } from '../../lib/supabaseTypes';
-import { ESTADO_BADGE_MATERNIDAD, formatFechaHora, formatFechaLarga, formatHorario } from './maternidadUtils';
+import { ESTADO_BADGE_MATERNIDAD, formatFechaHora, formatFechaLarga, formatHorario, formatearUSD } from './maternidadUtils';
 
 interface MaternidadSolicitudDialogProps {
   solicitud: MaternidadSolicitudVista | null;
@@ -159,24 +159,29 @@ export function MaternidadSolicitudDialog({
   return (
     <Dialog open={!!solicitud} onOpenChange={onOpenChange}>
       <DialogContent className="maternidad-dialog-ancho">
-        <DialogHeader>
-          <DialogTitle className="flex flex-wrap items-center gap-2">
-            {solicitud.nombre_madre}
-            <Badge variant="outline" className={ESTADO_BADGE_MATERNIDAD[estado].className}>
-              {ESTADO_BADGE_MATERNIDAD[estado].label}
-            </Badge>
-          </DialogTitle>
-          <DialogDescription>
-            Solicitud #{solicitud.id_solicitud_mat} · registrada el {formatFechaHora(solicitud.created_at)} · origen {solicitud.origen === 'CHATBOT' ? 'WhatsApp' : 'Sistema'}
-          </DialogDescription>
-        </DialogHeader>
-
         <Tabs defaultValue="datos">
-          <TabsList>
-            <TabsTrigger value="datos"><FileText className="size-4 mr-1" />Datos</TabsTrigger>
-            <TabsTrigger value="cotizaciones"><Receipt className="size-4 mr-1" />Cotizaciones ({cotizaciones.length})</TabsTrigger>
-            <TabsTrigger value="correos"><Mail className="size-4 mr-1" />Correos ({envios.length})</TabsTrigger>
-          </TabsList>
+          {/* Nombre y pestañas quedan fijos arriba al desplazar tablas largas */}
+          <div className="maternidad-dialog-cabecera">
+            <DialogClose className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100" aria-label="Cerrar">
+              <X className="size-4" />
+            </DialogClose>
+            <DialogHeader>
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                {solicitud.nombre_madre}
+                <Badge variant="outline" className={ESTADO_BADGE_MATERNIDAD[estado].className}>
+                  {ESTADO_BADGE_MATERNIDAD[estado].label}
+                </Badge>
+              </DialogTitle>
+              <DialogDescription>
+                Solicitud #{solicitud.id_solicitud_mat} · registrada el {formatFechaHora(solicitud.created_at)} · origen {solicitud.origen === 'CHATBOT' ? 'WhatsApp' : 'Sistema'}
+              </DialogDescription>
+            </DialogHeader>
+            <TabsList>
+              <TabsTrigger value="datos"><FileText className="size-4 mr-1" />Datos</TabsTrigger>
+              <TabsTrigger value="cotizaciones"><Receipt className="size-4 mr-1" />Cotizaciones ({cotizaciones.length})</TabsTrigger>
+              <TabsTrigger value="correos"><Mail className="size-4 mr-1" />Correos ({envios.length})</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="datos" className="space-y-4 pt-2">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -256,7 +261,7 @@ export function MaternidadSolicitudDialog({
                             ? 'Genérica'
                             : c.resumen.map(r => (
                               <p key={r.procedimiento} className="whitespace-nowrap">
-                                {r.procedimiento}: <strong>${r.total.toLocaleString('es-EC', { minimumFractionDigits: 2 })}</strong>
+                                {r.procedimiento}: <strong>{formatearUSD(r.total)}</strong>
                               </p>
                             ))}
                         </TableCell>
