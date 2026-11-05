@@ -79,6 +79,7 @@ null value in column "id_usuario_cambio" violates not-null constraint
 | `075_maternidad_presupuesto_todas_aseguradoras.sql` | Maternidad: guarda el presupuesto del Excel (de `OTRA / PARTICULAR`) en todas las aseguradoras que aún no tienen valores propios |
 | `076_maternidad_cotizacion_numerada.sql` | Maternidad: tabla `maternidad_cotizacion` con número `COT-MAT-AAAA-NNNNNN` (trigger), valores, totales y PDF de cada cotización; `id_cotizacion_mat` en la auditoría de correos y última cotización en `vista_maternidad_solicitudes` |
 | `077_maternidad_quitar_conversacion.sql` | Maternidad: redefine `fn_maternidad_registrar` sin asociar conversación y elimina `maternidad_conversacion` (el flujo n8n guarda su propia conversación). Ejecutar después de desplegar la web |
+| `078_maternidad_presupuesto_aseguradoras_convenio.sql` | Maternidad: presupuesto propio de las 14 aseguradoras en convenio (Excel PARTO - CESAREA - SEGUROS MEDICOS EN CONVENIO): clínica $1.125 / $750, anestesiólogo y Coombs por aseguradora, sin abono, con `seguro` impreso. Sobrescribe la copia de particular de la 075. Ejecutar después de desplegar la web |
 
 ---
 

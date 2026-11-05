@@ -37,6 +37,8 @@ export interface ConfigPresupuestoMaternidad {
   adicionales: { concepto: string; valor: number; grupo?: string | null }[];
   firma: { nombre: string; cargo: string; telefono: string };
   especialidad?: string;
+  /** Formato de convenio: se imprime "Seguro Privado : …" (vacío = particular, no se imprime) */
+  seguro?: string | null;
 }
 
 const PIE = 'Clínicas Atlas  •  Quito, Ecuador  •  Este presupuesto es informativo y no constituye un contrato.';
@@ -192,6 +194,11 @@ function dibujarPagina(
   h.texto('Procedimiento:', X0, { tamano: 12, fuente: f.negrita });
   h.texto(proc.procedimiento, X_VALOR, { tamano: 12, fuente: f.negrita });
   h.bajar(20);
+  if (config.seguro) {
+    h.texto('Seguro Privado :', X0, { tamano: 10, fuente: f.negrita });
+    h.texto(config.seguro, X_VALOR, { tamano: 10.5, fuente: f.negrita });
+    h.bajar(18);
+  }
 
   // Clínica e "incluye"
   const anchoClinica = h.texto('CLÍNICA', X0 + 55, { tamano: 13, fuente: f.negrita });

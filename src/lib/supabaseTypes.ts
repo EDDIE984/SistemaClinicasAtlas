@@ -1094,6 +1094,8 @@ export interface ConfigPresupuestoMaternidad {
   adicionales: { concepto: string; valor: number; grupo?: string | null }[];
   firma: { nombre: string; cargo: string; telefono: string };
   especialidad?: string;
+  /** Formato de convenio: se imprime "Seguro Privado : …" (vacío = particular, no se imprime) */
+  seguro?: string | null;
 }
 
 export interface ConfigCotizacionMaternidad {

@@ -39,6 +39,7 @@ interface PresupuestoForm {
   adicionales: AdicionalForm[];
   firma: { nombre: string; cargo: string; telefono: string };
   especialidad: string;
+  seguro: string;
 }
 
 const PROCEDIMIENTO_VACIO: ProcedimientoForm = {
@@ -56,6 +57,7 @@ const FORM_VACIO: PresupuestoForm = {
   adicionales: [],
   firma: { nombre: '', cargo: 'Presupuestos', telefono: '' },
   especialidad: 'GINECÓLOGO',
+  seguro: '',
 };
 
 const aTexto = (valor: number | null | undefined) => (valor === null || valor === undefined ? '' : String(valor));
@@ -88,12 +90,14 @@ function aFormulario(config?: ConfigPresupuestoMaternidad | null): PresupuestoFo
     adicionales: (config?.adicionales || []).map(a => ({ grupo: a.grupo || '', concepto: a.concepto, valor: aTexto(a.valor) })),
     firma: { ...FORM_VACIO.firma, ...(config?.firma || {}) },
     especialidad: config?.especialidad || 'GINECÓLOGO',
+    seguro: config?.seguro || '',
   };
 }
 
 function aConfig(form: PresupuestoForm): ConfigPresupuestoMaternidad {
   return {
     especialidad: form.especialidad.trim() || 'GINECÓLOGO',
+    ...(form.seguro.trim() ? { seguro: form.seguro.trim().toUpperCase() } : {}),
     firma: { nombre: form.firma.nombre.trim(), cargo: form.firma.cargo.trim(), telefono: form.firma.telefono.trim() },
     adicionales: form.adicionales
       .filter(a => a.concepto.trim())
@@ -169,7 +173,8 @@ export function MaternidadCotizacionConfigDialog({ aseguradora, aseguradoras, on
   const handleCopiar = (idOrigen: string) => {
     const origen = aseguradoras.find(a => a.id_aseguradora_mat.toString() === idOrigen);
     if (!origen?.config_cotizacion?.presupuesto) return;
-    setForm(aFormulario(origen.config_cotizacion.presupuesto));
+    // El seguro impreso es propio de cada aseguradora: no se copia el de la otra
+    setForm(prev => ({ ...aFormulario(origen.config_cotizacion!.presupuesto), seguro: prev.seguro }));
     toast.info(`Valores copiados de ${origen.nombre}. Revíselos y guarde para aplicarlos.`);
   };
 
@@ -368,6 +373,10 @@ export function MaternidadCotizacionConfigDialog({ aseguradora, aseguradoras, on
               <div className="space-y-1">
                 <Label className="text-xs">Especialidad del médico</Label>
                 <Input value={form.especialidad} onChange={e => setForm(prev => ({ ...prev, especialidad: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Seguro privado (vacío = particular, no se imprime)</Label>
+                <Input value={form.seguro} placeholder="p. ej. HUMANA" onChange={e => setForm(prev => ({ ...prev, seguro: e.target.value }))} />
               </div>
             </div>
             </div>
