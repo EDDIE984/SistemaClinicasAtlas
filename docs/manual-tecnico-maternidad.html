@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manual Técnico - Módulo Maternidad</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --paper: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9dee8;
+      --soft: #eef2f7;
+      --accent: #2457c5;
+      --accent-soft: #e8efff;
+      --ok: #0f766e;
+      --ok-soft: #e6f4f1;
+      --warn: #a16207;
+      --warn-soft: #fdf6e3;
+      --danger: #b42318;
+      --danger-soft: #fdecea;
+      --code-bg: #0f172a;
+      --code-ink: #e2e8f0;
+      --shadow: 0 18px 45px rgba(16, 24, 40, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      gap: 28px;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    aside {
+      position: sticky;
+      top: 20px;
+      align-self: start;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    aside h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+    }
+
+    nav a {
+      display: block;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    nav a:hover { background: var(--accent-soft); text-decoration: none; }
+
+    main { min-width: 0; }
+
+    .hero, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 26px 30px;
+      margin-bottom: 22px;
+    }
+
+    .hero h1 { margin: 0 0 6px; font-size: 30px; }
+    .hero p { margin: 4px 0; color: var(--muted); }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    h2 { margin: 0 0 14px; font-size: 22px; }
+    h3 { margin: 22px 0 8px; font-size: 17px; }
+    p { margin: 8px 0; }
+    ul, ol { margin: 8px 0; padding-left: 22px; }
+    li { margin: 4px 0; }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-ink);
+      border-radius: 10px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre code { background: none; border: 0; padding: 0; color: inherit; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px;
+      font-size: 14px;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 9px 10px;
+    }
+
+    th { background: var(--soft); font-size: 13px; color: var(--muted); }
+    .tabla { overflow-x: auto; }
+
+    .callout {
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      border: 1px solid var(--line);
+    }
+    .callout.info { background: var(--accent-soft); border-color: #c7d6fb; }
+    .callout.ok { background: var(--ok-soft); border-color: #b7e0d8; }
+    .callout.warn { background: var(--warn-soft); border-color: #efd9a3; }
+    .callout.danger { background: var(--danger-soft); border-color: #f5c2bc; }
+    .callout strong:first-child { display: block; margin-bottom: 4px; }
+
+    .pasos { counter-reset: paso; list-style: none; padding-left: 0; }
+    .pasos > li {
+      counter-increment: paso;
+      position: relative;
+      padding: 14px 16px 14px 58px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin: 10px 0;
+    }
+    .pasos > li::before {
+      content: counter(paso);
+      position: absolute;
+      left: 16px;
+      top: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pasos h3 { margin-top: 0; }
+
+    .diagrama { overflow-x: auto; margin: 10px 0; }
+    .diagrama svg { min-width: 860px; width: 100%; height: auto; }
+
+    .chip { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; }
+    .chip.rojo { background: var(--danger-soft); color: var(--danger); }
+    .chip.rojo-fuerte { background: var(--danger); color: #fff; }
+    .chip.verde { background: var(--ok-soft); color: var(--ok); }
+    .chip.ambar { background: var(--warn-soft); color: var(--warn); }
+    .chip.gris { background: var(--soft); color: var(--muted); }
+
+    .footer { color: var(--muted); font-size: 13px; text-align: center; padding: 10px 0 30px; }
+
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; padding: 16px; }
+      aside { position: static; max-height: none; }
+      .hero, section { padding: 20px 18px; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .shell { display: block; padding: 0; }
+      aside { display: none; }
+      .hero, section { box-shadow: none; break-inside: avoid-page; }
+      pre { white-space: pre-wrap; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <h2>Índice</h2>
+    <nav>
+      <a href="#objetivo">1. Objetivo y alcance</a>
+      <a href="#concepto">2. Concepto clave</a>
+      <a href="#arquitectura">3. Arquitectura</a>
+      <a href="#tablas">4. Modelo de datos</a>
+      <a href="#flujo">5. Flujo hasta la bitácora</a>
+      <a href="#estados">6. Estados y valores</a>
+      <a href="#seguimiento">7. Seguimiento y alertas</a>
+      <a href="#historico">8. Bitácora histórica (Excel)</a>
+      <a href="#base">9. Funciones, triggers y vista</a>
+      <a href="#front">10. Servicios y pantallas</a>
+      <a href="#migraciones">11. Migraciones</a>
+      <a href="#consultas">12. Consultas de verificación</a>
+      <a href="#problemas">13. Problemas frecuentes</a>
+      <a href="#reglas">14. Reglas para modificar</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="hero">
+      <h1>Manual Técnico: Módulo Maternidad</h1>
+      <p>Cómo se guardan los datos desde la primera solicitud hasta la bitácora de tours y el seguimiento del parto.</p>
+      <p>Para desarrolladores y administradores de Supabase y n8n de Clínicas Atlas.</p>
+      <div class="meta">
+        <span class="tag">Supabase (PostgreSQL)</span>
+        <span class="tag">Vercel serverless</span>
+        <span class="tag">n8n "Clinica Atlas Maternidad"</span>
+        <span class="tag">Migraciones 072 – 082</span>
+        <span class="tag">Actualizado: noviembre 2026</span>
+      </div>
+    </div>
+
+    <section id="objetivo">
+      <h2>1. Objetivo y alcance</h2>
+      <p>Este manual describe el recorrido de los datos del módulo Maternidad: qué tabla se escribe en cada paso, quién la escribe (WhatsApp, la plataforma o la base de datos) y cómo una solicitud termina en la <strong>bitácora de tours</strong> y en el <strong>seguimiento del parto</strong>.</p>
+      <p>Cubre:</p>
+      <ul>
+        <li>registro de solicitudes desde WhatsApp y la plataforma;</li>
+        <li>proformas (cotizaciones numeradas) y correos;</li>
+        <li>estados del tour y entrada a la bitácora;</li>
+        <li>cálculo de semanas de gestación, alertas y cierre automático;</li>
+        <li>la bitácora histórica importada del Excel;</li>
+        <li>el historial automático de cada mamá.</li>
+      </ul>
+      <p>No cubre el diseño del flujo n8n (vive fuera del repositorio) ni el armado visual del PDF del presupuesto.</p>
+    </section>
+
+    <section id="concepto">
+      <h2>2. Concepto clave</h2>
+      <div class="callout info">
+        <strong>No existe una tabla "bitácora" separada.</strong>
+        Todo vive en <code>maternidad_solicitud</code>, <strong>una fila por mamá</strong>. La bitácora es el conjunto de filas cuyo estado es <code>asistio</code>. Las demás tablas guardan lo que ocurre alrededor de esa fila: proformas, correos e historial.
+      </div>
+      <p>Una mamá que primero pide proforma y días después agenda el tour <strong>sigue siendo una sola fila</strong>: la fila avanza de estado; no se crea otra.</p>
+    </section>
+
+    <section id="arquitectura">
+      <h2>3. Arquitectura</h2>
+      <div class="tabla">
+        <table>
+          <tr><th>Componente</th><th>Rol</th><th>Ubicación</th></tr>
+          <tr><td>Flujo n8n "Clinica Atlas Maternidad"</td><td>Conversa con la mamá por WhatsApp y llama al endpoint con los datos (<code>datos</code>)</td><td>Fuera del repositorio</td></tr>
+          <tr><td>Endpoint de cotizaciones</td><td>Registra la solicitud con la RPC, arma el PDF, envía el correo y deja la auditoría</td><td><code>api/maternidad-cotizacion.ts</code></td></tr>
+          <tr><td>RPC de registro</td><td>Única puerta de escritura de solicitudes nuevas: valida datos, aseguradora, turno y cupo</td><td><code>fn_maternidad_registrar</code> (última versión: 080)</td></tr>
+          <tr><td>Triggers</td><td>Historial automático, número de bitácora, fecha de las semanas y número de cotización</td><td>Migraciones 076, 079, 081, 082</td></tr>
+          <tr><td>Vista</td><td>Lo que leen las pantallas: solicitud + cálculos (semanas actuales, FPP, seguimiento, última proforma)</td><td><code>vista_maternidad_solicitudes</code></td></tr>
+          <tr><td>Web</td><td>Pantallas, servicios y hooks</td><td><code>src/components/maternidad/</code>, <code>src/lib/maternidadService.ts</code>, <code>src/hooks/useMaternidad.ts</code></td></tr>
+          <tr><td>Tareas programadas</td><td>Cierre diario de seguimientos vencidos</td><td>pg_cron <code>maternidad-cerrar-seguimientos</code> (06:00 UTC = 01:00 Ecuador)</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section id="tablas">
+      <h2>4. Modelo de datos</h2>
+      <div class="tabla">
+        <table>
+          <tr><th>Tabla / vista</th><th>Qué guarda</th><th>Quién escribe</th></tr>
+          <tr>
+            <td><code>maternidad_solicitud</code></td>
+            <td>La mamá y todo su recorrido: datos personales, semanas, aseguradora, tour (fecha, turno), estado, datos del tour realizado (asesor, horas reales, firma), número de bitácora y parto.</td>
+            <td>RPC <code>fn_maternidad_registrar</code>, la plataforma (cambios de estado, edición, parto) y los triggers.</td>
+          </tr>
+          <tr>
+            <td><code>maternidad_cotizacion</code></td>
+            <td>Cada proforma: número <code>COT-MAT-AAAA-NNNNNN</code>, aseguradora, tipo, valores usados (<code>valores</code>), totales por procedimiento (<code>resumen</code>), fechas de emisión y último envío, veces enviada.</td>
+            <td>Endpoint <code>/api/maternidad-cotizacion</code>.</td>
+          </tr>
+          <tr>
+            <td><code>maternidad_envio_correo</code></td>
+            <td>Cada intento de envío: fecha, destinatario, adjuntos, estado (<code>enviado</code> / <code>error</code>), proforma enviada.</td>
+            <td>Endpoint <code>/api/maternidad-cotizacion</code>.</td>
+          </tr>
+          <tr>
+            <td><code>maternidad_historial</code></td>
+            <td>Línea de tiempo de cada mamá: registro, tour, estado, parto, datos, cotización y correo.</td>
+            <td><strong>Solo triggers</strong>. Ningún código escribe aquí directamente.</td>
+          </tr>
+          <tr>
+            <td><code>maternidad_aseguradora</code>, <code>maternidad_horario</code></td>
+            <td>Catálogos: aseguradoras con su presupuesto (<code>config_cotizacion</code>) y turnos de tour con cupo.</td>
+            <td>Pantallas de configuración del módulo.</td>
+          </tr>
+          <tr>
+            <td><code>vista_maternidad_solicitudes</code></td>
+            <td>Solicitud + nombre de aseguradora + último correo + última cotización + <code>semanas_actuales</code>, <code>fecha_probable_parto</code>, <code>en_seguimiento</code>, <code>estado_seguimiento</code>.</td>
+            <td>Se calcula en cada consulta.</td>
+          </tr>
+        </table>
+      </div>
+
+      <h3>Columnas principales de <code>maternidad_solicitud</code></h3>
+      <div class="tabla">
+        <table>
+          <tr><th>Grupo</th><th>Columnas</th></tr>
+          <tr><td>Mamá</td><td><code>nombre_madre</code>, <code>cedula</code>, <code>correo</code>, <code>telefono</code>, <code>medico_ginecologo</code>, <code>id_aseguradora_mat</code>, <code>seguro_texto</code> (seguro del Excel sin coincidencia), <code>remote_jid</code> (WhatsApp)</td></tr>
+          <tr><td>Semanas</td><td><code>semanas_gestacion</code> y <code>fecha_semanas</code>, la fecha a la que corresponden esas semanas</td></tr>
+          <tr><td>Tour</td><td><code>id_horario_mat</code>, <code>fecha_tour</code>, <code>hora_inicio</code>, <code>hora_fin</code>, <code>fecha_agendamiento_tour</code></td></tr>
+          <tr><td>Estado</td><td><code>estado</code>, <code>motivo_estado</code>, <code>origen</code>, <code>creado_por</code>, <code>actualizado_por</code></td></tr>
+          <tr><td>Tour realizado (bitácora)</td><td><code>numero_bitacora</code>, <code>asesor</code>, <code>hora_inicio_real</code>, <code>hora_fin_real</code>, <code>firma_paciente</code></td></tr>
+          <tr><td>Parto</td><td><code>resultado_parto</code>, <code>fecha_parto</code>, <code>tipo_parto</code>, <code>observacion_parto</code></td></tr>
+        </table>
+      </div>
+      <p><code>cedula</code>, <code>correo</code> y <code>telefono</code> son opcionales en la base solo por el histórico del Excel; la RPC los sigue exigiendo para todo registro nuevo.</p>
+    </section>
+
+    <section id="flujo">
+      <h2>5. Flujo hasta la bitácora</h2>
+      <div class="diagrama" role="img" aria-label="Diagrama del flujo de datos del módulo Maternidad">
+        <svg viewBox="0 0 980 360" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+          <defs>
+            <marker id="flecha" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#667085" />
+            </marker>
+          </defs>
+          <!-- Entradas -->
+          <rect x="10" y="30" width="180" height="50" rx="10" fill="#e8efff" stroke="#2457c5" />
+          <text x="100" y="52" text-anchor="middle" font-weight="bold" fill="#172033">WhatsApp (n8n)</text>
+          <text x="100" y="69" text-anchor="middle" fill="#667085">/api/maternidad-cotizacion</text>
+          <rect x="10" y="110" width="180" height="50" rx="10" fill="#e8efff" stroke="#2457c5" />
+          <text x="100" y="132" text-anchor="middle" font-weight="bold" fill="#172033">Plataforma</text>
+          <text x="100" y="149" text-anchor="middle" fill="#667085">Nueva solicitud / Agendar</text>
+          <rect x="10" y="270" width="180" height="50" rx="10" fill="#fdf6e3" stroke="#a16207" />
+          <text x="100" y="292" text-anchor="middle" font-weight="bold" fill="#172033">Excel histórico</text>
+          <text x="100" y="309" text-anchor="middle" fill="#667085">importar-bitacora (472)</text>
+          <!-- RPC -->
+          <rect x="240" y="70" width="190" height="50" rx="10" fill="#ffffff" stroke="#172033" />
+          <text x="335" y="92" text-anchor="middle" font-weight="bold" fill="#172033">fn_maternidad_registrar</text>
+          <text x="335" y="109" text-anchor="middle" fill="#667085">misma cédula = misma fila</text>
+          <line x1="190" y1="55" x2="238" y2="88" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+          <line x1="190" y1="135" x2="238" y2="104" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+          <!-- Solicitud -->
+          <rect x="480" y="60" width="200" height="70" rx="10" fill="#172033" />
+          <text x="580" y="88" text-anchor="middle" font-weight="bold" fill="#ffffff">maternidad_solicitud</text>
+          <text x="580" y="108" text-anchor="middle" fill="#cbd5e1">una fila por mamá</text>
+          <line x1="430" y1="95" x2="478" y2="95" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+          <!-- Proforma -->
+          <rect x="730" y="20" width="230" height="44" rx="10" fill="#ffffff" stroke="#2457c5" />
+          <text x="845" y="47" text-anchor="middle" fill="#172033">maternidad_cotizacion (COT-MAT)</text>
+          <rect x="730" y="76" width="230" height="44" rx="10" fill="#ffffff" stroke="#2457c5" />
+          <text x="845" y="103" text-anchor="middle" fill="#172033">maternidad_envio_correo</text>
+          <line x1="680" y1="85" x2="728" y2="45" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+          <line x1="680" y1="98" x2="728" y2="98" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+          <!-- Historial -->
+          <rect x="730" y="150" width="230" height="44" rx="10" fill="#eef2f7" stroke="#667085" stroke-dasharray="5 4" />
+          <text x="845" y="177" text-anchor="middle" fill="#172033">maternidad_historial (triggers)</text>
+          <line x1="680" y1="118" x2="728" y2="165" stroke="#667085" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#flecha)" />
+          <!-- Estados -->
+          <rect x="480" y="170" width="200" height="50" rx="10" fill="#ffffff" stroke="#172033" />
+          <text x="580" y="192" text-anchor="middle" font-weight="bold" fill="#172033">Marcar "Asistió"</text>
+          <text x="580" y="209" text-anchor="middle" fill="#667085">asesor · horas · firma · #474…</text>
+          <line x1="580" y1="130" x2="580" y2="168" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+          <!-- Bitácora -->
+          <rect x="430" y="255" width="300" height="60" rx="12" fill="#e6f4f1" stroke="#0f766e" stroke-width="2" />
+          <text x="580" y="280" text-anchor="middle" font-weight="bold" fill="#0f766e">BITÁCORA = estado "asistio"</text>
+          <text x="580" y="299" text-anchor="middle" fill="#172033">Bitácora de Tours · Reportes · Alertas</text>
+          <line x1="580" y1="220" x2="580" y2="253" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+          <line x1="190" y1="295" x2="428" y2="288" stroke="#a16207" stroke-width="1.5" marker-end="url(#flecha)" />
+          <!-- Seguimiento -->
+          <rect x="770" y="255" width="190" height="60" rx="10" fill="#fdecea" stroke="#b42318" />
+          <text x="865" y="280" text-anchor="middle" font-weight="bold" fill="#b42318">Seguimiento</text>
+          <text x="865" y="299" text-anchor="middle" fill="#172033">20–40 sem · parto / cierre</text>
+          <line x1="730" y1="285" x2="768" y2="285" stroke="#667085" stroke-width="1.5" marker-end="url(#flecha)" />
+        </svg>
+      </div>
+
+      <ol class="pasos">
+        <li>
+          <h3>Registro de la solicitud</h3>
+          <p>La mamá escribe por WhatsApp, o la secretaria la registra en la plataforma. Ambos caminos terminan en <code>fn_maternidad_registrar</code>:</p>
+          <ul>
+            <li>Busca una solicitud <strong>abierta de la misma cédula</strong>: en <code>solo_cotizacion</code>, o en <code>agendada</code> / <code>confirmada</code> con tour de hoy en adelante. Si la encuentra, la <strong>actualiza</strong>; si no, <strong>crea</strong> una fila nueva.</li>
+            <li>Sin fecha de tour, la fila queda en <code>solo_cotizacion</code>. Con fecha, valida que el turno exista, que no haya pasado y que tenga cupo, y queda en <code>agendada</code>.</li>
+            <li>Errores con prefijo: <code>DATOS_INCOMPLETOS</code>, <code>CORREO_INVALIDO</code>, <code>ASEGURADORA_INVALIDA</code>, <code>HORARIO_INVALIDO</code>, <code>FECHA_PASADA</code>, <code>SIN_CUPO</code>, <code>SOLICITUD_NO_EXISTE</code>.</li>
+          </ul>
+          <p><strong>Triggers que se disparan:</strong></p>
+          <ul>
+            <li><code>trg_maternidad_fecha_semanas</code>: pone <code>fecha_semanas</code>;</li>
+            <li><code>trg_maternidad_historial_solicitud</code>: escribe "Solicitud registrada desde WhatsApp / el sistema" y, si trae fecha, "Tour agendado para…".</li>
+          </ul>
+          <div class="callout warn"><strong>Desde la migración 080 la coincidencia es solo por cédula.</strong> Un mismo WhatsApp puede escribir por varias mamás (por ejemplo el esposo); con otra cédula se crea otra fila.</div>
+        </li>
+        <li>
+          <h3>Proforma y correo</h3>
+          <p>El endpoint <code>/api/maternidad-cotizacion</code> arma el presupuesto con la configuración de la aseguradora y envía el correo con el presupuesto, el checklist y el boletín:</p>
+          <ul>
+            <li>Inserta en <code>maternidad_cotizacion</code>. <code>trg_maternidad_numero_cotizacion</code> asigna el número <code>COT-MAT-AAAA-NNNNNN</code>, y se guardan los valores usados y los totales por procedimiento.</li>
+            <li>Inserta en <code>maternidad_envio_correo</code> el resultado, enviado o con error.</li>
+            <li><strong>Reenviar</strong> con <code>id_cotizacion_mat</code> vuelve a armar la misma proforma (mismo número y valores) e incrementa <code>veces_enviada</code>. Si cambió la aseguradora, la web emite una proforma nueva.</li>
+            <li>Límite: 5 envíos por hora por solicitud. Si la solicitud no tiene correo, responde 400.</li>
+          </ul>
+          <p>El historial registra "Cotización COT-… emitida" y "Proforma enviada a…". Si la mamá no agenda tour, aparece en <strong>Seguimiento Proformas</strong>.</p>
+        </li>
+        <li>
+          <h3>Estado del tour</h3>
+          <p>Desde el detalle de la solicitud, el operario usa "Cambiar estado" (<code>MaternidadEstadoDialog</code>):</p>
+          <ul>
+            <li>actualiza <code>estado</code>, <code>motivo_estado</code> (obligatorio para Cancelada y No asistió) y <code>actualizado_por</code>;</li>
+            <li>el historial registra, por ejemplo, "Estado: Tour agendado → Cancelada. Motivo: …";</li>
+            <li>reagendar el tour vuelve a pasar por la RPC, que valida el cupo; el historial registra "Tour reagendado: … → …".</li>
+          </ul>
+        </li>
+        <li>
+          <h3>Entrada a la bitácora</h3>
+          <p>Al marcar <strong>"Asistió"</strong>, el diálogo pide asesor, hora real de inicio y fin, y si la paciente firmó. Se guardan en la misma fila y:</p>
+          <ul>
+            <li><code>trg_maternidad_numero_bitacora</code> asigna el número siguiente. Arranca en el <strong>#474</strong> porque el Excel llegó hasta el #473; usa un bloqueo para que dos tours no reciban el mismo número.</li>
+            <li>El historial registra "Tour realizado el … · asesor … · firmó".</li>
+          </ul>
+          <p>Desde ese momento la mamá aparece en <strong>Bitácora de Tours</strong>, en <strong>Reportes</strong> y, según sus semanas, en las <strong>alertas</strong>.</p>
+        </li>
+        <li>
+          <h3>Seguimiento hasta el parto</h3>
+          <p>Las semanas no se actualizan con un proceso diario: la vista las <strong>calcula en cada consulta</strong>. Las acciones posibles son:</p>
+          <ul>
+            <li><strong>Actualizar semanas</strong> (panel de alertas o Editar datos): <code>fecha_semanas</code> pasa a hoy y el cálculo parte del dato nuevo.</li>
+            <li><strong>Registrar parto</strong>: <code>resultado_parto = 'clinica'</code> con fecha y tipo; deja de estar en alerta.</li>
+            <li><strong>Cerrar seguimiento</strong> (manual, con motivo) o el <strong>cierre automático</strong> después de 40 semanas: <code>resultado_parto = 'perdida'</code>.</li>
+          </ul>
+          <p>Cada cambio queda en el historial ("Parto: …", "Datos actualizados: semanas 30 → 35").</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="estados">
+      <h2>6. Estados y valores</h2>
+      <h3>Estado del tour (<code>estado</code>)</h3>
+      <div class="tabla">
+        <table>
+          <tr><th>Valor</th><th>Significado</th><th>Cómo se llega</th></tr>
+          <tr><td><code>solo_cotizacion</code></td><td>Recibió proforma, sin tour</td><td>RPC sin fecha de tour</td></tr>
+          <tr><td><code>agendada</code></td><td>Tour con fecha y turno</td><td>RPC con fecha (también al reagendar)</td></tr>
+          <tr><td><code>confirmada</code></td><td>La mamá confirmó que asistirá</td><td>Cambiar estado</td></tr>
+          <tr><td><code>asistio</code></td><td><strong>Tour realizado: está en la bitácora</strong></td><td>Cambiar estado → Asistió (pide asesor, horas, firma)</td></tr>
+          <tr><td><code>no_asistio</code></td><td>No se presentó</td><td>Cambiar estado (motivo obligatorio)</td></tr>
+          <tr><td><code>cancelada</code></td><td>Cancelada; libera el cupo del turno</td><td>Cambiar estado o "Cancelar tour" en la agenda (motivo obligatorio)</td></tr>
+        </table>
+      </div>
+
+      <h3>Origen (<code>origen</code>)</h3>
+      <ul>
+        <li><code>CHATBOT</code>: WhatsApp (n8n).</li>
+        <li><code>SISTEMA</code>: registrado en la plataforma.</li>
+        <li><code>BITACORA</code>: tour cargado desde el Excel histórico. No tiene cédula, correo, turno ni proformas; la agenda y el embudo comercial lo excluyen.</li>
+      </ul>
+
+      <h3>Parto (<code>resultado_parto</code>)</h3>
+      <ul>
+        <li><code>pendiente</code>: valor por defecto.</li>
+        <li><code>clinica</code>: dio a luz en la clínica; exige <code>fecha_parto</code> y <code>tipo_parto</code> (<code>normal</code> / <code>cesarea</code>).</li>
+        <li><code>perdida</code>: seguimiento cerrado, manual con motivo o automático después de 40 semanas.</li>
+      </ul>
+      <p>El parto es <strong>independiente del estado del tour</strong>: una mamá puede estar en "Asistió" y "Dio a luz en la clínica" a la vez.</p>
+    </section>
+
+    <section id="seguimiento">
+      <h2>7. Seguimiento y alertas</h2>
+      <h3>Cálculos de la vista</h3>
+      <pre><code>semanas_actuales     = semanas_gestacion + (hoy_ecuador − fecha_semanas) / 7      -- 1 decimal
+fecha_probable_parto = fecha_semanas + (40 − semanas_gestacion) * 7 días
+en_seguimiento       = estado = 'asistio'
+                       OR (estado = 'solo_cotizacion' AND al menos un correo enviado)</code></pre>
+
+      <h3>Estado de seguimiento (<code>estado_seguimiento</code>)</h3>
+      <div class="tabla">
+        <table>
+          <tr><th>Valor</th><th>Regla</th><th>En pantalla</th></tr>
+          <tr><td><code>parto_clinica</code></td><td><code>resultado_parto = 'clinica'</code></td><td><span class="chip verde">Dio a luz en la clínica</span></td></tr>
+          <tr><td><code>perdida</code></td><td><code>resultado_parto = 'perdida'</code></td><td><span class="chip gris">Ya está perdida</span></td></tr>
+          <tr><td><code>sin_semanas</code></td><td>Sin semanas registradas</td><td><span class="chip gris">Sin semanas</span></td></tr>
+          <tr><td><code>vencida</code></td><td>Más de 40 semanas, aún sin cerrar</td><td><span class="chip gris">Ya está perdida</span></td></tr>
+          <tr><td><code>llamar</code></td><td>De 37 a 40 semanas</td><td><span class="chip rojo-fuerte">Llamar a seguimiento</span> (alerta)</td></tr>
+          <tr><td><code>seguimiento</code></td><td>De 20 a 36 semanas</td><td><span class="chip rojo">En seguimiento</span> (alerta)</td></tr>
+          <tr><td><code>temprana</code></td><td>Menos de 20 semanas</td><td><span class="chip ambar">Pendiente</span></td></tr>
+        </table>
+      </div>
+      <p>Las reglas viven <strong>solo en SQL</strong> (<code>fn_maternidad_semanas_actuales</code> y <code>fn_maternidad_estado_seguimiento</code>). La web solo lee los campos de la vista.</p>
+
+      <h3>Alertas rojas</h3>
+      <ul>
+        <li>Las ve <strong>solo el perfil <code>maternidad</code></strong>: una franja roja fija en todas las pantallas (<code>MaternidadAlertasBanner</code>, montada en <code>Dashboard.tsx</code>) y un contador junto a "Bitácora de Tours".</li>
+        <li>Alcance: <code>en_seguimiento = true</code> y estado <code>llamar</code> o <code>seguimiento</code>.</li>
+        <li>El hook <code>useAlertasMaternidad</code> recarga cada 5 minutos y al navegar. Antes de cargar ejecuta el cierre de vencidos.</li>
+        <li>Acciones del panel: llamar (enlace <code>tel:</code>), WhatsApp, actualizar semanas, registrar parto / cerrar seguimiento y ver el detalle.</li>
+      </ul>
+
+      <h3>Cierre automático</h3>
+      <p><code>fn_maternidad_cerrar_seguimientos_vencidos()</code> pone <code>resultado_parto = 'perdida'</code> a las solicitudes en seguimiento, pendientes y con más de 40 semanas actuales. Deja la observación "Cierre automático: superó 40 semanas sin parto registrado" con el usuario "Sistema (seguimiento automático)". Corre:</p>
+      <ul>
+        <li>todos los días con pg_cron (job <code>maternidad-cerrar-seguimientos</code>, 06:00 UTC);</li>
+        <li>cada vez que la app carga las alertas.</li>
+      </ul>
+      <p>Solo cierra lo que está vencido, así que ejecutarla varias veces no cambia nada.</p>
+    </section>
+
+    <section id="historico">
+      <h2>8. Bitácora histórica (Excel)</h2>
+      <p>El Excel <code>BITACORA TOUR MATERNIDAD SEGUIMIENTO</code> se cargó con <code>scripts/importar-bitacora-maternidad.mjs</code>. Cada fila entró a <code>maternidad_solicitud</code> así:</p>
+      <ul>
+        <li><code>origen = 'BITACORA'</code>, <code>estado = 'asistio'</code>, <code>numero_bitacora</code> = columna <code>#</code>.</li>
+        <li><code>fecha_tour</code>, <code>created_at</code> y <code>fecha_semanas</code> = FECHA del Excel.</li>
+        <li>Asesor: VQ se cargó como VALERIA QUEZADA; las demás iniciales (AC, CELESTE, MC, MLS, LORE, LS) quedaron tal cual.</li>
+        <li>SEGURO: si coincide con el catálogo va a <code>id_aseguradora_mat</code> (NO y PARTICULAR → OTRA / PARTICULAR; PALIG → Pan American Life; AIG → AIGMETROPOLITANA). Si no coincide, queda en <code>seguro_texto</code>.</li>
+        <li>Semanas escritas como texto ("ABRIL") quedan vacías, con nota. Teléfonos se normalizan con el 0 inicial.</li>
+        <li>La columna DETALLE no se cargó y se omitió la fila "(REPE)".</li>
+      </ul>
+      <p>Resultado: 472 tours (#1 a #473, sin el #3). El script se puede volver a ejecutar: salta los números ya cargados.</p>
+      <div class="callout danger"><strong>Datos personales.</strong> El Excel tiene nombres y teléfonos de pacientes. Está en <code>.gitignore</code>; no debe subirse al repositorio.</div>
+    </section>
+
+    <section id="base">
+      <h2>9. Funciones, triggers y vista</h2>
+      <h3>Triggers</h3>
+      <div class="tabla">
+        <table>
+          <tr><th>Trigger</th><th>Tabla / momento</th><th>Qué hace</th></tr>
+          <tr><td><code>trg_maternidad_fecha_semanas</code></td><td>solicitud · BEFORE INSERT/UPDATE</td><td>Fija <code>fecha_semanas</code> al insertar; la pasa a hoy cuando cambian las semanas</td></tr>
+          <tr><td><code>trg_maternidad_numero_bitacora</code></td><td>solicitud · BEFORE INSERT/UPDATE</td><td>Asigna <code>numero_bitacora</code> al pasar a <code>asistio</code> (desde #474)</td></tr>
+          <tr><td><code>trg_maternidad_historial_solicitud</code></td><td>solicitud · AFTER INSERT/UPDATE</td><td>Registro, tour, estado, tour realizado, parto y datos editados en el historial</td></tr>
+          <tr><td><code>trg_maternidad_numero_cotizacion</code></td><td>cotización · BEFORE INSERT</td><td>Número <code>COT-MAT-AAAA-NNNNNN</code></td></tr>
+          <tr><td><code>trg_maternidad_historial_cotizacion</code></td><td>cotización · AFTER INSERT</td><td>"Cotización … emitida"</td></tr>
+          <tr><td><code>trg_maternidad_historial_correo</code></td><td>envío de correo · AFTER INSERT</td><td>"Proforma enviada a …" o "Error al enviar …"</td></tr>
+        </table>
+      </div>
+      <h3>Funciones</h3>
+      <ul>
+        <li><code>fn_maternidad_registrar(...)</code>: registro o actualización de solicitudes (RPC usada por la web y el endpoint).</li>
+        <li><code>fn_maternidad_cerrar_seguimientos_vencidos()</code>: cierre automático; devuelve cuántas cerró.</li>
+        <li><code>fn_maternidad_semanas_actuales(semanas, fecha)</code> y <code>fn_maternidad_estado_seguimiento(resultado, semanas, fecha)</code>: reglas del seguimiento.</li>
+        <li><code>fn_maternidad_etiqueta_*</code>: textos legibles para el historial (estado, tour, parto, tour realizado).</li>
+      </ul>
+    </section>
+
+    <section id="front">
+      <h2>10. Servicios y pantallas</h2>
+      <p>Toda lectura y escritura pasa por <code>src/lib/maternidadService.ts</code>. Los hooks están en <code>src/hooks/useMaternidad.ts</code>. Las consultas de solicitudes se piden por páginas, porque Supabase devuelve como máximo 1000 filas.</p>
+      <div class="tabla">
+        <table>
+          <tr><th>Pantalla</th><th>Qué hace</th><th>Datos</th></tr>
+          <tr><td>Tours Maternidad (agenda)</td><td>Agenda semanal, registrar, agendar, cancelar tours</td><td>Solicitudes sin origen <code>BITACORA</code></td></tr>
+          <tr><td>Seguimiento Proformas</td><td>Proformas enviadas sin tour; registrar parto</td><td><code>fecha_tour</code> nula y correo enviado</td></tr>
+          <tr><td>Bitácora de Tours</td><td>Registro operativo de tours realizados, exportar en el formato original</td><td><code>estado = 'asistio'</code></td></tr>
+          <tr><td>Reportes Maternidad</td><td>Reporte único: tours y seguimiento, proformas con valores y envíos, embudo comercial, detalle y Excel de lo filtrado</td><td>Bitácora + cotizaciones + envíos + historial</td></tr>
+          <tr><td>Detalle de la solicitud</td><td>Datos, estado, parto, cotizaciones, correos e historial</td><td>Una fila de la vista</td></tr>
+        </table>
+      </div>
+      <p>Funciones de escritura principales: <code>updateEstadoSolicitudMaternidad</code>, <code>updateDatosSolicitudMaternidad</code>, <code>updatePartoSolicitudMaternidad</code>, <code>updateSemanasMaternidad</code> y <code>enviarCotizacionMaternidad</code>. Todas reciben el usuario y escriben <code>actualizado_por</code>.</p>
+    </section>
+
+    <section id="migraciones">
+      <h2>11. Migraciones</h2>
+      <div class="tabla">
+        <table>
+          <tr><th>Archivo</th><th>Contenido</th></tr>
+          <tr><td><code>072</code> – <code>078</code></td><td>Módulo base: tablas, RPC, cotizaciones numeradas, presupuestos por aseguradora</td></tr>
+          <tr><td><code>079_maternidad_parto_historial</code></td><td>Parto, <code>motivo_estado</code>, <code>actualizado_por</code>, tabla <code>maternidad_historial</code> y sus triggers</td></tr>
+          <tr><td><code>080_maternidad_coincidencia_por_cedula</code></td><td>La RPC reutiliza la solicitud abierta solo por cédula; recuperación de una solicitud sobrescrita</td></tr>
+          <tr><td><code>081_maternidad_bitacora</code></td><td>Origen <code>BITACORA</code>, columnas del tour realizado, número de bitácora</td></tr>
+          <tr><td><code>082_maternidad_alertas_seguimiento</code></td><td><code>fecha_semanas</code>, cálculos de la vista, <code>perdida</code>, cierre automático, pg_cron, limpieza de pruebas</td></tr>
+        </table>
+      </div>
+      <p>Se ejecutan en el SQL Editor de Supabase, en orden y <strong>antes</strong> de desplegar la web que las necesita. El índice está en <code>src/supabase/INDICE_SCRIPTS.md</code>.</p>
+    </section>
+
+    <section id="consultas">
+      <h2>12. Consultas de verificación</h2>
+      <h3>Historial de una mamá</h3>
+      <pre><code>SELECT created_at, tipo, descripcion, usuario
+FROM maternidad_historial
+WHERE id_solicitud_mat = 123
+ORDER BY created_at;</code></pre>
+      <h3>Bitácora por origen y numeración</h3>
+      <pre><code>SELECT origen, COUNT(*), MIN(numero_bitacora), MAX(numero_bitacora)
+FROM maternidad_solicitud
+WHERE estado = 'asistio'
+GROUP BY origen;</code></pre>
+      <h3>Alertas y estado de seguimiento</h3>
+      <pre><code>SELECT estado_seguimiento, COUNT(*)
+FROM vista_maternidad_solicitudes
+WHERE en_seguimiento
+GROUP BY 1 ORDER BY 1;</code></pre>
+      <h3>Proformas con valores y envíos</h3>
+      <pre><code>SELECT c.numero_cotizacion, s.nombre_madre, c.aseguradora, c.resumen,
+       c.fecha_emision, c.fecha_envio, c.veces_enviada
+FROM maternidad_cotizacion c
+JOIN maternidad_solicitud s USING (id_solicitud_mat)
+ORDER BY c.fecha_envio DESC;</code></pre>
+      <h3>Tours pasados sin marcar asistencia</h3>
+      <pre><code>SELECT id_solicitud_mat, nombre_madre, fecha_tour, estado
+FROM maternidad_solicitud
+WHERE estado IN ('agendada', 'confirmada')
+  AND fecha_tour &lt; (NOW() AT TIME ZONE 'America/Guayaquil')::date;</code></pre>
+      <h3>Estado del cierre automático</h3>
+      <pre><code>SELECT public.fn_maternidad_cerrar_seguimientos_vencidos();   -- devuelve cuántas cerró
+SELECT jobname, schedule FROM cron.job WHERE jobname = 'maternidad-cerrar-seguimientos';</code></pre>
+    </section>
+
+    <section id="problemas">
+      <h2>13. Problemas frecuentes</h2>
+      <div class="tabla">
+        <table>
+          <tr><th>Síntoma</th><th>Causa probable</th><th>Solución</th></tr>
+          <tr><td>Una mamá no aparece en la bitácora</td><td>El tour no se marcó como "Asistió"</td><td>Revisar el aviso de tours pasados sin marcar y cambiar el estado</td></tr>
+          <tr><td>Alerta con semanas equivocadas</td><td>Las semanas registradas eran antiguas o erróneas</td><td>"Actualizar semanas" en el panel: <code>fecha_semanas</code> pasa a hoy</td></tr>
+          <tr><td>Una mamá cerrada como perdida sí dio a luz en la clínica</td><td>Cierre automático después de 40 semanas</td><td>Registrar parto → "Dio a luz en la clínica" con fecha y tipo</td></tr>
+          <tr><td>El historial muestra usuario vacío</td><td>Una escritura no llenó <code>actualizado_por</code></td><td>Toda escritura a <code>maternidad_solicitud</code> debe enviar el usuario</td></tr>
+          <tr><td>WhatsApp devuelve <code>SIN_CUPO</code> o <code>HORARIO_INVALIDO</code></td><td>Turno lleno, inexistente o no corresponde al día</td><td>Revisar <code>maternidad_horario</code> y la disponibilidad</td></tr>
+          <tr><td>"Reenviar cotización" deshabilitado</td><td>La solicitud no tiene correo (típico en la bitácora histórica)</td><td>Agregar el correo en "Editar datos"</td></tr>
+          <tr><td>Error 429 al enviar</td><td>Más de 5 envíos en una hora para la misma solicitud</td><td>Esperar o revisar el flujo que reenvía</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section id="reglas">
+      <h2>14. Reglas para modificar</h2>
+      <ul>
+        <li><strong>Usuario en cada escritura:</strong> toda escritura a <code>maternidad_solicitud</code> debe llenar <code>actualizado_por</code>; el historial depende de eso.</li>
+        <li><strong>Historial:</strong> no escribir en <code>maternidad_historial</code> desde la app; lo llenan los triggers.</li>
+        <li><strong>Reglas de seguimiento:</strong> los umbrales (20 / 37 / 40) se cambian solo en <code>fn_maternidad_estado_seguimiento</code> y en el cierre automático, nunca en el front.</li>
+        <li><strong>Altas de solicitudes:</strong> las solicitudes nuevas entran solo por <code>fn_maternidad_registrar</code>; no insertar directo (salvo la importación histórica).</li>
+        <li><strong>Esquema:</strong> todo cambio va en una migración numerada nueva en <code>src/supabase/</code>, sin RLS, y se agrega a <code>INDICE_SCRIPTS.md</code>.</li>
+        <li><strong>CSS:</strong> no hay build de Tailwind en vivo. Una clase nueva que no se usaba antes debe agregarse a mano al final de <code>src/index.css</code>.</li>
+        <li><strong>Tipos:</strong> <code>npx tsc</code> del proyecto no revisa tipos. Usar TypeScript 5 con un tsconfig temporal que excluya <code>src/Dockerfile</code>; el procedimiento está en <code>CLAUDE.md</code>.</li>
+        <li><strong>Datos personales:</strong> no subir archivos con datos de pacientes al repositorio.</li>
+      </ul>
+    </section>
+
+    <div class="footer">Clínicas Atlas · Sistema Médico · Manual técnico del módulo Maternidad</div>
+  </main>
+</div>
+</body>
+</html>

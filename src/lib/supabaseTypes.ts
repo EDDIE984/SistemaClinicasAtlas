@@ -1075,6 +1075,15 @@ export interface RecordatorioWhatsApp {
 
 export type EstadoSolicitudMaternidad = 'solo_cotizacion' | 'agendada' | 'confirmada' | 'asistio' | 'no_asistio' | 'cancelada';
 
+/** Seguimiento del parto, independiente del estado del tour (079) */
+/** perdida = seguimiento cerrado (superó 40 semanas, sin contacto o no dará a luz en la clínica) */
+export type ResultadoPartoMaternidad = 'pendiente' | 'clinica' | 'perdida';
+/** Calculado en vista_maternidad_solicitudes (082): alerta roja en 'seguimiento' (20–36) y 'llamar' (37–40) */
+export type EstadoSeguimientoMaternidad =
+  | 'parto_clinica' | 'perdida' | 'sin_semanas' | 'vencida' | 'llamar' | 'seguimiento' | 'temprana';
+export type TipoPartoMaternidad = 'normal' | 'cesarea';
+export type OrigenSolicitudMaternidad = 'CHATBOT' | 'SISTEMA' | 'BITACORA';
+
 // Presupuesto por aseguradora (config_cotizacion.presupuesto). Misma estructura que
 // ConfigPresupuestoMaternidad en api/_lib/presupuestoMembretado.ts, que arma el PDF.
 export interface ProcedimientoPresupuestoMaternidad {
@@ -1142,10 +1151,11 @@ export interface MaternidadHorarioDisponible {
 export interface MaternidadSolicitud {
   id_solicitud_mat: number;
   nombre_madre: string;
-  cedula: string;
+  /** null solo en tours de la bitácora histórica (Excel sin cédula) */
+  cedula: string | null;
   semanas_gestacion: number | null;
-  correo: string;
-  telefono: string;
+  correo: string | null;
+  telefono: string | null;
   medico_ginecologo: string | null;
   id_aseguradora_mat: number | null;
   id_horario_mat: number | null;
@@ -1154,12 +1164,39 @@ export interface MaternidadSolicitud {
   hora_fin: string | null;
   fecha_agendamiento_tour: string | null;
   estado: EstadoSolicitudMaternidad;
-  origen: 'CHATBOT' | 'SISTEMA';
+  /** BITACORA = tour cargado desde la bitácora histórica (Excel) */
+  origen: OrigenSolicitudMaternidad;
   remote_jid: string | null;
   notas: string | null;
   creado_por: string | null;
   created_at: string;
   updated_at: string;
+  resultado_parto: ResultadoPartoMaternidad;
+  fecha_parto: string | null;
+  tipo_parto: TipoPartoMaternidad | null;
+  observacion_parto: string | null;
+  /** Motivo del último cambio de estado */
+  motivo_estado: string | null;
+  /** Quién hizo el último cambio (lo usa el historial) */
+  actualizado_por: string | null;
+  /** Bitácora de tours (081): número correlativo y datos del tour realizado */
+  numero_bitacora: number | null;
+  asesor: string | null;
+  hora_inicio_real: string | null;
+  hora_fin_real: string | null;
+  firma_paciente: boolean | null;
+  /** Seguro escrito en la bitácora histórica sin coincidencia en el catálogo */
+  seguro_texto: string | null;
+}
+
+/** Evento de la línea de tiempo de una solicitud (maternidad_historial, lo llenan triggers) */
+export interface MaternidadHistorial {
+  id_historial_mat: number;
+  id_solicitud_mat: number;
+  tipo: 'registro' | 'estado' | 'tour' | 'parto' | 'datos' | 'cotizacion' | 'correo';
+  descripcion: string;
+  usuario: string | null;
+  created_at: string;
 }
 
 // Fila de vista_maternidad_solicitudes
@@ -1175,6 +1212,13 @@ export interface MaternidadSolicitudVista extends MaternidadSolicitud {
   ultima_cotizacion: string | null;
   ultima_cotizacion_fecha: string | null;
   cotizaciones_emitidas: number;
+  /** Seguimiento por semanas de gestación (082), recalculado en cada consulta */
+  fecha_semanas: string | null;
+  semanas_actuales: number | null;
+  fecha_probable_parto: string | null;
+  /** Tour realizado o proforma enviada sin tour */
+  en_seguimiento: boolean;
+  estado_seguimiento: EstadoSeguimientoMaternidad;
 }
 
 // Cotización numerada (076_maternidad_cotizacion_numerada.sql)
@@ -1193,6 +1237,15 @@ export interface MaternidadCotizacion {
   fecha_envio: string | null;
   veces_enviada: number;
   generado_por: string | null;
+}
+
+/** Proforma enviada con los datos de su solicitud (reporte de proformas) */
+export interface MaternidadProforma extends MaternidadCotizacion {
+  solicitud: Pick<
+    MaternidadSolicitud,
+    'id_solicitud_mat' | 'nombre_madre' | 'cedula' | 'telefono' | 'correo' | 'origen' | 'estado' | 'fecha_tour' | 'resultado_parto'
+    | 'semanas_gestacion' | 'medico_ginecologo'
+  > | null;
 }
 
 export interface MaternidadAdjuntoCorreo {

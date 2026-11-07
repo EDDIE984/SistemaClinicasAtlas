@@ -5,13 +5,12 @@ import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Baby, CalendarDays, ChevronLeft, ChevronRight, List, Loader2, Plus, RefreshCw, FileText, XCircle } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
-import { toast } from 'sonner';
 import { useHorariosMaternidad, useSolicitudesMaternidad } from '../../hooks/useMaternidad';
-import { ESTADOS_CON_TOUR, mensajeErrorMaternidad, updateEstadoSolicitudMaternidad } from '../../lib/maternidadService';
+import { ESTADOS_CON_TOUR } from '../../lib/maternidadService';
 import type { MaternidadSolicitud, MaternidadSolicitudVista } from '../../lib/supabaseTypes';
 import { MaternidadSolicitudModal } from './MaternidadSolicitudModal';
 import { MaternidadSolicitudDialog } from './MaternidadSolicitudDialog';
+import { MaternidadEstadoDialog } from './MaternidadEstadoDialog';
 import {
   ESTADO_BADGE_MATERNIDAD,
   diaSemanaISO,
@@ -49,7 +48,7 @@ export function MaternidadAgendaView({ currentUser }: MaternidadAgendaViewProps)
   const usuarioNombre = currentUser?.name || 'Sistema';
 
   const { horarios, loadHorarios } = useHorariosMaternidad();
-  const { solicitudes, isLoading, loadSolicitudes } = useSolicitudesMaternidad({ fechaTourDesde: desde, fechaTourHasta: hasta });
+  const { solicitudes, isLoading, loadSolicitudes } = useSolicitudesMaternidad({ fechaTourDesde: desde, fechaTourHasta: hasta, excluirOrigen: 'BITACORA' });
   const { solicitudes: pendientesTour, loadSolicitudes: loadPendientes } = useSolicitudesMaternidad({ estado: 'solo_cotizacion' });
 
   const tours = solicitudes.filter(s => s.estado !== 'solo_cotizacion');
@@ -59,20 +58,6 @@ export function MaternidadAgendaView({ currentUser }: MaternidadAgendaViewProps)
     loadHorarios();
     loadSolicitudes();
     loadPendientes();
-  };
-
-  // Cancelar no elimina: cambia el estado a 'cancelada' y libera el turno
-  const handleCancelarTour = async () => {
-    if (!aCancelar) return;
-    try {
-      await updateEstadoSolicitudMaternidad(aCancelar.id_solicitud_mat, 'cancelada');
-      toast.success(`Tour de ${aCancelar.nombre_madre} cancelado. El turno quedó libre.`);
-      recargar();
-    } catch (error) {
-      toast.error(mensajeErrorMaternidad(error));
-    } finally {
-      setACancelar(null);
-    }
   };
 
   const moverSemana = (semanas: number) => {
@@ -321,22 +306,14 @@ export function MaternidadAgendaView({ currentUser }: MaternidadAgendaViewProps)
         onGuardado={recargar}
       />
 
-      <AlertDialog open={!!aCancelar} onOpenChange={open => { if (!open) setACancelar(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Cancelar el tour?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El tour de <strong>{aCancelar?.nombre_madre}</strong> del {aCancelar?.dia_nombre} {aCancelar?.fecha_tour_formato} a las{' '}
-              <strong>{aCancelar?.hora_inicio?.slice(0, 5)}</strong> quedará en estado <strong>Cancelada</strong> (no se elimina)
-              y el turno quedará libre para otra reserva.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Volver</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancelarTour} className="bg-red-600 hover:bg-red-700">Cancelar tour</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Cancelar no elimina: cambia el estado a 'cancelada' (con motivo) y libera el turno */}
+      <MaternidadEstadoDialog
+        solicitud={aCancelar}
+        estadoInicial="cancelada"
+        usuarioNombre={usuarioNombre}
+        onOpenChange={open => { if (!open) setACancelar(null); }}
+        onGuardado={recargar}
+      />
 
       <MaternidadSolicitudDialog
         solicitud={detalle}

@@ -73,10 +73,10 @@ export function MaternidadSolicitudModal({
     if (!open) return;
     setFormData(solicitudBase ? {
       nombre_madre: solicitudBase.nombre_madre,
-      cedula: solicitudBase.cedula,
+      cedula: solicitudBase.cedula || '',
       semanas_gestacion: solicitudBase.semanas_gestacion?.toString() || '',
-      correo: solicitudBase.correo,
-      telefono: solicitudBase.telefono,
+      correo: solicitudBase.correo || '',
+      telefono: solicitudBase.telefono || '',
       medico_ginecologo: solicitudBase.medico_ginecologo || '',
       id_aseguradora_mat: solicitudBase.id_aseguradora_mat?.toString() || '',
       notas: solicitudBase.notas || '',
@@ -118,16 +118,16 @@ export function MaternidadSolicitudModal({
             ? datos.id_aseguradora_mat.toString() : '',
       }));
       if (!datos) {
-        toast.info('No se encontraron datos para esta cédula. Complete el formulario manualmente.');
+        toast.info('Error al traer los datos, complételos manualmente');
         return;
       }
       toast.info(
         datos.fuente === 'maternidad' ? 'Mamá con solicitud previa: datos cargados. Verifique semanas de gestación.'
           : datos.fuente === 'paciente' ? 'Paciente registrada en el sistema: datos cargados.'
-            : 'Datos del Registro Civil cargados. Complete los campos faltantes.',
+            : 'Datos cargados',
       );
     } catch {
-      toast.info('No se pudo consultar la cédula. Complete los datos manualmente.');
+      toast.info('Error al traer los datos, complételos manualmente');
     } finally {
       setIsBuscando(false);
     }

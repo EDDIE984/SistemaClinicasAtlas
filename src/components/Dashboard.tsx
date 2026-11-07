@@ -27,6 +27,8 @@ import {
   Baby,
   CalendarClock,
   ShieldCheck,
+  ClipboardCheck,
+  BookOpen,
   PieChart,
   type LucideIcon,
 } from 'lucide-react';
@@ -50,6 +52,10 @@ import { SolicitudesChatbotView } from './SolicitudesChatbotView';
 import { RecordatoriosPacientesView } from './RecordatoriosPacientesView';
 import { MaternidadAgendaView } from './maternidad/MaternidadAgendaView';
 import { MaternidadReportesView } from './maternidad/MaternidadReportesView';
+import { MaternidadSeguimientoView } from './maternidad/MaternidadSeguimientoView';
+import { MaternidadBitacoraView, CLAVE_FILTRO_BITACORA } from './maternidad/MaternidadBitacoraView';
+import { MaternidadAlertasBanner } from './maternidad/MaternidadAlertasSeguimiento';
+import { useAlertasMaternidad } from '../hooks/useMaternidad';
 import { MaternidadHorariosView } from './maternidad/MaternidadHorariosView';
 import { MaternidadAseguradorasView } from './maternidad/MaternidadAseguradorasView';
 import { getSolicitudesChatbotPendientes } from '../lib/solicitudesChatbotService';
@@ -73,7 +79,7 @@ interface DashboardProps {
 }
 
 type MenuItem = 'pacientes' | 'agenda' | 'agenda-servicios' | 'dashboard-servicios' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'chatbot-solicitudes' | 'recordatorios' | 'configuraciones' | 'planificacion' | 'interconsultas' | 'medicos-horarios'
-  | 'maternidad-agenda' | 'maternidad-reportes' | 'maternidad-horarios' | 'maternidad-aseguradoras';
+  | 'maternidad-agenda' | 'maternidad-seguimiento' | 'maternidad-bitacora' | 'maternidad-reportes' | 'maternidad-horarios' | 'maternidad-aseguradoras';
 
 // Navegación del GESTOR en dos niveles: módulo (padre) → pantallas (hijos)
 type ModuloGestor = 'consulta' | 'servicios' | 'chatbot' | 'recordatorios';
@@ -143,6 +149,8 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
     { id: 'recordatorios' as MenuItem, label: 'Recordatorio Pacientes', icon: BellRing },
     { id: 'chatbot' as MenuItem, label: 'Chatbot', icon: Bot },
     { id: 'maternidad-agenda' as MenuItem, label: 'Tours Maternidad', icon: Baby },
+    { id: 'maternidad-seguimiento' as MenuItem, label: 'Seguimiento Proformas', icon: ClipboardCheck },
+    { id: 'maternidad-bitacora' as MenuItem, label: 'Bitácora de Tours', icon: BookOpen },
     { id: 'maternidad-reportes' as MenuItem, label: 'Reportes Maternidad', icon: PieChart },
     { id: 'maternidad-horarios' as MenuItem, label: 'Horarios Maternidad', icon: CalendarClock },
     { id: 'maternidad-aseguradoras' as MenuItem, label: 'Aseguradoras Maternidad', icon: ShieldCheck },
@@ -193,6 +201,20 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
   const esGestor = currentUser?.tipo_usuario === 'GESTOR';
   const moduloGestorActivo = MODULOS_GESTOR.find(modulo => modulo.hijos.includes(activeItem)) || MODULOS_GESTOR[0];
   const [pendientesChatbot, setPendientesChatbot] = useState(0);
+
+  // Alertas rojas de seguimiento de parto: solo para el perfil maternidad, en todas las pantallas
+  const esMaternidad = currentUser?.tipo_usuario === 'maternidad';
+  const alertasMaternidad = useAlertasMaternidad(esMaternidad, activeItem);
+  const [claveBitacora, setClaveBitacora] = useState(0);
+  const irABitacora = (filtro: string) => {
+    try {
+      sessionStorage.setItem(CLAVE_FILTRO_BITACORA, filtro);
+    } catch {
+      // Sin sessionStorage la bitácora abre sin filtro
+    }
+    setClaveBitacora(clave => clave + 1);
+    setActiveItem('maternidad-bitacora');
+  };
 
   // Contador de solicitudes pendientes del chatbot (se refresca al navegar y cada 60 s)
   useEffect(() => {
@@ -283,6 +305,16 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
         return <SolicitudesChatbotView currentUser={currentUser} />;
       case 'maternidad-agenda':
         return <MaternidadAgendaView currentUser={currentUser} />;
+      case 'maternidad-seguimiento':
+        return <MaternidadSeguimientoView currentUser={currentUser} />;
+      case 'maternidad-bitacora':
+        return (
+          <MaternidadBitacoraView
+            key={claveBitacora}
+            currentUser={currentUser}
+            onVerReportes={() => setActiveItem('maternidad-reportes')}
+          />
+        );
       case 'maternidad-reportes':
         return <MaternidadReportesView currentUser={currentUser} />;
       case 'maternidad-horarios':
@@ -525,6 +557,14 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
                 >
                   <Icon className="size-5 flex-shrink-0" />
                   <span className={isSidebarCollapsed && !isHovering ? 'hidden' : ''}>{item.label}</span>
+                  {esMaternidad && item.id === 'maternidad-bitacora' && alertasMaternidad.total > 0 && (
+                    <span
+                      className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white"
+                      aria-label={`${alertasMaternidad.total} alertas de seguimiento`}
+                    >
+                      {alertasMaternidad.total}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -635,6 +675,17 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
             </div>
           </div>
         </header>
+
+        {esMaternidad && (
+          <MaternidadAlertasBanner
+            alertas={alertasMaternidad.alertas}
+            proximas={alertasMaternidad.proximas}
+            sinSemanas={alertasMaternidad.sinSemanas}
+            usuarioNombre={currentUser?.name || 'Sistema'}
+            onRecargar={alertasMaternidad.recargar}
+            onIrABitacora={irABitacora}
+          />
+        )}
 
         {/* Content Area */}
         <main className="flex-1 p-6">

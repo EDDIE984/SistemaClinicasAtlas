@@ -8,24 +8,54 @@ import type {
   MaternidadAseguradora,
   MaternidadCotizacion,
   MaternidadEnvioCorreo,
+  MaternidadHistorial,
   MaternidadHorario,
   MaternidadHorarioDisponible,
+  MaternidadProforma,
   MaternidadSolicitud,
   MaternidadSolicitudVista,
+  OrigenSolicitudMaternidad,
+  ResultadoPartoMaternidad,
+  TipoPartoMaternidad,
 } from './supabaseTypes';
 
 // Las tablas de maternidad no están en el tipo Database generado
 const tabla = (nombre: string) => (supabaseAdmin.from(nombre as any) as any);
 
 
-export const ESTADOS_SOLICITUD_MATERNIDAD: { value: EstadoSolicitudMaternidad; label: string }[] = [
-  { value: 'solo_cotizacion', label: 'Solo cotización' },
-  { value: 'agendada', label: 'Tour agendado' },
-  { value: 'confirmada', label: 'Confirmada' },
-  { value: 'asistio', label: 'Asistió' },
-  { value: 'no_asistio', label: 'No asistió' },
-  { value: 'cancelada', label: 'Cancelada' },
+export const ESTADOS_SOLICITUD_MATERNIDAD: { value: EstadoSolicitudMaternidad; label: string; descripcion: string }[] = [
+  { value: 'solo_cotizacion', label: 'Solo cotización', descripcion: 'Recibió la proforma y aún no agenda el tour' },
+  { value: 'agendada', label: 'Tour agendado', descripcion: 'Tiene fecha y turno reservados para el tour' },
+  { value: 'confirmada', label: 'Confirmada', descripcion: 'La mamá confirmó que asistirá al tour' },
+  { value: 'asistio', label: 'Asistió', descripcion: 'Realizó el tour por la clínica' },
+  { value: 'no_asistio', label: 'No asistió', descripcion: 'No se presentó al tour agendado' },
+  { value: 'cancelada', label: 'Cancelada', descripcion: 'Se cancela la solicitud y se libera el cupo del turno' },
 ];
+
+/** Estados que exigen un motivo al cambiar */
+export const ESTADOS_CON_MOTIVO: EstadoSolicitudMaternidad[] = ['cancelada', 'no_asistio'];
+
+export const RESULTADOS_PARTO_MATERNIDAD: { value: ResultadoPartoMaternidad; label: string; descripcion: string }[] = [
+  { value: 'pendiente', label: 'Pendiente', descripcion: 'Aún no se registra el parto en la clínica' },
+  { value: 'clinica', label: 'Dio a luz en la clínica', descripcion: 'El parto se realizó en Clínicas Atlas' },
+  {
+    value: 'perdida',
+    label: 'Cerrar seguimiento',
+    descripcion: 'No dará a luz en la clínica, no se pudo contactar o superó las 40 semanas',
+  },
+];
+
+export const TIPOS_PARTO_MATERNIDAD: { value: TipoPartoMaternidad; label: string }[] = [
+  { value: 'normal', label: 'Parto normal' },
+  { value: 'cesarea', label: 'Cesárea' },
+];
+
+export const formatearResultadoParto = (resultado: ResultadoPartoMaternidad | null | undefined) =>
+  resultado === 'perdida' ? 'Seguimiento cerrado'
+    : RESULTADOS_PARTO_MATERNIDAD.find(r => r.value === resultado)?.label || 'Pendiente';
+
+export const formatearTipoParto = (tipo: TipoPartoMaternidad | null | undefined) =>
+  TIPOS_PARTO_MATERNIDAD.find(t => t.value === tipo)?.label || '';
 
 export const formatearEstadoSolicitudMaternidad = (estado: EstadoSolicitudMaternidad) =>
   ESTADOS_SOLICITUD_MATERNIDAD.find(e => e.value === estado)?.label || estado;
@@ -227,12 +257,26 @@ export interface FiltrosSolicitudesMaternidad {
   registroHasta?: string;
   estado?: EstadoSolicitudMaternidad;
   idAseguradora?: number;
-  origen?: 'CHATBOT' | 'SISTEMA';
+  origen?: OrigenSolicitudMaternidad;
+  /** Excluye un origen (la agenda no muestra los tours de la bitácora histórica) */
+  excluirOrigen?: OrigenSolicitudMaternidad;
   busqueda?: string;
+  resultadoParto?: ResultadoPartoMaternidad;
+  /** Solo solicitudes que nunca agendaron tour */
+  sinTour?: boolean;
+  /** Solo solicitudes con al menos una proforma enviada */
+  conProformaEnviada?: boolean;
+  /** Rango sobre la fecha de la última cotización — YYYY-MM-DD en hora de Ecuador */
+  envioDesde?: string;
+  envioHasta?: string;
 }
 
+/** Supabase devuelve como máximo 1000 filas por consulta: se pide por páginas */
+const TAMANO_PAGINA = 1000;
+
 export async function getSolicitudesMaternidad(filtros: FiltrosSolicitudesMaternidad = {}): Promise<MaternidadSolicitudVista[]> {
-  try {
+  // El constructor de consultas se modifica al filtrar: se arma uno nuevo por página
+  const construir = () => {
     let query = tabla('vista_maternidad_solicitudes').select('*');
     if (filtros.fechaTourDesde) query = query.gte('fecha_tour', filtros.fechaTourDesde);
     if (filtros.fechaTourHasta) query = query.lte('fecha_tour', filtros.fechaTourHasta);
@@ -241,13 +285,31 @@ export async function getSolicitudesMaternidad(filtros: FiltrosSolicitudesMatern
     if (filtros.estado) query = query.eq('estado', filtros.estado);
     if (filtros.idAseguradora) query = query.eq('id_aseguradora_mat', filtros.idAseguradora);
     if (filtros.origen) query = query.eq('origen', filtros.origen);
+    if (filtros.excluirOrigen) query = query.neq('origen', filtros.excluirOrigen);
+    if (filtros.resultadoParto) query = query.eq('resultado_parto', filtros.resultadoParto);
+    if (filtros.sinTour) query = query.is('fecha_tour', null);
+    if (filtros.conProformaEnviada) query = query.gt('correos_enviados', 0);
+    if (filtros.envioDesde) query = query.gte('ultima_cotizacion_fecha', `${filtros.envioDesde}T00:00:00-05:00`);
+    if (filtros.envioHasta) query = query.lte('ultima_cotizacion_fecha', `${filtros.envioHasta}T23:59:59.999-05:00`);
     const busqueda = filtros.busqueda?.trim().replace(/[,()]/g, ' ');
     if (busqueda) {
-      query = query.or(`nombre_madre.ilike.%${busqueda}%,cedula.ilike.%${busqueda}%,correo.ilike.%${busqueda}%,ultima_cotizacion.ilike.%${busqueda}%`);
+      query = query.or(
+        `nombre_madre.ilike.%${busqueda}%,cedula.ilike.%${busqueda}%,correo.ilike.%${busqueda}%,ultima_cotizacion.ilike.%${busqueda}%,`
+        + `telefono.ilike.%${busqueda}%,medico_ginecologo.ilike.%${busqueda}%`,
+      );
     }
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
+    return query.order('created_at', { ascending: false }).order('id_solicitud_mat', { ascending: false });
+  };
+
+  try {
+    const resultado: MaternidadSolicitudVista[] = [];
+    for (let desde = 0; ; desde += TAMANO_PAGINA) {
+      const { data, error } = await construir().range(desde, desde + TAMANO_PAGINA - 1);
+      if (error) throw error;
+      resultado.push(...(data || []));
+      if (!data || data.length < TAMANO_PAGINA) break;
+    }
+    return resultado;
   } catch (error) {
     console.error('❌ Error al obtener solicitudes de maternidad:', error);
     throw error;
@@ -305,14 +367,289 @@ export async function registrarSolicitudMaternidad(datos: DatosRegistroMaternida
   }
 }
 
-export async function updateEstadoSolicitudMaternidad(id: number, estado: EstadoSolicitudMaternidad): Promise<void> {
+/** Datos del tour realizado (bitácora): se piden al marcar "Asistió" */
+export interface DatosTourRealizado {
+  asesor: string;
+  hora_inicio_real: string | null;
+  hora_fin_real: string | null;
+  firma_paciente: boolean | null;
+}
+
+/**
+ * Cambia el estado del tour; el motivo y el usuario quedan en maternidad_historial (trigger).
+ * Al pasar a "asistio" se guardan los datos del tour y la base asigna el número de bitácora.
+ */
+export async function updateEstadoSolicitudMaternidad(
+  id: number,
+  estado: EstadoSolicitudMaternidad,
+  usuario: string,
+  motivo?: string | null,
+  datosTour?: DatosTourRealizado | null,
+): Promise<MaternidadSolicitud> {
   try {
-    const { error } = await tabla('maternidad_solicitud')
-      .update({ estado, updated_at: new Date().toISOString() })
-      .eq('id_solicitud_mat', id);
+    const { data, error } = await tabla('maternidad_solicitud')
+      .update({
+        estado,
+        motivo_estado: motivo?.trim() || null,
+        ...(datosTour ? {
+          asesor: datosTour.asesor.trim().toUpperCase(),
+          hora_inicio_real: datosTour.hora_inicio_real || null,
+          hora_fin_real: datosTour.hora_fin_real || null,
+          firma_paciente: datosTour.firma_paciente,
+        } : {}),
+        actualizado_por: usuario,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id_solicitud_mat', id)
+      .select()
+      .single();
     if (error) throw error;
+    return data;
   } catch (error) {
     console.error('❌ Error al actualizar estado de solicitud de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Asesores ya usados en la bitácora (para sugerirlos al marcar "Asistió") */
+export async function getAsesoresMaternidad(): Promise<string[]> {
+  try {
+    const { data, error } = await tabla('maternidad_solicitud')
+      .select('asesor')
+      .not('asesor', 'is', null)
+      .limit(5000);
+    if (error) throw error;
+    return [...new Set((data || []).map((r: { asesor: string }) => r.asesor.trim().toUpperCase()))].sort() as string[];
+  } catch (error) {
+    console.error('❌ Error al obtener asesores de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Tours agendados o confirmados cuya fecha ya pasó y aún no se marcan como asistió / no asistió */
+export async function contarToursSinMarcarMaternidad(hoy: string): Promise<number> {
+  try {
+    const { count, error } = await tabla('maternidad_solicitud')
+      .select('id_solicitud_mat', { count: 'exact', head: true })
+      .in('estado', ['agendada', 'confirmada'])
+      .lt('fecha_tour', hoy);
+    if (error) throw error;
+    return count || 0;
+  } catch (error) {
+    console.error('❌ Error al contar tours sin marcar de maternidad:', error);
+    throw error;
+  }
+}
+
+// ========================================
+// Alertas de seguimiento (perfil maternidad)
+// ========================================
+
+/** Mamás en alerta roja: tour realizado o proforma sin tour, entre 20 y 40 semanas, sin parto registrado */
+export async function getAlertasSeguimientoMaternidad(): Promise<MaternidadSolicitudVista[]> {
+  try {
+    const resultado: MaternidadSolicitudVista[] = [];
+    for (let desde = 0; ; desde += TAMANO_PAGINA) {
+      const { data, error } = await tabla('vista_maternidad_solicitudes')
+        .select('*')
+        .eq('en_seguimiento', true)
+        .in('estado_seguimiento', ['llamar', 'seguimiento'])
+        .order('semanas_actuales', { ascending: false })
+        .order('id_solicitud_mat')
+        .range(desde, desde + TAMANO_PAGINA - 1);
+      if (error) throw error;
+      resultado.push(...(data || []));
+      if (!data || data.length < TAMANO_PAGINA) break;
+    }
+    return resultado;
+  } catch (error) {
+    console.error('❌ Error al obtener alertas de seguimiento de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Mamás en seguimiento sin semanas registradas (no se puede calcular la alerta) */
+export async function contarSinSemanasMaternidad(): Promise<number> {
+  try {
+    const { count, error } = await tabla('vista_maternidad_solicitudes')
+      .select('id_solicitud_mat', { count: 'exact', head: true })
+      .eq('en_seguimiento', true)
+      .eq('estado_seguimiento', 'sin_semanas');
+    if (error) throw error;
+    return count || 0;
+  } catch (error) {
+    console.error('❌ Error al contar mamás sin semanas de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Cierra como "perdida" lo que superó 40 semanas sin parto (también corre a diario con pg_cron) */
+export async function cerrarSeguimientosVencidosMaternidad(): Promise<number> {
+  try {
+    const { data, error } = await (supabaseAdmin.rpc as any)('fn_maternidad_cerrar_seguimientos_vencidos');
+    if (error) throw error;
+    return Number(data) || 0;
+  } catch (error) {
+    console.error('❌ Error al cerrar seguimientos vencidos de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Actualiza las semanas de gestación: la base toma hoy como nueva fecha de referencia */
+export async function updateSemanasMaternidad(id: number, semanas: number, usuario: string): Promise<MaternidadSolicitud> {
+  try {
+    const { data, error } = await tabla('maternidad_solicitud')
+      .update({ semanas_gestacion: semanas, actualizado_por: usuario, updated_at: new Date().toISOString() })
+      .eq('id_solicitud_mat', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('❌ Error al actualizar semanas de gestación de maternidad:', error);
+    throw error;
+  }
+}
+
+export interface DatosPartoMaternidad {
+  resultado_parto: ResultadoPartoMaternidad;
+  fecha_parto: string | null;
+  tipo_parto: TipoPartoMaternidad | null;
+  observacion_parto: string | null;
+}
+
+/** Seguimiento del parto (independiente del estado del tour) */
+export async function updatePartoSolicitudMaternidad(
+  id: number,
+  datos: DatosPartoMaternidad,
+  usuario: string,
+): Promise<MaternidadSolicitud> {
+  try {
+    const enClinica = datos.resultado_parto === 'clinica';
+    const { data, error } = await tabla('maternidad_solicitud')
+      .update({
+        resultado_parto: datos.resultado_parto,
+        fecha_parto: enClinica ? datos.fecha_parto : null,
+        tipo_parto: enClinica ? datos.tipo_parto : null,
+        observacion_parto: datos.resultado_parto === 'pendiente' ? null : datos.observacion_parto?.trim() || null,
+        actualizado_por: usuario,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id_solicitud_mat', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('❌ Error al actualizar el parto de la solicitud de maternidad:', error);
+    throw error;
+  }
+}
+
+export async function getHistorialBySolicitud(idSolicitud: number): Promise<MaternidadHistorial[]> {
+  try {
+    const { data, error } = await tabla('maternidad_historial')
+      .select('*')
+      .eq('id_solicitud_mat', idSolicitud)
+      .order('created_at', { ascending: false })
+      .order('id_historial_mat', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('❌ Error al obtener el historial de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Historial de varias solicitudes (Excel), en bloques para no exceder el largo de la URL */
+export async function getHistorialBySolicitudes(ids: number[]): Promise<MaternidadHistorial[]> {
+  try {
+    const resultado: MaternidadHistorial[] = [];
+    // Bloques de 100 solicitudes: cada uno queda por debajo del máximo de 1000 filas por consulta
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await tabla('maternidad_historial')
+        .select('*')
+        .in('id_solicitud_mat', ids.slice(i, i + 100))
+        .order('created_at');
+      if (error) throw error;
+      resultado.push(...(data || []));
+    }
+    return resultado.sort((a, b) => a.id_solicitud_mat - b.id_solicitud_mat || a.created_at.localeCompare(b.created_at));
+  } catch (error) {
+    console.error('❌ Error al obtener el historial de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Una solicitud con los campos calculados de la vista (semanas actuales, seguimiento, aseguradora) */
+export async function getSolicitudVistaMaternidad(id: number): Promise<MaternidadSolicitudVista | null> {
+  try {
+    const { data, error } = await tabla('vista_maternidad_solicitudes').select('*').eq('id_solicitud_mat', id).maybeSingle();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('❌ Error al obtener la solicitud de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Datos de la mamá que se pueden corregir desde el detalle (no incluye teléfono, tour ni creado_por) */
+export interface DatosEditablesSolicitudMaternidad {
+  nombre_madre: string;
+  /** Opcionales solo en tours de la bitácora histórica */
+  cedula: string | null;
+  correo: string | null;
+  semanas_gestacion: number | null;
+  medico_ginecologo: string | null;
+  id_aseguradora_mat: number | null;
+  notas: string | null;
+  /** Solo para tours realizados (bitácora) */
+  tour?: DatosTourRealizado | null;
+}
+
+export async function updateDatosSolicitudMaternidad(
+  id: number,
+  datos: DatosEditablesSolicitudMaternidad,
+  usuario: string,
+): Promise<MaternidadSolicitud> {
+  try {
+    const { data, error } = await tabla('maternidad_solicitud')
+      .update({
+        nombre_madre: datos.nombre_madre.trim(),
+        cedula: datos.cedula?.replace(/\s/g, '') || null,
+        correo: datos.correo?.trim().toLowerCase() || null,
+        semanas_gestacion: datos.semanas_gestacion,
+        medico_ginecologo: datos.medico_ginecologo?.trim() || null,
+        id_aseguradora_mat: datos.id_aseguradora_mat,
+        notas: datos.notas?.trim() || null,
+        ...(datos.tour ? {
+          asesor: datos.tour.asesor.trim().toUpperCase() || null,
+          hora_inicio_real: datos.tour.hora_inicio_real || null,
+          hora_fin_real: datos.tour.hora_fin_real || null,
+          firma_paciente: datos.tour.firma_paciente,
+        } : {}),
+        actualizado_por: usuario,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id_solicitud_mat', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('❌ Error al actualizar datos de la solicitud de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Nombre completo según el Registro Civil, en su orden (APELLIDOS NOMBRES, como llegan los registros de WhatsApp) */
+export async function consultarNombreRegistroCivil(cedula: string): Promise<string | null> {
+  try {
+    const persona = await consultarCedulaRegistroCivil(cedula);
+    const nombre = persona ? `${persona.apellidos} ${persona.nombres}`.trim() : '';
+    return nombre || null;
+  } catch (error) {
+    console.error('❌ Error al consultar el nombre en el Registro Civil:', error);
     throw error;
   }
 }
@@ -395,6 +732,50 @@ export async function getCotizacionesBySolicitud(idSolicitud: number): Promise<M
   }
 }
 
+/** Proformas enviadas (con fecha de envío) dentro del período, con los datos de su solicitud */
+export async function getProformasMaternidad(envioDesde?: string, envioHasta?: string): Promise<MaternidadProforma[]> {
+  try {
+    const resultado: MaternidadProforma[] = [];
+    for (let desde = 0; ; desde += TAMANO_PAGINA) {
+      let query = tabla('maternidad_cotizacion')
+        .select('*, solicitud:maternidad_solicitud(id_solicitud_mat, nombre_madre, cedula, telefono, correo, origen, estado, fecha_tour, resultado_parto, semanas_gestacion, medico_ginecologo)')
+        .not('fecha_envio', 'is', null);
+      if (envioDesde) query = query.gte('fecha_envio', `${envioDesde}T00:00:00-05:00`);
+      if (envioHasta) query = query.lte('fecha_envio', `${envioHasta}T23:59:59.999-05:00`);
+      const { data, error } = await query
+        .order('fecha_envio', { ascending: false })
+        .order('id_cotizacion_mat', { ascending: false })
+        .range(desde, desde + TAMANO_PAGINA - 1);
+      if (error) throw error;
+      resultado.push(...(data || []));
+      if (!data || data.length < TAMANO_PAGINA) break;
+    }
+    return resultado;
+  } catch (error) {
+    console.error('❌ Error al obtener proformas de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Todos los envíos de correo de varias solicitudes (fechas de envío de cada proforma) */
+export async function getEnviosCorreoBySolicitudes(ids: number[]): Promise<MaternidadEnvioCorreo[]> {
+  try {
+    const resultado: MaternidadEnvioCorreo[] = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await tabla('maternidad_envio_correo')
+        .select('*')
+        .in('id_solicitud_mat', ids.slice(i, i + 100))
+        .order('created_at');
+      if (error) throw error;
+      resultado.push(...(data || []));
+    }
+    return resultado;
+  } catch (error) {
+    console.error('❌ Error al obtener envíos de correo de maternidad:', error);
+    throw error;
+  }
+}
+
 /**
  * Vuelve a armar en el navegador el presupuesto de una cotización (los PDF no se guardan):
  * mismo número, fecha de emisión y valores, con los datos actuales de la solicitud. Devuelve una URL blob.
@@ -411,10 +792,10 @@ export async function generarPdfCotizacionMaternidad(
       numeroCotizacion: cotizacion.numero_cotizacion,
       fechaEmision: cotizacion.fecha_emision,
       nombreMadre: solicitud.nombre_madre,
-      cedula: solicitud.cedula,
+      cedula: solicitud.cedula ?? '',
       semanasGestacion: solicitud.semanas_gestacion,
-      correo: solicitud.correo,
-      telefono: solicitud.telefono,
+      correo: solicitud.correo ?? '',
+      telefono: solicitud.telefono ?? '',
       medicoGinecologo: solicitud.medico_ginecologo,
     }, cotizacion.valores);
     return URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }));

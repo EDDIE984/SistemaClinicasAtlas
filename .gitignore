@@ -34,3 +34,6 @@ build_error_2.txt
 
 # Vite
 .vite/
+
+# Bitácora de maternidad con datos de pacientes (se carga con scripts/importar-bitacora-maternidad.mjs)
+docs/formatos-cotizaciones/BITACORA*.xlsx

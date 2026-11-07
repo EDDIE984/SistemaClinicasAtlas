@@ -65,6 +65,14 @@ const limpiar = (valor: unknown): string | null => {
   return texto === '' || texto.toLowerCase() === 'null' ? null : texto;
 };
 
+/** Semanas de gestación desde texto libre ("28", "28 semanas", "semana 30", 28.5) → entero 1–45, o null */
+const parsearSemanas = (valor: unknown): number | null => {
+  const coincidencia = limpiar(valor)?.match(/\d+/);
+  if (!coincidencia) return null;
+  const semanas = parseInt(coincidencia[0], 10);
+  return semanas >= 1 && semanas <= 45 ? semanas : null;
+};
+
 // "AIG METROPOLITANA" y "AIGMETROPOLITANA" → misma clave
 const normalizarClave = (texto: string) =>
   texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -162,7 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const fechaTour = limpiar(d.fecha_tour);
     const horaInicio = limpiar(d.hora_inicio);
-    const semanas = limpiar(d.semanas_gestacion);
+    const semanas = parsearSemanas(d.semanas_gestacion);
     const nombre = limpiar(d.nombre) || (await consultarNombreRegistroCivil(cedula)) || `Paciente ${cedula}`;
     const aseguradora = await resolverAseguradora(supabase, limpiar(d.aseguradora));
 
@@ -171,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       p_cedula: cedula,
       p_correo: limpiar(d.correo),
       p_telefono: limpiar(d.telefono),
-      p_semanas_gestacion: semanas && Number.isInteger(Number(semanas)) ? Number(semanas) : null,
+      p_semanas_gestacion: semanas,
       p_medico_ginecologo: limpiar(d.medico_ginecologo),
       p_aseguradora: aseguradora,
       p_fecha_tour: fechaTour,
@@ -207,6 +215,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (errorSolicitud || !solicitud) {
     return res.status(404).json({ ok: false, error: 'La solicitud no existe' });
+  }
+  // Los tours de la bitácora histórica pueden no tener correo
+  if (!solicitud.correo) {
+    return res.status(400).json({ ok: false, error: 'La solicitud no tiene correo registrado' });
   }
 
   // Límite anti-abuso: el endpoint es público, se restringe por solicitud
@@ -267,10 +279,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       numeroCotizacion,
       fechaEmision,
       nombreMadre: solicitud.nombre_madre,
-      cedula: solicitud.cedula,
+      cedula: solicitud.cedula ?? '',
       semanasGestacion: solicitud.semanas_gestacion,
       correo: solicitud.correo,
-      telefono: solicitud.telefono,
+      telefono: solicitud.telefono ?? '',
       medicoGinecologo: solicitud.medico_ginecologo,
       aseguradora: aseguradoraSolicitud,
       tour,
