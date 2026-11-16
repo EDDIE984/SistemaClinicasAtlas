@@ -232,6 +232,13 @@ Los tipos de base de datos viven en `src/lib/supabaseTypes.ts`. Al agregar tabla
 2. Seguir el patrón del proxy existente en `api/consulta-cedula.ts`
 3. Si requiere rewrite de URL, añadirlo en `vercel.json`
 
+### Consulta de cliente por cédula (para n8n)
+
+`api/consulta-cliente.ts` — `GET /api/consulta-cliente?cedula=…` (o `POST { cedula }`), abierto, sin API key.
+- Orden: `paciente` (activo primero) → `maternidad_solicitud` (la más reciente; `nombres`/`apellidos` = null, solo `nombre_completo`) → Registro Civil (`api/_lib/registroCivil.ts`). El Registro Civil tarda ~30 s, así que el timeout es de 50 s y la función tiene `maxDuration: 60` en `vercel.json`; el nodo HTTP de n8n debe esperar al menos 60 s. Lo del Registro Civil **no se guarda**.
+- Respuesta 200: `{ ok, encontrado: true, fuente: 'paciente'|'maternidad'|'registro_civil', cedula, nombres, apellidos, nombre_completo, fecha_nacimiento, sexo, telefono, correo }`, o `{ ok, encontrado: false, fuente: 'no_disponible', cedula, mensaje: 'Datos no disponibles' }`. Cédula sin 10 dígitos → 400 `CEDULA_INVALIDA`.
+- Variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CEDULA_API_BASE_URL`, `CEDULA_API_KEY`.
+
 ### Problemas de CORS en producción
 
 Las llamadas a APIs externas deben pasar por una serverless function en `api/`. No hacer fetch directo a terceros desde el frontend — funcionará en dev pero fallará en producción.

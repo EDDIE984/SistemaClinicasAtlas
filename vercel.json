@@ -5,12 +5,19 @@
   "functions": {
     "api/maternidad-cotizacion.ts": {
       "includeFiles": "api/_assets/maternidad/**"
+    },
+    "api/consulta-cliente.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
     {
       "source": "/api/consulta-cedula",
       "destination": "/api/consulta-cedula"
+    },
+    {
+      "source": "/api/consulta-cliente",
+      "destination": "/api/consulta-cliente"
     },
     {
       "source": "/api/diagnostico-ia",
