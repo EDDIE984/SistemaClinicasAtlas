@@ -8,6 +8,9 @@
     },
     "api/consulta-cliente.ts": {
       "maxDuration": 60
+    },
+    "api/validar-correo.ts": {
+      "maxDuration": 90
     }
   },
   "rewrites": [
@@ -18,6 +21,10 @@
     {
       "source": "/api/consulta-cliente",
       "destination": "/api/consulta-cliente"
+    },
+    {
+      "source": "/api/validar-correo",
+      "destination": "/api/validar-correo"
     },
     {
       "source": "/api/diagnostico-ia",
