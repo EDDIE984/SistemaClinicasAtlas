@@ -1279,6 +1279,27 @@ export interface MaternidadEnvioCorreo {
 
 export type EstadoEnvioCorreoMaternidad = 'enviado' | 'error' | 'rebotado' | 'invalido';
 
+/** 084: pedido de cotización que llegó por WhatsApp y no se pudo registrar (maternidad_intento_fallido) */
+export interface MaternidadIntentoFallido {
+  id_intento_mat: number;
+  cedula: string | null;
+  nombre_madre: string | null;
+  correo: string | null;
+  telefono: string | null;
+  /** Lo recibido en `datos` (aseguradora, médico, semanas, tour, remote_jid…) */
+  datos: Record<string, unknown>;
+  error_codigo: string;
+  error_mensaje: string | null;
+  enviado_por: string | null;
+  intentos: number;
+  estado: 'pendiente' | 'resuelto' | 'descartado';
+  id_solicitud_mat: number | null;
+  atendido_por: string | null;
+  atendido_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Fila de vista_maternidad_correos (pantalla Correos Maternidad)
 export interface MaternidadCorreoVista extends MaternidadEnvioCorreo {
   nombre_madre: string;

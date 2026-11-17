@@ -14,6 +14,9 @@ import { asuntoCorreoMaternidad, construirCorreoMaternidad } from './_lib/correo
 // (con o sin tour) y después envía la cotización: es el modo que usa el flujo de WhatsApp en n8n.
 // La web lo llama con id_solicitud_mat (registro, "Reenviar cotización" y el historial).
 // Siempre envía al correo guardado en la solicitud, nunca a uno recibido en la petición.
+// Si el registro con `datos` falla antes de crear la solicitud (084), el pedido queda en
+// maternidad_intento_fallido para atenderlo desde la pantalla Correos Maternidad; al reintentarlo desde
+// ahí llega `id_intento` y, si sale bien, se marca como resuelto con la solicitud creada.
 
 const MAX_ENVIOS_POR_HORA = 5;
 
@@ -124,6 +127,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     vista_previa?: boolean;
     config?: ConfigCotizacion;
     datos?: DatosRegistro;
+    /** Reintento de un pedido guardado en maternidad_intento_fallido (pantalla Correos Maternidad) */
+    id_intento?: number | string;
   };
 
   // Vista previa desde la pantalla de configuración: arma el presupuesto con datos de ejemplo, sin guardar ni enviar
@@ -162,10 +167,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── Registro desde un flujo externo: crea/actualiza la solicitud y continúa con el envío ──
   let registro: Record<string, unknown> | null = null;
+  const idIntento = Number(body.id_intento) > 0 ? Number(body.id_intento) : null;
   if (!body.id_solicitud_mat && body.datos) {
     const d = body.datos;
     const cedula = limpiar(d.cedula)?.replace(/\s/g, '') || null;
+
+    // 084: el pedido que no se pudo registrar queda guardado (o se actualiza si era un reintento)
+    const guardarIntentoFallido = async (codigo: string, mensaje: string) => {
+      const fila = {
+        cedula,
+        nombre_madre: limpiar(d.nombre),
+        correo: limpiar(d.correo),
+        telefono: limpiar(d.telefono),
+        datos: d,
+        error_codigo: codigo.slice(0, 40),
+        error_mensaje: mensaje.slice(0, 1000),
+        updated_at: new Date().toISOString(),
+      };
+      try {
+        if (idIntento) {
+          const { data: previo } = await supabase
+            .from('maternidad_intento_fallido').select('intentos').eq('id_intento_mat', idIntento).maybeSingle();
+          const { error } = await supabase
+            .from('maternidad_intento_fallido')
+            .update({ ...fila, intentos: (previo?.intentos || 1) + 1 })
+            .eq('id_intento_mat', idIntento);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('maternidad_intento_fallido').insert({ ...fila, enviado_por: enviadoPor });
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.error('❌ No se pudo guardar el pedido de maternidad fallido:', error);
+      }
+    };
+
     if (!cedula) {
+      await guardarIntentoFallido('DATOS_INCOMPLETOS', 'La cédula es obligatoria');
       return res.status(400).json({ ok: false, error: 'DATOS_INCOMPLETOS', mensaje: 'La cédula es obligatoria' });
     }
     const fechaTour = limpiar(d.fecha_tour);
@@ -192,10 +230,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mensaje = error?.message || 'No se pudo registrar la solicitud';
       const codigo = CODIGOS_RPC.find(c => mensaje.includes(c)) || 'ERROR_REGISTRO';
       console.error('❌ Error al registrar solicitud de maternidad:', error);
+      await guardarIntentoFallido(codigo, mensaje);
       return res.status(400).json({ ok: false, error: codigo, mensaje });
     }
     registro = data as Record<string, unknown>;
     body.id_solicitud_mat = registro.id_solicitud_mat as number;
+    if (idIntento) {
+      const { error: errorIntento } = await supabase
+        .from('maternidad_intento_fallido')
+        .update({
+          estado: 'resuelto',
+          id_solicitud_mat: body.id_solicitud_mat,
+          atendido_por: enviadoPor,
+          atendido_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id_intento_mat', idIntento);
+      if (errorIntento) console.error('❌ No se pudo marcar como resuelto el pedido de maternidad:', errorIntento);
+    }
     if (!body.tipo && registro.tour_nuevo) body.tipo = 'confirmacion_tour';
   }
 

@@ -8,6 +8,7 @@ import type {
   MaternidadAseguradora,
   MaternidadCorreoVista,
   MaternidadCotizacion,
+  MaternidadIntentoFallido,
   MaternidadEnvioCorreo,
   MaternidadHistorial,
   MaternidadHorario,
@@ -874,6 +875,67 @@ export async function updateCorreoSolicitudMaternidad(id: number, correo: string
     return data;
   } catch (error) {
     console.error('❌ Error al corregir el correo de la solicitud de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Pedidos de cotización que no se pudieron registrar (084); por defecto solo los pendientes */
+export async function getIntentosFallidosMaternidad(soloPendientes = true): Promise<MaternidadIntentoFallido[]> {
+  try {
+    let query = tabla('maternidad_intento_fallido').select('*');
+    if (soloPendientes) query = query.eq('estado', 'pendiente');
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('❌ Error al obtener los pedidos de maternidad no registrados:', error);
+    throw error;
+  }
+}
+
+export interface DatosCompletarIntentoMaternidad {
+  nombre: string;
+  cedula: string;
+  correo: string;
+  telefono: string;
+}
+
+/**
+ * Vuelve a enviar un pedido no registrado con los datos corregidos, por el mismo camino que n8n
+ * (registra la solicitud y envía la cotización). Si sale bien, el endpoint lo marca como resuelto.
+ */
+export async function completarIntentoMaternidad(
+  intento: MaternidadIntentoFallido,
+  datos: DatosCompletarIntentoMaternidad,
+  usuario: string,
+): Promise<{ id_solicitud_mat: number; numero_cotizacion: string }> {
+  try {
+    const res = await fetch('/api/maternidad-cotizacion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enviado_por: usuario,
+        id_intento: intento.id_intento_mat,
+        datos: { ...intento.datos, ...datos },
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || data.mensaje || res.statusText || 'No se pudo registrar el pedido');
+    return { id_solicitud_mat: data.id_solicitud_mat, numero_cotizacion: data.numero_cotizacion };
+  } catch (error) {
+    console.error('❌ Error al completar el pedido de maternidad:', error);
+    throw error;
+  }
+}
+
+export async function descartarIntentoMaternidad(id: number, usuario: string): Promise<void> {
+  try {
+    const { error } = await tabla('maternidad_intento_fallido')
+      .update({ estado: 'descartado', atendido_por: usuario, atendido_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id_intento_mat', id);
+    if (error) throw error;
+  } catch (error) {
+    console.error('❌ Error al descartar el pedido de maternidad:', error);
     throw error;
   }
 }

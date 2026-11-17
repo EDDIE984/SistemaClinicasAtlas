@@ -10,10 +10,12 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
-import { AlertTriangle, Eye, FileText, Loader2, Mail, PencilLine, RefreshCw, Send } from 'lucide-react';
+import { AlertTriangle, Eye, FileText, Loader2, Mail, PencilLine, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useCorreosMaternidad } from '../../hooks/useMaternidad';
+import { useCorreosMaternidad, useIntentosFallidosMaternidad } from '../../hooks/useMaternidad';
 import {
+  completarIntentoMaternidad,
+  descartarIntentoMaternidad,
   enviarCotizacionMaternidad,
   generarPdfCotizacionMaternidad,
   getDatosPresupuestoMaternidad,
@@ -23,7 +25,12 @@ import {
   validarCorreoRapido,
   type ValidacionCorreoRapida,
 } from '../../lib/maternidadService';
-import type { EstadoEnvioCorreoMaternidad, MaternidadCorreoVista, MaternidadSolicitudVista } from '../../lib/supabaseTypes';
+import type {
+  EstadoEnvioCorreoMaternidad,
+  MaternidadCorreoVista,
+  MaternidadIntentoFallido,
+  MaternidadSolicitudVista,
+} from '../../lib/supabaseTypes';
 import { FiltroPeriodoMaternidad, periodoInicial, type PeriodoMaternidad } from './FiltroPeriodoMaternidad';
 import { MaternidadSolicitudDialog } from './MaternidadSolicitudDialog';
 import { MaternidadSolicitudModal } from './MaternidadSolicitudModal';
@@ -53,6 +60,9 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
   const [corrigiendo, setCorrigiendo] = useState<MaternidadCorreoVista | null>(null);
   const [detalle, setDetalle] = useState<MaternidadSolicitudVista | null>(null);
   const [solicitudTour, setSolicitudTour] = useState<MaternidadSolicitudVista | null>(null);
+  const [completando, setCompletando] = useState<MaternidadIntentoFallido | null>(null);
+  const [descartandoId, setDescartandoId] = useState<number | null>(null);
+  const { intentos, loadIntentos } = useIntentosFallidosMaternidad();
 
   const { correos, isLoading, revisando, ultimaRevision, loadCorreos, revisarAhora } = useCorreosMaternidad({
     desde: periodo.desde || undefined,
@@ -110,6 +120,20 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
     }
   };
 
+  const handleDescartar = async (intento: MaternidadIntentoFallido) => {
+    if (!window.confirm(`¿Descartar el pedido de ${intento.nombre_madre || intento.cedula || 'esta mamá'}? No se enviará la cotización.`)) return;
+    setDescartandoId(intento.id_intento_mat);
+    try {
+      await descartarIntentoMaternidad(intento.id_intento_mat, usuarioNombre);
+      toast.success('Pedido descartado');
+      await loadIntentos();
+    } catch (error) {
+      toast.error(`No se pudo descartar: ${mensajeErrorMaternidad(error)}`);
+    } finally {
+      setDescartandoId(null);
+    }
+  };
+
   const handleVerSolicitud = async (c: MaternidadCorreoVista) => {
     try {
       const solicitud = await getSolicitudVistaMaternidad(c.id_solicitud_mat);
@@ -141,7 +165,7 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Button size="sm" onClick={revisarAhora} disabled={revisando}>
+          <Button size="sm" onClick={async () => { await revisarAhora(); await loadIntentos(); }} disabled={revisando}>
             {revisando ? <Loader2 className="size-4 mr-1 animate-spin" /> : <RefreshCw className="size-4 mr-1" />}
             Revisar ahora
           </Button>
@@ -185,6 +209,67 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
         {kpi('Con error', indicadores.errores, 'Se reintentan solos', 'text-red-600', 'error')}
         {kpi('Reintentos automáticos', indicadores.reintentos, 'Reenviados por el sistema', 'text-gray-600', 'todos')}
       </div>
+
+      {/* Pedidos por WhatsApp que no llegaron a registrarse (sin solicitud ni correo) */}
+      {intentos.length > 0 && (
+        <Card className="p-4 border-red-200">
+          <h3 className="flex items-center gap-2 text-red-700 font-semibold">
+            <AlertTriangle className="size-4" />
+            Solicitudes no registradas ({intentos.length})
+          </h3>
+          <p className="text-xs text-gray-600 mb-2">
+            Pedidos de cotización que llegaron por WhatsApp y no se pudieron registrar: la mamá no recibió su proforma.
+            Complete los datos que faltan y envíela, o descarte el pedido.
+          </p>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Mamá</TableHead>
+                  <TableHead>Correo</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Motivo</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {intentos.map(i => (
+                  <TableRow key={i.id_intento_mat} className="bg-red-50">
+                    <TableCell className="text-xs whitespace-nowrap">{formatFechaHora(i.created_at)}</TableCell>
+                    <TableCell>
+                      <p className="font-medium">{i.nombre_madre || '—'}</p>
+                      <p className="text-xs text-gray-500">{i.cedula || 'Sin cédula'}</p>
+                    </TableCell>
+                    <TableCell className="text-xs break-words">{i.correo || <span className="text-red-600">Vacío</span>}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{i.telefono || <span className="text-red-600">Vacío</span>}</TableCell>
+                    <TableCell className="text-xs max-w-xs">
+                      <p className="text-red-700">{mensajeErrorMaternidad({ message: i.error_codigo })}</p>
+                      {i.intentos > 1 && <p className="text-gray-500 mt-1">{i.intentos} intentos</p>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <Button size="sm" className="h-7 px-2 text-xs" onClick={() => setCompletando(i)}>
+                          <Send className="size-3 mr-1" />Completar y enviar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          disabled={descartandoId === i.id_intento_mat}
+                          onClick={() => handleDescartar(i)}
+                        >
+                          <Trash2 className="size-3 mr-1" />Descartar
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
 
       {isLoading && correos.length === 0 ? (
         <div className="flex justify-center py-16"><Loader2 className="size-8 animate-spin text-blue-600" /></div>
@@ -307,6 +392,12 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
         </Card>
       )}
 
+      <CompletarIntentoDialog
+        intento={completando}
+        usuarioNombre={usuarioNombre}
+        onOpenChange={open => { if (!open) setCompletando(null); }}
+        onListo={() => { loadIntentos(); loadCorreos(); }}
+      />
       <CorregirCorreoDialog
         envio={corrigiendo}
         usuarioNombre={usuarioNombre}
@@ -452,6 +543,131 @@ function CorregirCorreoDialog({ envio, usuarioNombre, onOpenChange, onListo }: C
           <Button onClick={handleGuardar} disabled={!puedeGuardar}>
             {guardando ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Send className="size-4 mr-1" />}
             Guardar y reenviar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface CompletarIntentoDialogProps {
+  intento: MaternidadIntentoFallido | null;
+  usuarioNombre: string;
+  onOpenChange: (open: boolean) => void;
+  onListo: () => void;
+}
+
+/** Completa los datos de un pedido no registrado y lo envía por el mismo camino que WhatsApp */
+function CompletarIntentoDialog({ intento, usuarioNombre, onOpenChange, onListo }: CompletarIntentoDialogProps) {
+  const [nombre, setNombre] = useState('');
+  const [cedula, setCedula] = useState('');
+  const [correo, setCorreo] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [validacion, setValidacion] = useState<ValidacionCorreoRapida | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    if (!intento) return;
+    setNombre(intento.nombre_madre || '');
+    setCedula(intento.cedula || '');
+    setCorreo(intento.correo || '');
+    setTelefono(intento.telefono || '');
+    setValidacion(null);
+  }, [intento]);
+
+  useEffect(() => {
+    const valor = correo.trim();
+    if (!intento || !valor.includes('@')) {
+      setValidacion(null);
+      return;
+    }
+    let vigente = true;
+    const temporizador = setTimeout(async () => {
+      try {
+        const resultado = await validarCorreoRapido(valor);
+        if (vigente) setValidacion(resultado);
+      } catch {
+        if (vigente) setValidacion(null);
+      }
+    }, 500);
+    return () => {
+      vigente = false;
+      clearTimeout(temporizador);
+    };
+  }, [correo, intento]);
+
+  if (!intento) return null;
+  const completo = !!(nombre.trim() && cedula.trim() && correo.trim() && telefono.trim());
+  const puedeEnviar = completo && !guardando && validacion?.valido !== false;
+
+  const handleEnviar = async () => {
+    setGuardando(true);
+    try {
+      const resultado = await completarIntentoMaternidad(intento, {
+        nombre: nombre.trim(),
+        cedula: cedula.replace(/\s/g, ''),
+        correo: correo.trim().toLowerCase(),
+        telefono: telefono.trim(),
+      }, usuarioNombre);
+      toast.success(`Solicitud #${resultado.id_solicitud_mat} registrada y cotización ${resultado.numero_cotizacion} enviada`);
+      onOpenChange(false);
+      onListo();
+    } catch (error) {
+      toast.error(`No se pudo registrar: ${mensajeErrorMaternidad(error)}`);
+      onListo();
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!intento} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Completar y enviar cotización</DialogTitle>
+          <DialogDescription>
+            Pedido recibido el {formatFechaHora(intento.created_at)} · {mensajeErrorMaternidad({ message: intento.error_codigo })}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="space-y-1 md:col-span-2">
+            <Label className="text-xs">Nombre de la mamá</Label>
+            <Input value={nombre} onChange={e => setNombre(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Cédula</Label>
+            <Input value={cedula} onChange={e => setCedula(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Teléfono</Label>
+            <Input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="593…" />
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <Label className="text-xs">Correo</Label>
+            <Input type="email" value={correo} onChange={e => setCorreo(e.target.value)} placeholder="nombre@dominio.com" />
+            {validacion && !validacion.valido && (
+              <div className="text-xs text-red-600 flex flex-wrap items-center gap-1">
+                <AlertTriangle className="size-3" />{validacion.mensaje}
+                {validacion.sugerencia && (
+                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setCorreo(validacion.sugerencia!)}>
+                    Usar {validacion.sugerencia}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          Se usan también la aseguradora, el médico, las semanas y el tour que llegaron por WhatsApp. Se registra la
+          solicitud y se envía la cotización igual que desde el chat.
+        </p>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={guardando}>Cancelar</Button>
+          <Button onClick={handleEnviar} disabled={!puedeEnviar}>
+            {guardando ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Send className="size-4 mr-1" />}
+            Registrar y enviar
           </Button>
         </DialogFooter>
       </DialogContent>

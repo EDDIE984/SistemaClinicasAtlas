@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import type {
   MaternidadCorreoVista,
+  MaternidadIntentoFallido,
   MaternidadProforma,
   MaternidadAseguradora,
   MaternidadHorario,
@@ -32,6 +33,7 @@ import {
   contarSinSemanasMaternidad,
   cerrarSeguimientosVencidosMaternidad,
   getCorreosMaternidad,
+  getIntentosFallidosMaternidad,
   revisarCorreosMaternidad,
   type FiltrosCorreosMaternidad,
   type FiltrosSolicitudesMaternidad,
@@ -426,6 +428,29 @@ export function useCorreosMaternidad(filtros: FiltrosCorreosMaternidad) {
   }, [revisar, loadCorreos]);
 
   return { correos, isLoading, revisando, ultimaRevision, loadCorreos, revisarAhora };
+}
+
+/** Pedidos de cotización por WhatsApp que no se pudieron registrar y esperan atención (084) */
+export function useIntentosFallidosMaternidad() {
+  const [intentos, setIntentos] = useState<MaternidadIntentoFallido[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const loadIntentos = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      setIntentos(await getIntentosFallidosMaternidad(true));
+    } catch {
+      toast.error('Error al cargar los pedidos no registrados');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadIntentos();
+  }, [loadIntentos]);
+
+  return { intentos, isLoading, loadIntentos };
 }
 
 export interface IndicadoresProformas {
