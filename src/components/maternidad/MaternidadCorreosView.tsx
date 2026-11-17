@@ -316,7 +316,18 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
                           <p className="text-xs text-gray-500">{[c.cedula, c.telefono].filter(Boolean).join(' · ')}</p>
                         </TableCell>
                         <TableCell className="text-xs">
-                          <p className="break-words">{c.destinatario}</p>
+                          <div className="flex items-center gap-1">
+                            <p className="break-words">{c.destinatario}</p>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              onClick={() => setCorrigiendo(c)}
+                              title="Modificar el correo de la mamá"
+                            >
+                              <PencilLine className="size-3" />
+                            </Button>
+                          </div>
                           {c.correo_cambiado && c.correo_actual && (
                             <p className="text-blue-700 mt-1">Correo actual: {c.correo_actual}</p>
                           )}
@@ -471,15 +482,25 @@ function CorregirCorreoDialog({ envio, usuarioNombre, onOpenChange, onListo }: C
 
   if (!envio) return null;
   const nuevo = correo.trim().toLowerCase();
-  const igualAlRebotado = nuevo === envio.destinatario.toLowerCase() && envio.estado !== 'error';
+  const conProblema = envio.estado === 'rebotado' || envio.estado === 'invalido';
+  const igualAlRebotado = conProblema && nuevo === envio.destinatario.toLowerCase();
+  const sinCambios = nuevo === (envio.correo_actual || '').toLowerCase();
   const puedeGuardar = !!nuevo && !validando && !guardando && validacion?.valido !== false && !igualAlRebotado;
 
-  const handleGuardar = async () => {
+  /** reenviar = false: solo corrige el correo de la solicitud */
+  const handleGuardar = async (reenviar: boolean) => {
+    if (!reenviar && sinCambios) return;
     setGuardando(true);
-    const aviso = toast.loading('Corrigiendo el correo y reenviando la cotización…');
+    const aviso = toast.loading(reenviar ? 'Guardando el correo y reenviando la cotización…' : 'Guardando el correo…');
     try {
-      await updateCorreoSolicitudMaternidad(envio.id_solicitud_mat, nuevo, usuarioNombre);
-      if (envio.id_cotizacion_mat) {
+      if (!sinCambios) await updateCorreoSolicitudMaternidad(envio.id_solicitud_mat, nuevo, usuarioNombre);
+      if (!reenviar) {
+        toast.success('Correo actualizado', {
+          id: aviso,
+          description: `${envio.nombre_madre}: ${nuevo}. Los próximos envíos irán a este correo.`,
+          duration: 8000,
+        });
+      } else if (envio.id_cotizacion_mat) {
         await enviarCotizacionMaternidad(envio.id_solicitud_mat, usuarioNombre, envio.tipo, envio.id_cotizacion_mat);
         toast.success(`Cotización ${envio.numero_cotizacion ?? ''} reenviada`, {
           id: aviso,
@@ -503,7 +524,7 @@ function CorregirCorreoDialog({ envio, usuarioNombre, onOpenChange, onListo }: C
     <Dialog open={!!envio} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Corregir correo y reenviar</DialogTitle>
+          <DialogTitle>Modificar correo</DialogTitle>
           <DialogDescription>
             {envio.nombre_madre} · {envio.numero_cotizacion || 'sin cotización'}
           </DialogDescription>
@@ -513,12 +534,15 @@ function CorregirCorreoDialog({ envio, usuarioNombre, onOpenChange, onListo }: C
           <div className="text-sm">
             <p className="text-xs text-gray-500">Correo al que se envió</p>
             <p className="font-medium break-words">{envio.destinatario}</p>
+            {envio.correo_cambiado && envio.correo_actual && (
+              <p className="text-xs text-blue-700 mt-1">Correo actual de la solicitud: {envio.correo_actual}</p>
+            )}
             {(envio.rebote_detalle || envio.error_mensaje) && (
               <p className="text-xs text-red-600 mt-1 break-words">{envio.rebote_detalle || envio.error_mensaje}</p>
             )}
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Correo correcto</Label>
+            <Label className="text-xs">Nuevo correo</Label>
             <Input type="email" value={correo} onChange={e => setCorreo(e.target.value)} placeholder="nombre@dominio.com" />
             {validando ? (
               <p className="text-xs text-gray-500 flex items-center gap-1"><Loader2 className="size-3 animate-spin" />Validando…</p>
@@ -540,14 +564,19 @@ function CorregirCorreoDialog({ envio, usuarioNombre, onOpenChange, onListo }: C
             ) : null}
           </div>
           <p className="text-xs text-gray-500">
-            Se actualiza el correo de la solicitud y se reenvía la misma cotización (mismo número y valores).
-            Si vuelve a rebotar, aparecerá aquí en la siguiente revisión.
+            Se actualiza el correo de la solicitud. Con "Guardar y reenviar" además se reenvía la misma cotización
+            (mismo número y valores) con el presupuesto, el checklist y el boletín; si vuelve a rebotar, aparecerá
+            aquí en la siguiente revisión.
           </p>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={guardando}>Cancelar</Button>
-          <Button onClick={handleGuardar} disabled={!puedeGuardar}>
+          <Button variant="outline" onClick={() => handleGuardar(false)} disabled={!puedeGuardar || sinCambios}>
+            <PencilLine className="size-4 mr-1" />
+            Solo guardar
+          </Button>
+          <Button onClick={() => handleGuardar(true)} disabled={!puedeGuardar || !envio.id_cotizacion_mat}>
             {guardando ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Send className="size-4 mr-1" />}
             Guardar y reenviar
           </Button>
