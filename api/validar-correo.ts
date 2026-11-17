@@ -5,7 +5,8 @@ import { ImapFlow } from 'imapflow';
 import { crearTransporteSmtp, getConfigCorreo, type ConfigCorreo } from './_lib/smtp';
 
 // Valida que un correo realmente reciba mensajes, para el flujo de WhatsApp en n8n.
-//   POST /api/validar-correo   header x-api-key: <N8N_API_KEY>   body { "correo": "...", "nombre"?: "..." }
+//   POST /api/validar-correo   body { "correo": "...", "nombre"?: "..." }
+//   (header x-api-key solo si N8N_API_KEY está configurada en Vercel)
 // 1. Formato, dominio mal escrito (gmial.com, outloook.es) y registros MX: responde al instante.
 // 2. Envía un correo corto de confirmación desde la casilla de la clínica y revisa por IMAP esa misma
 //    casilla: si llega el rebote (Gmail "550 5.1.1", Hotmail "550 5.5.0 mailbox unavailable") el correo
@@ -210,10 +211,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Método no permitido' });
 
-  if (!process.env.N8N_API_KEY) {
-    return res.status(500).json({ ok: false, error: 'Servicio no configurado. Configure N8N_API_KEY.' });
-  }
-  if (!claveValida(req.headers['x-api-key'])) {
+  // La clave es opcional: solo se exige si N8N_API_KEY está configurada en Vercel
+  if (process.env.N8N_API_KEY && !claveValida(req.headers['x-api-key'])) {
     return res.status(401).json({ ok: false, error: 'No autorizado' });
   }
 
