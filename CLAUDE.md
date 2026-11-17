@@ -231,6 +231,7 @@ Los tipos de base de datos viven en `src/lib/supabaseTypes.ts`. Al agregar tabla
 1. Crear `api/nombre-endpoint.ts`
 2. Seguir el patrón del proxy existente en `api/consulta-cedula.ts`
 3. Si requiere rewrite de URL, añadirlo en `vercel.json`
+4. Si lo llama la web, agregarlo a `API_LOCALES` en `vite.config.ts`: en `npm run dev` Vite solo ejecuta las funciones de esa lista (las demás responden 404 "Not Found" en local aunque en Vercel funcionen)
 
 ### Consulta de cliente por cédula (para n8n)
 

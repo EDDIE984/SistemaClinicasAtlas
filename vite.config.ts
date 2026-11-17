@@ -4,32 +4,48 @@
   import path from 'path';
   import type { Plugin } from 'vite';
 
-  // Solo en `npm run dev`: ejecuta api/maternidad-cotizacion.ts localmente (en producción lo sirve Vercel)
+  // Solo en `npm run dev`: ejecuta localmente estas funciones de api/ (en producción las sirve Vercel).
+  // Al agregar una función nueva que use la pantalla, sumarla aquí o en local responderá 404.
+  const API_LOCALES = ['maternidad-cotizacion', 'maternidad-correos', 'validar-correo', 'consulta-cliente'];
+  const VARIABLES_API = [
+    'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM',
+    'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'CEDULA_API_BASE_URL', 'CEDULA_API_KEY', 'N8N_API_KEY',
+  ];
+
   function apiLocalMaternidad(env: Record<string, string>): Plugin {
     return {
       name: 'api-local-maternidad',
       configureServer(server) {
-        server.middlewares.use('/api/maternidad-cotizacion', async (req, res) => {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
-          const raw = Buffer.concat(chunks).toString();
-          for (const clave of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']) {
-            if (env[clave]) process.env[clave] = env[clave];
-          }
-          const respuesta = {
-            status(codigo: number) { res.statusCode = codigo; return respuesta; },
-            setHeader(nombre: string, valor: string) { res.setHeader(nombre, valor); return respuesta; },
-            json(datos: unknown) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(datos)); return respuesta; },
-            end() { res.end(); return respuesta; },
-          };
-          try {
-            const modulo = await server.ssrLoadModule('/api/maternidad-cotizacion.ts');
-            await modulo.default({ method: req.method, body: raw ? JSON.parse(raw) : {} }, respuesta);
-          } catch (error) {
-            console.error('❌ Error en api local maternidad-cotizacion:', error);
-            respuesta.status(500).json({ ok: false, error: String(error) });
-          }
-        });
+        for (const nombre of API_LOCALES) {
+          server.middlewares.use(`/api/${nombre}`, async (req, res) => {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req) chunks.push(chunk as Buffer);
+            const raw = Buffer.concat(chunks).toString();
+            for (const clave of VARIABLES_API) {
+              if (env[clave]) process.env[clave] = env[clave];
+            }
+            const url = new URL(req.originalUrl || req.url || '', 'http://localhost');
+            const respuesta = {
+              status(codigo: number) { res.statusCode = codigo; return respuesta; },
+              setHeader(nombre: string, valor: string) { res.setHeader(nombre, valor); return respuesta; },
+              json(datos: unknown) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(datos)); return respuesta; },
+              send(datos: unknown) { res.end(datos as Buffer); return respuesta; },
+              end() { res.end(); return respuesta; },
+            };
+            try {
+              const modulo = await server.ssrLoadModule(`/api/${nombre}.ts`);
+              await modulo.default({
+                method: req.method,
+                headers: req.headers,
+                query: Object.fromEntries(url.searchParams),
+                body: raw ? JSON.parse(raw) : {},
+              }, respuesta);
+            } catch (error) {
+              console.error(`❌ Error en api local ${nombre}:`, error);
+              respuesta.status(500).json({ ok: false, error: String(error) });
+            }
+          });
+        }
       },
     };
   }
