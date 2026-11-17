@@ -522,7 +522,7 @@ Módulo **independiente** (tablas `maternidad_*`); solo reutiliza `usuario` con 
     - `rebotado`: el servidor destino lo devolvió; `rebote_detalle` guarda su código;
     - `invalido`: dirección mal escrita o dominio inexistente, p. ej. `outloook.es`, que acepta correo y nunca rebota; trae `correo_sugerido`.
   - **Campos calculados de la vista:** `pendiente` (error/rebotado/invalido sin un envío posterior exitoso de la misma cotización) y `correo_cambiado`.
-  - **Revisión (`POST /api/maternidad-correos { accion: 'revisar' }`):** la llaman n8n cada 10 min (`docs/n8n/revisar-correos-maternidad.json`) y la pantalla al abrir y con "Revisar ahora". Hace tres cosas:
+  - **Revisión (`POST /api/maternidad-correos { accion: 'revisar' }`):** la llaman n8n cada 10 min (`docs/n8n/revisar-correos-maternidad.json`) y la pantalla: al abrir, con "Revisar ahora" y sola cada 5 min (`INTERVALO_AUTO_REVISION_MS` en `useCorreosMaternidad`, contados desde la última revisión; con la pestaña oculta espera a que vuelva a verse). Muestra la hora de la última revisión (manual o automática) y la próxima. Hace tres cosas:
     1. Lee por IMAP los avisos de `mailer-daemon` de la casilla `SMTP_USER` y los asocia al envío por el **Message-ID del correo original**, que viene dentro del aviso; solo cuentan los 5.x.x, las demoras 4.x se ignoran.
     2. Valida al instante los envíos `enviado`.
     3. Reintenta solo los `error` (hasta 3 veces en 3 días, 5 por corrida) llamando a `maternidad-cotizacion` con `id_cotizacion_mat` y `enviado_por = 'Reintento automático'`.

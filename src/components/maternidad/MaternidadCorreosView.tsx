@@ -44,6 +44,8 @@ const BADGE_RESUELTO = 'bg-gray-100 text-gray-600 border-gray-200';
 
 type FiltroEstado = 'todos' | 'pendientes' | EstadoEnvioCorreoMaternidad;
 
+const horaCorta = (fecha: Date) => fecha.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+
 export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProps) {
   const usuarioNombre = currentUser?.name || 'Sistema';
   const [periodo, setPeriodo] = useState<PeriodoMaternidad>(() => periodoInicial('este_anio'));
@@ -60,7 +62,7 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
   const [descartandoId, setDescartandoId] = useState<number | null>(null);
   const { intentos, loadIntentos } = useIntentosFallidosMaternidad();
 
-  const { correos, isLoading, revisando, ultimaRevision, loadCorreos, revisarAhora } = useCorreosMaternidad({
+  const { correos, isLoading, revisando, ultimaRevision, proximaRevision, loadCorreos, revisarAhora } = useCorreosMaternidad({
     desde: periodo.desde || undefined,
     hasta: periodo.hasta || undefined,
   });
@@ -126,6 +128,11 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
     }
   };
 
+  // Cada revisión (manual o automática) también recarga los pedidos no registrados
+  useEffect(() => {
+    if (ultimaRevision) loadIntentos();
+  }, [ultimaRevision, loadIntentos]);
+
   const handleDescartar = async (intento: MaternidadIntentoFallido) => {
     if (!window.confirm(`¿Descartar el pedido de ${intento.nombre_madre || intento.cedula || 'esta mamá'}? No se enviará la cotización.`)) return;
     setDescartandoId(intento.id_intento_mat);
@@ -171,14 +178,16 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Button size="sm" onClick={async () => { await revisarAhora(); await loadIntentos(); }} disabled={revisando}>
+          <Button size="sm" onClick={revisarAhora} disabled={revisando}>
             {revisando ? <Loader2 className="size-4 mr-1 animate-spin" /> : <RefreshCw className="size-4 mr-1" />}
             Revisar ahora
           </Button>
           <p className="text-xs text-gray-500">
             {revisando ? 'Revisando la casilla de correo…'
-              : ultimaRevision ? `Última revisión: ${ultimaRevision.fecha.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}`
-                : 'Se revisa automáticamente cada 10 minutos'}
+              : ultimaRevision
+                ? `Última revisión: ${horaCorta(ultimaRevision.fecha)} (${ultimaRevision.automatica ? 'automática' : 'manual'})`
+                  + (proximaRevision ? ` · próxima ${horaCorta(proximaRevision)}` : '')
+                : 'Se actualiza sola cada 5 minutos'}
           </p>
         </div>
       </div>

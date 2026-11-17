@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import type {
   MaternidadCorreoVista,
@@ -371,15 +371,29 @@ export function useProformasMaternidad(envioDesde?: string, envioHasta?: string)
   return { proformas, isLoading, loadProformas };
 }
 
+/** Cada cuánto se revisa y recarga sola la pantalla Correos Maternidad */
+export const INTERVALO_AUTO_REVISION_MS = 5 * 60 * 1000;
+
 /**
  * Correos de maternidad con su estado real. Al abrir la pantalla muestra lo guardado y, en segundo plano,
  * revisa rebotes, correos inválidos y reintentos (/api/maternidad-correos); luego vuelve a cargar.
+ * Se repite sola cada INTERVALO_AUTO_REVISION_MS (contados desde la última revisión, manual o automática)
+ * mientras la pestaña esté visible.
  */
 export function useCorreosMaternidad(filtros: FiltrosCorreosMaternidad) {
   const [correos, setCorreos] = useState<MaternidadCorreoVista[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [revisando, setRevisando] = useState(false);
-  const [ultimaRevision, setUltimaRevision] = useState<{ fecha: Date; resultado: ResultadoRevisionCorreos } | null>(null);
+  const [ultimaRevision, setUltimaRevision] = useState<{
+    fecha: Date;
+    resultado: ResultadoRevisionCorreos;
+    automatica: boolean;
+  } | null>(null);
+  /** Hora en que corre la siguiente revisión automática */
+  const [proximaRevision, setProximaRevision] = useState<Date | null>(null);
+  /** Sube al terminar cada revisión (bien o mal) para programar la siguiente */
+  const [ciclo, setCiclo] = useState(0);
+  const revisandoRef = useRef(false);
   const { desde, hasta } = filtros;
 
   const loadCorreos = useCallback(async () => {
@@ -393,11 +407,12 @@ export function useCorreosMaternidad(filtros: FiltrosCorreosMaternidad) {
     }
   }, [desde, hasta]);
 
-  const revisar = useCallback(async (avisar = true) => {
+  const revisar = useCallback(async (avisar = true, automatica = false) => {
+    revisandoRef.current = true;
     setRevisando(true);
     try {
       const resultado = await revisarCorreosMaternidad();
-      setUltimaRevision({ fecha: new Date(), resultado });
+      setUltimaRevision({ fecha: new Date(), resultado, automatica });
       const nuevos = resultado.rebotes_detectados.length + resultado.invalidos_detectados.length;
       const reenviados = resultado.reintentos.filter(r => r.ok).length;
       if ('error' in resultado.imap) toast.error(`No se pudo leer la casilla de correo: ${resultado.imap.error}`);
@@ -409,7 +424,9 @@ export function useCorreosMaternidad(filtros: FiltrosCorreosMaternidad) {
       toast.error(`No se pudieron revisar los correos: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     } finally {
+      revisandoRef.current = false;
       setRevisando(false);
+      setCiclo(c => c + 1);
     }
   }, []);
 
@@ -417,17 +434,46 @@ export function useCorreosMaternidad(filtros: FiltrosCorreosMaternidad) {
     loadCorreos();
   }, [loadCorreos]);
 
+  // La revisión automática usa siempre la carga con los filtros actuales
+  const loadCorreosRef = useRef(loadCorreos);
+  loadCorreosRef.current = loadCorreos;
+
   // Una revisión silenciosa al abrir la pantalla
   useEffect(() => {
-    revisar(false).then(resultado => { if (resultado) loadCorreos(); });
+    revisar(false, true).then(resultado => { if (resultado) loadCorreosRef.current(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Revisión automática: INTERVALO_AUTO_REVISION_MS después de la última (manual o automática)
+  useEffect(() => {
+    if (ciclo === 0) return; // aún no termina la revisión inicial
+    setProximaRevision(new Date(Date.now() + INTERVALO_AUTO_REVISION_MS));
+    const ejecutar = async () => {
+      if (revisandoRef.current) return;
+      await revisar(false, true);
+      await loadCorreosRef.current();
+    };
+    // Pestaña oculta: la revisión se pospone hasta que vuelva a estar visible
+    const alVolver = () => {
+      if (document.hidden) return;
+      document.removeEventListener('visibilitychange', alVolver);
+      ejecutar();
+    };
+    const temporizador = setTimeout(() => {
+      if (document.hidden) document.addEventListener('visibilitychange', alVolver);
+      else ejecutar();
+    }, INTERVALO_AUTO_REVISION_MS);
+    return () => {
+      clearTimeout(temporizador);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [ciclo, revisar]);
 
   const revisarAhora = useCallback(async () => {
     if (await revisar(true)) await loadCorreos();
   }, [revisar, loadCorreos]);
 
-  return { correos, isLoading, revisando, ultimaRevision, loadCorreos, revisarAhora };
+  return { correos, isLoading, revisando, ultimaRevision, proximaRevision, loadCorreos, revisarAhora };
 }
 
 /** Pedidos de cotización por WhatsApp que no se pudieron registrar y esperan atención (084) */
