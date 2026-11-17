@@ -50,6 +50,8 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
   const [estado, setEstado] = useState<FiltroEstado>('todos');
   const [busqueda, setBusqueda] = useState('');
   const [enviandoId, setEnviandoId] = useState<number | null>(null);
+  /** Última confirmación de reenvío por fila (id_envio_mat → hora), visible bajo el botón */
+  const [reenviados, setReenviados] = useState<Record<number, string>>({});
   const [abriendoId, setAbriendoId] = useState<number | null>(null);
   const [corrigiendo, setCorrigiendo] = useState<MaternidadCorreoVista | null>(null);
   const [detalle, setDetalle] = useState<MaternidadSolicitudVista | null>(null);
@@ -85,12 +87,27 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
   const handleReenviar = async (c: MaternidadCorreoVista) => {
     if (!c.id_cotizacion_mat) return;
     setEnviandoId(c.id_envio_mat);
+    const aviso = toast.loading(`Reenviando cotización ${c.numero_cotizacion ?? ''}…`, {
+      description: `Generando el presupuesto y enviando el correo a ${c.correo_actual}`,
+    });
     try {
       await enviarCotizacionMaternidad(c.id_solicitud_mat, usuarioNombre, c.tipo, c.id_cotizacion_mat);
-      toast.success(`Cotización ${c.numero_cotizacion ?? ''} reenviada a ${c.correo_actual}`);
+      toast.success(`Cotización ${c.numero_cotizacion ?? ''} reenviada`, {
+        id: aviso,
+        description: `Se envió a ${c.correo_actual} con el presupuesto, el checklist y el boletín.`,
+        duration: 8000,
+      });
+      setReenviados(prev => ({
+        ...prev,
+        [c.id_envio_mat]: new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' }),
+      }));
       await loadCorreos();
     } catch (error) {
-      toast.error(`No se pudo reenviar: ${mensajeErrorMaternidad(error)}`);
+      toast.error('No se pudo reenviar la cotización', {
+        id: aviso,
+        description: mensajeErrorMaternidad(error),
+        duration: 10000,
+      });
     } finally {
       setEnviandoId(null);
     }
@@ -347,8 +364,11 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
                               {enviandoId === c.id_envio_mat
                                 ? <Loader2 className="size-3 mr-1 animate-spin" />
                                 : <Send className="size-3 mr-1" />}
-                              Reenviar
+                              {enviandoId === c.id_envio_mat ? 'Reenviando…' : 'Reenviar'}
                             </Button>
+                            {reenviados[c.id_envio_mat] && (
+                              <p className="w-full text-xs text-green-700">✓ Reenviado {reenviados[c.id_envio_mat]}</p>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-xs">{c.enviado_por}</TableCell>
@@ -456,18 +476,23 @@ function CorregirCorreoDialog({ envio, usuarioNombre, onOpenChange, onListo }: C
 
   const handleGuardar = async () => {
     setGuardando(true);
+    const aviso = toast.loading('Corrigiendo el correo y reenviando la cotización…');
     try {
       await updateCorreoSolicitudMaternidad(envio.id_solicitud_mat, nuevo, usuarioNombre);
       if (envio.id_cotizacion_mat) {
         await enviarCotizacionMaternidad(envio.id_solicitud_mat, usuarioNombre, envio.tipo, envio.id_cotizacion_mat);
-        toast.success(`Correo corregido y cotización ${envio.numero_cotizacion ?? ''} reenviada a ${nuevo}`);
+        toast.success(`Cotización ${envio.numero_cotizacion ?? ''} reenviada`, {
+          id: aviso,
+          description: `Correo corregido. Se envió a ${nuevo} con el presupuesto, el checklist y el boletín.`,
+          duration: 8000,
+        });
       } else {
-        toast.success('Correo corregido');
+        toast.success('Correo corregido', { id: aviso, duration: 8000 });
       }
       onOpenChange(false);
       onListo();
     } catch (error) {
-      toast.error(`No se pudo completar: ${mensajeErrorMaternidad(error)}`);
+      toast.error('No se pudo completar', { id: aviso, description: mensajeErrorMaternidad(error), duration: 10000 });
       onListo();
     } finally {
       setGuardando(false);
@@ -584,6 +609,7 @@ function CompletarIntentoDialog({ intento, usuarioNombre, onOpenChange, onListo 
 
   const handleEnviar = async () => {
     setGuardando(true);
+    const aviso = toast.loading('Registrando la solicitud y enviando la cotización…');
     try {
       const resultado = await completarIntentoMaternidad(intento, {
         nombre: nombre.trim(),
@@ -591,11 +617,15 @@ function CompletarIntentoDialog({ intento, usuarioNombre, onOpenChange, onListo 
         correo: correo.trim().toLowerCase(),
         telefono: telefono.trim(),
       }, usuarioNombre);
-      toast.success(`Solicitud #${resultado.id_solicitud_mat} registrada y cotización ${resultado.numero_cotizacion} enviada`);
+      toast.success(`Solicitud #${resultado.id_solicitud_mat} registrada`, {
+        id: aviso,
+        description: `Cotización ${resultado.numero_cotizacion} enviada con el presupuesto, el checklist y el boletín.`,
+        duration: 8000,
+      });
       onOpenChange(false);
       onListo();
     } catch (error) {
-      toast.error(`No se pudo registrar: ${mensajeErrorMaternidad(error)}`);
+      toast.error('No se pudo registrar', { id: aviso, description: mensajeErrorMaternidad(error), duration: 10000 });
       onListo();
     } finally {
       setGuardando(false);
