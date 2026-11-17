@@ -1,0 +1,68 @@
+{
+  "name": "Revisar correos Maternidad (rebotes y reintentos)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "5f0c2a7e-3b41-4d8a-9c6e-1a2b3c4d5e01",
+      "name": "Cada 10 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sistema-clinicas-atlas.vercel.app/api/maternidad-correos",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ accion: 'revisar' }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "5f0c2a7e-3b41-4d8a-9c6e-1a2b3c4d5e02",
+      "name": "Revisar rebotes y reintentar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cada 10 minutos": {
+      "main": [
+        [
+          {
+            "node": "Revisar rebotes y reintentar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Guayaquil"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

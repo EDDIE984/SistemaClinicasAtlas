@@ -6,6 +6,7 @@ import type {
   ConfigCotizacionMaternidad,
   EstadoSolicitudMaternidad,
   MaternidadAseguradora,
+  MaternidadCorreoVista,
   MaternidadCotizacion,
   MaternidadEnvioCorreo,
   MaternidadHistorial,
@@ -772,6 +773,126 @@ export async function getEnviosCorreoBySolicitudes(ids: number[]): Promise<Mater
     return resultado;
   } catch (error) {
     console.error('❌ Error al obtener envíos de correo de maternidad:', error);
+    throw error;
+  }
+}
+
+// ========================================
+// Pantalla Correos Maternidad (083: rebotes, correos inválidos y reintentos)
+// ========================================
+
+export interface FiltrosCorreosMaternidad {
+  desde?: string;
+  hasta?: string;
+}
+
+/** Envíos de correo con los datos de la solicitud y su estado real (vista_maternidad_correos) */
+export async function getCorreosMaternidad(filtros: FiltrosCorreosMaternidad = {}): Promise<MaternidadCorreoVista[]> {
+  try {
+    const resultado: MaternidadCorreoVista[] = [];
+    for (let desde = 0; ; desde += TAMANO_PAGINA) {
+      let query = tabla('vista_maternidad_correos').select('*');
+      if (filtros.desde) query = query.gte('created_at', `${filtros.desde}T00:00:00-05:00`);
+      if (filtros.hasta) query = query.lte('created_at', `${filtros.hasta}T23:59:59.999-05:00`);
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .order('id_envio_mat', { ascending: false })
+        .range(desde, desde + TAMANO_PAGINA - 1);
+      if (error) throw error;
+      resultado.push(...(data || []));
+      if (!data || data.length < TAMANO_PAGINA) break;
+    }
+    return resultado;
+  } catch (error) {
+    console.error('❌ Error al obtener los correos de maternidad:', error);
+    throw error;
+  }
+}
+
+export interface ResultadoRevisionCorreos {
+  rebotes_detectados: { id_envio_mat: number; destinatario: string; detalle: string | null }[];
+  invalidos_detectados: { id_envio_mat: number; destinatario: string; detalle: string; sugerido: string | null }[];
+  reintentos: { id_envio_mat: number; ok: boolean; error?: string }[];
+  pendientes: number | null;
+  imap: { carpetas: string[]; avisos: number } | { error: string };
+}
+
+/** Lee los rebotes de la casilla, marca los correos inválidos y reintenta los envíos con error (Vercel) */
+export async function revisarCorreosMaternidad(): Promise<ResultadoRevisionCorreos> {
+  try {
+    const res = await fetch('/api/maternidad-correos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'revisar' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || res.statusText || 'No se pudieron revisar los correos');
+    return data;
+  } catch (error) {
+    console.error('❌ Error al revisar los correos de maternidad:', error);
+    throw error;
+  }
+}
+
+export interface ValidacionCorreoRapida {
+  valido: boolean;
+  motivo: string | null;
+  sugerencia: string | null;
+  mensaje: string;
+}
+
+/** Formato, dominio mal escrito (outloook.es → outlook.es) y dominio inexistente, en menos de 1 s */
+export async function validarCorreoRapido(correo: string): Promise<ValidacionCorreoRapida> {
+  try {
+    const res = await fetch('/api/validar-correo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correo, rapida: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || res.statusText || 'No se pudo validar el correo');
+    return { valido: data.valido, motivo: data.motivo, sugerencia: data.sugerencia, mensaje: data.mensaje };
+  } catch (error) {
+    console.error('❌ Error al validar el correo:', error);
+    throw error;
+  }
+}
+
+/** Corrige solo el correo de la solicitud (el historial registra el cambio con el usuario) */
+export async function updateCorreoSolicitudMaternidad(id: number, correo: string, usuario: string): Promise<MaternidadSolicitud> {
+  try {
+    const { data, error } = await tabla('maternidad_solicitud')
+      .update({
+        correo: correo.trim().toLowerCase(),
+        actualizado_por: usuario,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id_solicitud_mat', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('❌ Error al corregir el correo de la solicitud de maternidad:', error);
+    throw error;
+  }
+}
+
+/** Datos para volver a armar el presupuesto de un envío (cotización + datos actuales de la solicitud) */
+export async function getDatosPresupuestoMaternidad(idSolicitud: number, idCotizacion: number): Promise<{
+  solicitud: MaternidadSolicitud;
+  cotizacion: MaternidadCotizacion;
+}> {
+  try {
+    const [{ data: solicitud, error: errorSolicitud }, { data: cotizacion, error: errorCotizacion }] = await Promise.all([
+      tabla('maternidad_solicitud').select('*').eq('id_solicitud_mat', idSolicitud).single(),
+      tabla('maternidad_cotizacion').select('*').eq('id_cotizacion_mat', idCotizacion).single(),
+    ]);
+    if (errorSolicitud) throw errorSolicitud;
+    if (errorCotizacion) throw errorCotizacion;
+    return { solicitud, cotizacion };
+  } catch (error) {
+    console.error('❌ Error al obtener los datos del presupuesto de maternidad:', error);
     throw error;
   }
 }

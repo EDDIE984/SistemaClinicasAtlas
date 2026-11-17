@@ -1263,9 +1263,33 @@ export interface MaternidadEnvioCorreo {
   destinatario: string;
   asunto: string | null;
   adjuntos: MaternidadAdjuntoCorreo[];
-  estado: 'enviado' | 'error';
+  /** 083: 'rebotado' = el servidor destino lo devolvió; 'invalido' = dirección mal escrita o dominio inexistente */
+  estado: EstadoEnvioCorreoMaternidad;
   message_id: string | null;
   error_mensaje: string | null;
   enviado_por: string;
   created_at: string;
+  /** Código del servidor destino (rebote) o motivo (correo inválido) */
+  rebote_detalle: string | null;
+  rebote_fecha: string | null;
+  correo_sugerido: string | null;
+  /** Reintentos automáticos de un envío con 'error' */
+  reintentos_auto: number;
+}
+
+export type EstadoEnvioCorreoMaternidad = 'enviado' | 'error' | 'rebotado' | 'invalido';
+
+// Fila de vista_maternidad_correos (pantalla Correos Maternidad)
+export interface MaternidadCorreoVista extends MaternidadEnvioCorreo {
+  nombre_madre: string;
+  cedula: string | null;
+  telefono: string | null;
+  /** Correo actual de la solicitud (puede haberse corregido después del envío) */
+  correo_actual: string | null;
+  origen: OrigenSolicitudMaternidad;
+  numero_cotizacion: string | null;
+  /** Error, rebote o correo inválido sin un envío posterior exitoso de la misma cotización */
+  pendiente: boolean;
+  /** El correo actual de la solicitud ya no es el destinatario de este envío */
+  correo_cambiado: boolean;
 }

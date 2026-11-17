@@ -30,6 +30,7 @@ import {
   ClipboardCheck,
   BookOpen,
   PieChart,
+  Mail,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -53,6 +54,7 @@ import { RecordatoriosPacientesView } from './RecordatoriosPacientesView';
 import { MaternidadAgendaView } from './maternidad/MaternidadAgendaView';
 import { MaternidadReportesView } from './maternidad/MaternidadReportesView';
 import { MaternidadSeguimientoView } from './maternidad/MaternidadSeguimientoView';
+import { MaternidadCorreosView } from './maternidad/MaternidadCorreosView';
 import { MaternidadBitacoraView, CLAVE_FILTRO_BITACORA } from './maternidad/MaternidadBitacoraView';
 import { MaternidadAlertasBanner } from './maternidad/MaternidadAlertasSeguimiento';
 import { useAlertasMaternidad } from '../hooks/useMaternidad';
@@ -79,7 +81,8 @@ interface DashboardProps {
 }
 
 type MenuItem = 'pacientes' | 'agenda' | 'agenda-servicios' | 'dashboard-servicios' | 'citas' | 'cargos' | 'reportes' | 'chatbot' | 'chatbot-solicitudes' | 'recordatorios' | 'configuraciones' | 'planificacion' | 'interconsultas' | 'medicos-horarios'
-  | 'maternidad-agenda' | 'maternidad-seguimiento' | 'maternidad-bitacora' | 'maternidad-reportes' | 'maternidad-horarios' | 'maternidad-aseguradoras';
+  | 'maternidad-agenda' | 'maternidad-seguimiento' | 'maternidad-bitacora' | 'maternidad-reportes' | 'maternidad-horarios' | 'maternidad-aseguradoras'
+  | 'maternidad-correos';
 
 // Navegación del GESTOR en dos niveles: módulo (padre) → pantallas (hijos)
 type ModuloGestor = 'consulta' | 'servicios' | 'chatbot' | 'recordatorios';
@@ -152,6 +155,7 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
     { id: 'maternidad-seguimiento' as MenuItem, label: 'Seguimiento Proformas', icon: ClipboardCheck },
     { id: 'maternidad-bitacora' as MenuItem, label: 'Bitácora de Tours', icon: BookOpen },
     { id: 'maternidad-reportes' as MenuItem, label: 'Reportes Maternidad', icon: PieChart },
+    { id: 'maternidad-correos' as MenuItem, label: 'Correos Maternidad', icon: Mail },
     { id: 'maternidad-horarios' as MenuItem, label: 'Horarios Maternidad', icon: CalendarClock },
     { id: 'maternidad-aseguradoras' as MenuItem, label: 'Aseguradoras Maternidad', icon: ShieldCheck },
     { id: 'configuraciones' as MenuItem, label: 'Configuraciones', icon: Settings },
@@ -317,6 +321,8 @@ export function Dashboard({ onLogout, currentUser }: DashboardProps) {
         );
       case 'maternidad-reportes':
         return <MaternidadReportesView currentUser={currentUser} />;
+      case 'maternidad-correos':
+        return <MaternidadCorreosView currentUser={currentUser} />;
       case 'maternidad-horarios':
         return <MaternidadHorariosView />;
       case 'maternidad-aseguradoras':

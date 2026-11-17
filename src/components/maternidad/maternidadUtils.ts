@@ -1,5 +1,6 @@
 // Utilidades compartidas por las pantallas del módulo Maternidad
 import type {
+  EstadoEnvioCorreoMaternidad,
   EstadoSeguimientoMaternidad,
   EstadoSolicitudMaternidad,
   ResultadoPartoMaternidad,
@@ -17,6 +18,14 @@ export const DIAS_SEMANA_MATERNIDAD = [
 
 export const nombreDiaSemana = (dia: number) =>
   DIAS_SEMANA_MATERNIDAD.find(d => d.valor === dia)?.nombre || String(dia);
+
+/** Estado de un envío de correo (083) */
+export const ESTADO_CORREO_MATERNIDAD: Record<EstadoEnvioCorreoMaternidad, { label: string; className: string }> = {
+  enviado: { label: 'Enviado', className: 'bg-green-100 text-green-800 border-green-200' },
+  rebotado: { label: 'Rebotado', className: 'bg-amber-100 text-amber-800 border-amber-200' },
+  invalido: { label: 'Correo inválido', className: 'bg-purple-100 text-purple-800 border-purple-200' },
+  error: { label: 'Error de envío', className: 'bg-red-100 text-red-800 border-red-200' },
+};
 
 export const ESTADO_BADGE_MATERNIDAD: Record<EstadoSolicitudMaternidad, { label: string; className: string }> = {
   solo_cotizacion: { label: 'Solo cotización', className: 'bg-amber-100 text-amber-800 border-amber-200' },

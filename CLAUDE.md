@@ -241,11 +241,11 @@ Los tipos de base de datos viven en `src/lib/supabaseTypes.ts`. Al agregar tabla
 
 ### Validación de correo (para n8n)
 
-`api/validar-correo.ts` — `POST /api/validar-correo` con body `{ correo, nombre? }`. El header `x-api-key` solo se exige si `N8N_API_KEY` está configurada en Vercel (hoy no lo está: el endpoint es abierto). Responde `{ ok, correo, valido, motivo, sugerencia, mensaje, detalle, segundos }`.
+`api/validar-correo.ts` — `POST /api/validar-correo` con body `{ correo, nombre?, rapida? }`. **n8n ya no lo usa antes de enviar la cotización** (tardaba demasiado): los problemas se detectan después con `/api/maternidad-correos`. Con `rapida: true` responde solo la parte instantánea; lo usa el diálogo "Corregir correo" de Correos Maternidad. El header `x-api-key` solo se exige si `N8N_API_KEY` está configurada en Vercel (hoy no lo está: el endpoint es abierto). Responde `{ ok, correo, valido, motivo, sugerencia, mensaje, detalle, segundos }`.
 - Al instante, sin enviar nada: `FORMATO_INVALIDO`, `DOMINIO_MAL_ESCRITO` (distancia 1–2 a gmail/hotmail/outlook/live/yahoo/icloud, con `sugerencia`; atrapa `outloook.es`, que acepta correo y no rebota), `DOMINIO_NO_EXISTE`, `DOMINIO_SIN_CORREO` (MX).
 - Si pasa eso, envía un correo corto de confirmación desde `SMTP_USER` (código `ATL-…` en el Message-ID, el header `X-Atlas-Verificacion` y el texto) y revisa por IMAP (993, mismas credenciales; se conecta mientras se envía) la bandeja de esa casilla cada 2 s, hasta 60 s. Si llega un rebote 5.x.x → `BUZON_NO_EXISTE`; si no llega → `valido: true` (~61 s). El rebote se marca como leído. El servidor no anuncia DSN, así que no hay aviso de éxito: un correo válido siempre espera los 60 s. Rebotes medidos: 7, 10, 10, 11, 33, 43 y 79 s; con 25 s se escapó uno real (onewayec.com, 43 s), por eso se volvió a los 60 s iniciales. Los que pasan de 60 s se dan por válidos.
 - Si falla el SMTP o el IMAP propios → `valido: true`, `motivo: 'NO_VERIFICADO'`. `maxDuration: 90`; el nodo de n8n usa un timeout de 90 s.
-- `api/_lib/smtp.ts` tiene la configuración SMTP (`getConfigCorreo`, `crearTransporteSmtp`). Variable opcional: `N8N_API_KEY`.
+- `api/_lib/smtp.ts` tiene la configuración SMTP (`getConfigCorreo`, `crearTransporteSmtp`); `api/_lib/validacionCorreo.ts` la validación instantánea y `api/_lib/rebotes.ts` la lectura de los avisos de rebote (compartidos con `maternidad-correos`). Variable opcional: `N8N_API_KEY`.
 
 ### Problemas de CORS en producción
 
@@ -512,4 +512,18 @@ Módulo **independiente** (tablas `maternidad_*`); solo reutiliza `usuario` con 
   - **Excel:** exporta exactamente lo filtrado, en las hojas Bitácora, Resumen (con los filtros), por mes / asesor / médico / seguro, Seguimiento (lista de llamadas), Embudo comercial, Proformas, Envíos, Valores por procedimiento e Historial.
   - La pantalla Bitácora es solo el registro operativo, con el botón "Ver reportes".
 - **Alertas de seguimiento de parto (082):** las semanas actuales las calcula la vista (`semanas_actuales` = semanas + días desde `fecha_semanas`/7; `fecha_semanas` pasa a hoy cuando cambian las semanas, por trigger) junto con `fecha_probable_parto` y `estado_seguimiento`. Umbrales: alerta roja de 20 a 36 (`seguimiento`), llamar de 37 a 40 (`llamar`); con más de 40 semanas `fn_maternidad_cerrar_seguimientos_vencidos()` pone `resultado_parto = 'perdida'`. Esa función corre a diario con pg_cron y también desde `useAlertasMaternidad` al cargar. Alcance: `en_seguimiento` (tour realizado o proforma enviada sin tour). **Solo el perfil `maternidad`** ve la franja roja `MaternidadAlertasBanner` en todas las pantallas (montada en `Dashboard.tsx`) y el contador del menú. Las reglas viven solo en SQL: el front lee los campos de la vista (`seguimientoTour`, `semanasHoy`). Las solicitudes de prueba #1–#6 se borraron y la numeración de cotizaciones se reinició.
+- **Correos Maternidad (083):** pantalla `maternidad-correos` (`MaternidadCorreosView.tsx`) sobre `vista_maternidad_correos`.
+  - **Estados de `maternidad_envio_correo`:**
+    - `enviado`;
+    - `error`: falla del SMTP;
+    - `rebotado`: el servidor destino lo devolvió; `rebote_detalle` guarda su código;
+    - `invalido`: dirección mal escrita o dominio inexistente, p. ej. `outloook.es`, que acepta correo y nunca rebota; trae `correo_sugerido`.
+  - **Campos calculados de la vista:** `pendiente` (error/rebotado/invalido sin un envío posterior exitoso de la misma cotización) y `correo_cambiado`.
+  - **Revisión (`POST /api/maternidad-correos { accion: 'revisar' }`):** la llaman n8n cada 10 min (`docs/n8n/revisar-correos-maternidad.json`) y la pantalla al abrir y con "Revisar ahora". Hace tres cosas:
+    1. Lee por IMAP los avisos de `mailer-daemon` de la casilla `SMTP_USER` y los asocia al envío por el **Message-ID del correo original**, que viene dentro del aviso; solo cuentan los 5.x.x, las demoras 4.x se ignoran.
+    2. Valida al instante los envíos `enviado`.
+    3. Reintenta solo los `error` (hasta 3 veces en 3 días, 5 por corrida) llamando a `maternidad-cotizacion` con `id_cotizacion_mat` y `enviado_por = 'Reintento automático'`.
+  - **Rebotados e inválidos:** esperan a que se corrija la dirección con "Corregir correo", que actualiza `maternidad_solicitud.correo` con `actualizado_por` y reenvía la misma cotización.
+  - **Parámetros opcionales:** `historico: true` revisa todas las carpetas y fechas; `dry_run: true` informa sin modificar. El historial registra rebotes e inválidos (trigger, usuario `Sistema`).
+  - **Adjuntos:** checklist y boletín se ven con `GET /api/maternidad-adjunto?tipo=`; el presupuesto se arma en el navegador.
 - **CSS:** las utilidades que el módulo necesitaba y no existían se agregaron a mano al final de `src/index.css`.

@@ -11,6 +11,12 @@
     },
     "api/validar-correo.ts": {
       "maxDuration": 90
+    },
+    "api/maternidad-correos.ts": {
+      "maxDuration": 60
+    },
+    "api/maternidad-adjunto.ts": {
+      "includeFiles": "api/_assets/maternidad/**"
     }
   },
   "rewrites": [
@@ -41,6 +47,14 @@
     {
       "source": "/api/maternidad-cotizacion",
       "destination": "/api/maternidad-cotizacion"
+    },
+    {
+      "source": "/api/maternidad-correos",
+      "destination": "/api/maternidad-correos"
+    },
+    {
+      "source": "/api/maternidad-adjunto",
+      "destination": "/api/maternidad-adjunto"
     },
     {
       "source": "/(.*)",

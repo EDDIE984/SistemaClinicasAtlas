@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import type {
+  MaternidadCorreoVista,
   MaternidadProforma,
   MaternidadAseguradora,
   MaternidadHorario,
@@ -30,7 +31,11 @@ import {
   getAlertasSeguimientoMaternidad,
   contarSinSemanasMaternidad,
   cerrarSeguimientosVencidosMaternidad,
+  getCorreosMaternidad,
+  revisarCorreosMaternidad,
+  type FiltrosCorreosMaternidad,
   type FiltrosSolicitudesMaternidad,
+  type ResultadoRevisionCorreos,
 } from '../lib/maternidadService';
 
 export function useAseguradorasMaternidad(soloActivas = false) {
@@ -362,6 +367,65 @@ export function useProformasMaternidad(envioDesde?: string, envioHasta?: string)
   }, [loadProformas]);
 
   return { proformas, isLoading, loadProformas };
+}
+
+/**
+ * Correos de maternidad con su estado real. Al abrir la pantalla muestra lo guardado y, en segundo plano,
+ * revisa rebotes, correos inválidos y reintentos (/api/maternidad-correos); luego vuelve a cargar.
+ */
+export function useCorreosMaternidad(filtros: FiltrosCorreosMaternidad) {
+  const [correos, setCorreos] = useState<MaternidadCorreoVista[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [revisando, setRevisando] = useState(false);
+  const [ultimaRevision, setUltimaRevision] = useState<{ fecha: Date; resultado: ResultadoRevisionCorreos } | null>(null);
+  const { desde, hasta } = filtros;
+
+  const loadCorreos = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      setCorreos(await getCorreosMaternidad({ desde, hasta }));
+    } catch {
+      toast.error('Error al cargar los correos de maternidad');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [desde, hasta]);
+
+  const revisar = useCallback(async (avisar = true) => {
+    setRevisando(true);
+    try {
+      const resultado = await revisarCorreosMaternidad();
+      setUltimaRevision({ fecha: new Date(), resultado });
+      const nuevos = resultado.rebotes_detectados.length + resultado.invalidos_detectados.length;
+      const reenviados = resultado.reintentos.filter(r => r.ok).length;
+      if ('error' in resultado.imap) toast.error(`No se pudo leer la casilla de correo: ${resultado.imap.error}`);
+      if (nuevos > 0) toast.warning(`${nuevos} correo(s) nuevo(s) con problema de entrega`);
+      if (reenviados > 0) toast.success(`${reenviados} correo(s) con error reenviado(s) automáticamente`);
+      if (avisar && nuevos === 0 && reenviados === 0 && !('error' in resultado.imap)) toast.success('Revisión completa: sin novedades');
+      return resultado;
+    } catch (error) {
+      toast.error(`No se pudieron revisar los correos: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    } finally {
+      setRevisando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCorreos();
+  }, [loadCorreos]);
+
+  // Una revisión silenciosa al abrir la pantalla
+  useEffect(() => {
+    revisar(false).then(resultado => { if (resultado) loadCorreos(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const revisarAhora = useCallback(async () => {
+    if (await revisar(true)) await loadCorreos();
+  }, [revisar, loadCorreos]);
+
+  return { correos, isLoading, revisando, ultimaRevision, loadCorreos, revisarAhora };
 }
 
 export interface IndicadoresProformas {

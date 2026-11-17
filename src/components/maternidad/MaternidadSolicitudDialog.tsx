@@ -47,6 +47,7 @@ import {
   formatSemanas,
   semanasHoy,
   seguroDe,
+  ESTADO_CORREO_MATERNIDAD,
 } from './maternidadUtils';
 import { MaternidadEstadoDialog } from './MaternidadEstadoDialog';
 import { MaternidadPartoDialog } from './MaternidadPartoDialog';
@@ -734,10 +735,13 @@ export function MaternidadSolicitudDialog({
                       <TableCell className="font-mono text-xs whitespace-nowrap">{numeroDeCotizacion(e.id_cotizacion_mat)}</TableCell>
                       <TableCell className="text-xs">{e.destinatario}</TableCell>
                       <TableCell>
-                        <Badge variant={e.estado === 'enviado' ? 'default' : 'destructive'}>
-                          {e.estado === 'enviado' ? 'Enviado' : 'Error'}
+                        <Badge variant="outline" className={ESTADO_CORREO_MATERNIDAD[e.estado].className}>
+                          {ESTADO_CORREO_MATERNIDAD[e.estado].label}
                         </Badge>
-                        {e.error_mensaje && <p className="text-xs text-red-600 mt-1">{e.error_mensaje}</p>}
+                        {(e.rebote_detalle || e.error_mensaje) && (
+                          <p className="text-xs text-red-600 mt-1">{e.rebote_detalle || e.error_mensaje}</p>
+                        )}
+                        {e.correo_sugerido && <p className="text-xs text-purple-800 mt-1">¿Quisiste decir {e.correo_sugerido}?</p>}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
