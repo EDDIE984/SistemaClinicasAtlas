@@ -4,6 +4,7 @@ import nodemailer from 'nodemailer';
 import { documentosFijosMaternidad, generarDocumentosMaternidad, type ConfigCotizacion } from './_lib/maternidadPlantillas';
 import { generarPresupuestoMembretado, tienePresupuestoConfigurado, totalProcedimiento } from './_lib/presupuestoMembretado';
 import { asuntoCorreoMaternidad, construirCorreoMaternidad } from './_lib/correoMaternidad';
+import { datosDesdeConversacion, nombrePorCedula } from './_lib/datosConversacion';
 
 // Genera una cotización numerada (maternidad_cotizacion: COT-MAT-AAAA-NNNNNN), arma el presupuesto en PDF
 // en memoria y lo envía por correo a la paciente junto con el checklist y el boletín (diseños fijos de
@@ -17,6 +18,8 @@ import { asuntoCorreoMaternidad, construirCorreoMaternidad } from './_lib/correo
 // Si el registro con `datos` falla antes de crear la solicitud (084), el pedido queda en
 // maternidad_intento_fallido para atenderlo desde la pantalla Correos Maternidad; al reintentarlo desde
 // ahí llega `id_intento` y, si sale bien, se marca como resuelto con la solicitud creada.
+// Si n8n no envía correo, teléfono o nombre, se completan antes de registrar: correo y teléfono desde el chat
+// guardado en conversations_detail (por remote_jid); nombre desde una solicitud o ficha previa de esa cédula.
 
 const MAX_ENVIOS_POR_HORA = 5;
 
@@ -167,6 +170,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── Registro desde un flujo externo: crea/actualiza la solicitud y continúa con el envío ──
   let registro: Record<string, unknown> | null = null;
+  /** Campos que no envió n8n y se completaron desde el chat o registros previos */
+  const completados: string[] = [];
   const idIntento = Number(body.id_intento) > 0 ? Number(body.id_intento) : null;
   if (!body.id_solicitud_mat && body.datos) {
     const d = body.datos;
@@ -209,20 +214,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fechaTour = limpiar(d.fecha_tour);
     const horaInicio = limpiar(d.hora_inicio);
     const semanas = parsearSemanas(d.semanas_gestacion);
-    const nombre = limpiar(d.nombre) || (await consultarNombreRegistroCivil(cedula)) || `Paciente ${cedula}`;
+    const remoteJid = limpiar(d.remote_jid);
+
+    // Datos que n8n no envió: se completan con el chat y los registros previos de la cédula
+    let correo = limpiar(d.correo);
+    let telefono = limpiar(d.telefono);
+    if (!correo || !telefono) {
+      const delChat = await datosDesdeConversacion(supabase, remoteJid, telefono);
+      if (!correo && delChat.correo) { correo = delChat.correo; completados.push('correo'); }
+      if (!telefono && delChat.telefono) { telefono = delChat.telefono; completados.push('telefono'); }
+    }
+    let nombre = limpiar(d.nombre);
+    if (!nombre) {
+      nombre = (await nombrePorCedula(supabase, cedula)) || (await consultarNombreRegistroCivil(cedula)) || `Paciente ${cedula}`;
+      completados.push('nombre');
+    }
+    if (completados.length) console.log(`ℹ️ Maternidad ${cedula}: completado desde el chat/registros → ${completados.join(', ')}`);
     const aseguradora = await resolverAseguradora(supabase, limpiar(d.aseguradora));
 
     const { data, error } = await supabase.rpc('fn_maternidad_registrar', {
       p_nombre_madre: nombre,
       p_cedula: cedula,
-      p_correo: limpiar(d.correo),
-      p_telefono: limpiar(d.telefono),
+      p_correo: correo,
+      p_telefono: telefono,
       p_semanas_gestacion: semanas,
       p_medico_ginecologo: limpiar(d.medico_ginecologo),
       p_aseguradora: aseguradora,
       p_fecha_tour: fechaTour,
       p_hora_inicio: fechaTour && horaInicio ? horaInicio.slice(0, 5) : null,
-      p_remote_jid: limpiar(d.remote_jid),
+      p_remote_jid: remoteJid,
       p_origen: 'CHATBOT',
       p_creado_por: 'Chatbot WhatsApp',
     });
@@ -256,7 +276,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'id_solicitud_mat o datos es requerido' });
   }
   const extraRegistro = registro
-    ? { id_solicitud_mat: idSolicitud, nombre_madre: registro.nombre_madre, aseguradora: registro.aseguradora, estado_solicitud: registro.estado }
+    ? {
+      id_solicitud_mat: idSolicitud,
+      nombre_madre: registro.nombre_madre,
+      aseguradora: registro.aseguradora,
+      estado_solicitud: registro.estado,
+      ...(completados.length ? { completados_desde_chat: completados } : {}),
+    }
     : {};
 
   const { data: solicitud, error: errorSolicitud } = await supabase
