@@ -42,12 +42,6 @@ interface MaternidadCorreosViewProps {
 
 const BADGE_RESUELTO = 'bg-gray-100 text-gray-600 border-gray-200';
 
-const ETIQUETA_ADJUNTO: Record<string, string> = {
-  presupuesto: 'Presupuesto',
-  checklist: 'Checklist',
-  boletin: 'Boletín',
-};
-
 type FiltroEstado = 'todos' | 'pendientes' | EstadoEnvioCorreoMaternidad;
 
 export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProps) {
@@ -56,7 +50,7 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
   const [estado, setEstado] = useState<FiltroEstado>('todos');
   const [busqueda, setBusqueda] = useState('');
   const [enviandoId, setEnviandoId] = useState<number | null>(null);
-  const [abriendo, setAbriendo] = useState<string | null>(null);
+  const [abriendoId, setAbriendoId] = useState<number | null>(null);
   const [corrigiendo, setCorrigiendo] = useState<MaternidadCorreoVista | null>(null);
   const [detalle, setDetalle] = useState<MaternidadSolicitudVista | null>(null);
   const [solicitudTour, setSolicitudTour] = useState<MaternidadSolicitudVista | null>(null);
@@ -102,21 +96,16 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
     }
   };
 
-  const handleAbrirAdjunto = async (c: MaternidadCorreoVista, tipo: string) => {
-    if (tipo !== 'presupuesto') {
-      window.open(`/api/maternidad-adjunto?tipo=${tipo}`, '_blank', 'noopener');
-      return;
-    }
+  const handleVerPresupuesto = async (c: MaternidadCorreoVista) => {
     if (!c.id_cotizacion_mat) return;
-    const clave = `${c.id_envio_mat}-${tipo}`;
-    setAbriendo(clave);
+    setAbriendoId(c.id_envio_mat);
     try {
       const { solicitud, cotizacion } = await getDatosPresupuestoMaternidad(c.id_solicitud_mat, c.id_cotizacion_mat);
       window.open(await generarPdfCotizacionMaternidad(solicitud, cotizacion), '_blank', 'noopener');
     } catch (error) {
       toast.error(`No se pudo abrir el presupuesto: ${mensajeErrorMaternidad(error)}`);
     } finally {
-      setAbriendo(null);
+      setAbriendoId(null);
     }
   };
 
@@ -284,7 +273,7 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
                   <TableHead>Destinatario</TableHead>
                   <TableHead>Cotización</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead>Adjuntos</TableHead>
+                  <TableHead>Archivos</TableHead>
                   <TableHead>Enviado por</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
@@ -335,25 +324,31 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {(c.adjuntos || []).map(a => {
-                              const clave = `${c.id_envio_mat}-${a.tipo}`;
-                              return (
-                                <Button
-                                  key={clave}
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 px-2 text-xs"
-                                  disabled={abriendo === clave || (a.tipo === 'presupuesto' && !c.id_cotizacion_mat)}
-                                  onClick={() => handleAbrirAdjunto(c, a.tipo)}
-                                  title={`Ver ${a.nombre}`}
-                                >
-                                  {abriendo === clave
-                                    ? <Loader2 className="size-3 mr-1 animate-spin" />
-                                    : <FileText className="size-3 mr-1" />}
-                                  {ETIQUETA_ADJUNTO[a.tipo] || a.nombre}
-                                </Button>
-                              );
-                            })}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              disabled={!c.id_cotizacion_mat || abriendoId === c.id_envio_mat}
+                              onClick={() => handleVerPresupuesto(c)}
+                              title="Ver el presupuesto (PDF)"
+                            >
+                              {abriendoId === c.id_envio_mat
+                                ? <Loader2 className="size-3 mr-1 animate-spin" />
+                                : <FileText className="size-3 mr-1" />}
+                              Presupuesto
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              disabled={!c.id_cotizacion_mat || enviandoId === c.id_envio_mat}
+                              onClick={() => handleReenviar(c)}
+                              title={`Volver a enviar el correo con el presupuesto, el checklist y el boletín a ${c.correo_actual || 'el correo de la solicitud'}`}
+                            >
+                              {enviandoId === c.id_envio_mat
+                                ? <Loader2 className="size-3 mr-1 animate-spin" />
+                                : <Send className="size-3 mr-1" />}
+                              Reenviar
+                            </Button>
                           </div>
                         </TableCell>
                         <TableCell className="text-xs">{c.enviado_por}</TableCell>
@@ -364,19 +359,6 @@ export function MaternidadCorreosView({ currentUser }: MaternidadCorreosViewProp
                                 <PencilLine className="size-3 mr-1" />Corregir correo
                               </Button>
                             )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-xs"
-                              disabled={!c.id_cotizacion_mat || enviandoId === c.id_envio_mat}
-                              onClick={() => handleReenviar(c)}
-                              title={`Reenviar la misma cotización a ${c.correo_actual || 'el correo de la solicitud'}`}
-                            >
-                              {enviandoId === c.id_envio_mat
-                                ? <Loader2 className="size-3 mr-1 animate-spin" />
-                                : <Send className="size-3 mr-1" />}
-                              Reenviar
-                            </Button>
                             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => handleVerSolicitud(c)}>
                               <Eye className="size-3 mr-1" />Solicitud
                             </Button>

@@ -14,9 +14,6 @@
     },
     "api/maternidad-correos.ts": {
       "maxDuration": 60
-    },
-    "api/maternidad-adjunto.ts": {
-      "includeFiles": "api/_assets/maternidad/**"
     }
   },
   "rewrites": [
@@ -51,10 +48,6 @@
     {
       "source": "/api/maternidad-correos",
       "destination": "/api/maternidad-correos"
-    },
-    {
-      "source": "/api/maternidad-adjunto",
-      "destination": "/api/maternidad-adjunto"
     },
     {
       "source": "/(.*)",
