@@ -231,7 +231,7 @@ Los tipos de base de datos viven en `src/lib/supabaseTypes.ts`. Al agregar tabla
 1. Crear `api/nombre-endpoint.ts`
 2. Seguir el patrón del proxy existente en `api/consulta-cedula.ts`
 3. Si requiere rewrite de URL, añadirlo en `vercel.json`
-4. Si lo llama la web, agregarlo a `API_LOCALES` en `vite.config.ts`: en `npm run dev` Vite solo ejecuta las funciones de esa lista (las demás responden 404 "Not Found" en local aunque en Vercel funcionen)
+4. En local no hay que registrarlo: `npm run dev` ejecuta todas las funciones `api/*.ts` (se leen al iniciar, así que una función nueva requiere reiniciar `npm run dev`)
 
 ### Consulta de cliente por cédula (para n8n)
 
@@ -463,10 +463,12 @@ El `vite.config.ts` usa `manualChunks` para dividir los vendors en archivos sepa
 ## Comandos de desarrollo
 
 ```bash
-npm run dev       # Servidor local (http://localhost:5173)
+npm run dev       # Servidor local (http://localhost:3000) + todas las funciones de api/ (ver abajo)
 npm run build     # Build de producción en /dist
 npm run preview   # Preview del build de producción
 ```
+
+**Funciones `api/` en local:** `npm run dev` las ejecuta todas con el plugin `api-local` de `vite.config.ts`, con las variables del `.env`, y al arrancar lista las rutas (`➜ API local: …`). `consulta-cedula` y `send-whatsapp` van por `server.proxy` directo al servicio externo. Si una ruta `/api/...` responde 404 "Not Found" en local, reiniciar `npm run dev`.
 
 **Chequeo de tipos:** `npx tsc` no sirve. El TypeScript local (4.9) no entiende `moduleResolution: bundler`, y `src/Dockerfile/*.tsx` tiene errores de sintaxis que cortan el análisis. Para revisar tipos se usa TypeScript 5 con un tsconfig temporal que excluye esa carpeta (`{"extends":"./tsconfig.json","compilerOptions":{"noEmit":true},"include":["src"],"exclude":["src/Dockerfile"]}`) y se corre `npx -p typescript@5.6.3 tsc -p <ese archivo>`. Hay ~139 errores previos en otros módulos; se comparan antes y después del cambio. `vite build` no revisa tipos.
 

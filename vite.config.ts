@@ -1,29 +1,35 @@
 
   import { defineConfig, loadEnv } from 'vite';
   import react from '@vitejs/plugin-react-swc';
+  import fs from 'fs';
   import path from 'path';
   import type { Plugin } from 'vite';
 
-  // Solo en `npm run dev`: ejecuta localmente estas funciones de api/ (en producción las sirve Vercel).
-  // Al agregar una función nueva que use la pantalla, sumarla aquí o en local responderá 404.
-  const API_LOCALES = ['maternidad-cotizacion', 'maternidad-correos', 'validar-correo', 'consulta-cliente'];
-  const VARIABLES_API = [
-    'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM',
-    'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'CEDULA_API_BASE_URL', 'CEDULA_API_KEY', 'N8N_API_KEY',
-  ];
+  // Solo en `npm run dev`: ejecuta localmente TODAS las funciones de api/*.ts (en producción las sirve
+  // Vercel), con las variables del .env. La lista se lee al iniciar: una función nueva necesita reiniciar
+  // `npm run dev`. consulta-cedula y send-whatsapp siguen por el proxy de `server.proxy` (más abajo).
+  const API_CON_PROXY = ['consulta-cedula', 'send-whatsapp'];
+  const apiLocales = () =>
+    fs.readdirSync(path.resolve(__dirname, 'api'))
+      .filter((archivo) => archivo.endsWith('.ts') && !archivo.endsWith('.d.ts'))
+      .map((archivo) => archivo.replace(/\.ts$/, ''))
+      .filter((nombre) => !API_CON_PROXY.includes(nombre));
 
   function apiLocalMaternidad(env: Record<string, string>): Plugin {
     return {
-      name: 'api-local-maternidad',
+      name: 'api-local',
       configureServer(server) {
-        for (const nombre of API_LOCALES) {
+        // Las funciones leen process.env como en Vercel: se les pasan todas las variables del .env
+        for (const [clave, valor] of Object.entries(env)) {
+          if (valor && process.env[clave] === undefined) process.env[clave] = valor;
+        }
+        const nombres = apiLocales();
+        console.log(`  ➜  API local: ${nombres.map((n) => `/api/${n}`).join(', ')}`);
+        for (const nombre of nombres) {
           server.middlewares.use(`/api/${nombre}`, async (req, res) => {
             const chunks: Buffer[] = [];
             for await (const chunk of req) chunks.push(chunk as Buffer);
             const raw = Buffer.concat(chunks).toString();
-            for (const clave of VARIABLES_API) {
-              if (env[clave]) process.env[clave] = env[clave];
-            }
             const url = new URL(req.originalUrl || req.url || '', 'http://localhost');
             const respuesta = {
               status(codigo: number) { res.statusCode = codigo; return respuesta; },
@@ -38,7 +44,7 @@
                 method: req.method,
                 headers: req.headers,
                 query: Object.fromEntries(url.searchParams),
-                body: raw ? JSON.parse(raw) : {},
+                body: (() => { try { return raw ? JSON.parse(raw) : {}; } catch { return raw; } })(),
               }, respuesta);
             } catch (error) {
               console.error(`❌ Error en api local ${nombre}:`, error);
