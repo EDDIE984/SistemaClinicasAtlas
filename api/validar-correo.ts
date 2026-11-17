@@ -10,11 +10,13 @@ import { crearTransporteSmtp, getConfigCorreo, type ConfigCorreo } from './_lib/
 // 1. Formato, dominio mal escrito (gmial.com, outloook.es) y registros MX: responde al instante.
 // 2. Envía un correo corto de confirmación desde la casilla de la clínica y revisa por IMAP esa misma
 //    casilla: si llega el rebote (Gmail "550 5.1.1", Hotmail "550 5.5.0 mailbox unavailable") el correo
-//    no existe. Si pasan ESPERA_REBOTE_MS sin rebote se da por válido (o antes, si llega el aviso DSN de éxito).
+//    no existe. Si pasan ESPERA_REBOTE_MS sin rebote se da por válido.
 // Una falla propia (SMTP/IMAP) no bloquea a la persona: valido = true con motivo NO_VERIFICADO.
 
-const ESPERA_REBOTE_MS = 60_000;
-const INTERVALO_REVISION_MS = 4_000;
+// Rebotes medidos: 7, 10, 10, 11, 33 y 79 s. Con 25 s se escapan los más lentos (pasan como válidos);
+// se eligió así para que la persona no espere tanto. El servidor no soporta DSN: no hay aviso de éxito.
+const ESPERA_REBOTE_MS = 25_000;
+const INTERVALO_REVISION_MS = 2_000;
 
 type Motivo =
   | 'FORMATO_INVALIDO'
@@ -131,44 +133,46 @@ async function verificarConEnvio(correo: string, nombre: string | null, config: 
     logger: false,
   });
 
-  // Primero IMAP: si no se puede leer la casilla no tiene sentido enviar
-  try {
-    await imap.connect();
-  } catch (error) {
-    console.error('❌ No se pudo conectar por IMAP para leer rebotes:', error);
-    return { valido: true, motivo: 'NO_VERIFICADO', detalle: 'IMAP no disponible' };
-  }
+  // IMAP se conecta mientras se envía el correo de prueba, para no sumar los dos tiempos
+  const conexionImap = imap.connect().then(
+    () => true,
+    (error) => {
+      console.error('❌ No se pudo conectar por IMAP para leer rebotes:', error);
+      return false;
+    },
+  );
 
   try {
+    try {
+      const saludo = nombre ? `Hola ${nombre},` : 'Hola,';
+      await crearTransporteSmtp(config).sendMail({
+        from: config.remitente,
+        to: correo,
+        subject: 'Confirmación de tu correo – Clínica Atlas',
+        messageId: `<${codigo}@${dominioRemitente}>`,
+        headers: { 'X-Atlas-Verificacion': codigo },
+        text: `${saludo}\n\nConfirmamos que este correo está registrado para recibir información de Clínica Atlas. No necesitas responder este mensaje.\n\nClínica Atlas\nwww.clinicas-atlas.com\n\nRef. ${codigo}`,
+        html: `<p>${saludo.replace(/[<>&]/g, '')}</p><p>Confirmamos que este correo está registrado para recibir información de <b>Clínica Atlas</b>. No necesitas responder este mensaje.</p><p>Clínica Atlas<br>www.clinicas-atlas.com</p><p style="color:#999;font-size:11px">Ref. ${codigo}</p>`,
+      });
+    } catch (error) {
+      const e = error as { code?: string; responseCode?: number; response?: string };
+      if (e.code === 'EENVELOPE' && (e.responseCode ?? 0) >= 500) {
+        return { valido: false, motivo: 'BUZON_NO_EXISTE', detalle: e.response?.slice(0, 300) ?? null };
+      }
+      console.error('❌ No se pudo enviar el correo de verificación:', error);
+      return { valido: true, motivo: 'NO_VERIFICADO', detalle: 'SMTP no disponible' };
+    }
+    const limite = Date.now() + ESPERA_REBOTE_MS;
+
+    if (!(await conexionImap)) return { valido: true, motivo: 'NO_VERIFICADO', detalle: 'IMAP no disponible' };
+
+    // Esperar el rebote en la casilla de la clínica
     const bloqueo = await imap.getMailboxLock('INBOX');
     try {
-      try {
-        const saludo = nombre ? `Hola ${nombre},` : 'Hola,';
-        await crearTransporteSmtp(config).sendMail({
-          from: config.remitente,
-          to: correo,
-          subject: 'Confirmación de tu correo – Clínica Atlas',
-          messageId: `<${codigo}@${dominioRemitente}>`,
-          headers: { 'X-Atlas-Verificacion': codigo },
-          text: `${saludo}\n\nConfirmamos que este correo está registrado para recibir información de Clínica Atlas. No necesitas responder este mensaje.\n\nClínica Atlas\nwww.clinicas-atlas.com\n\nRef. ${codigo}`,
-          html: `<p>${saludo.replace(/[<>&]/g, '')}</p><p>Confirmamos que este correo está registrado para recibir información de <b>Clínica Atlas</b>. No necesitas responder este mensaje.</p><p>Clínica Atlas<br>www.clinicas-atlas.com</p><p style="color:#999;font-size:11px">Ref. ${codigo}</p>`,
-          dsn: { envid: codigo, ret: 'HDRS', notify: ['SUCCESS', 'FAILURE'], orcpt: correo },
-        });
-      } catch (error) {
-        const e = error as { code?: string; responseCode?: number; response?: string };
-        if (e.code === 'EENVELOPE' && (e.responseCode ?? 0) >= 500) {
-          return { valido: false, motivo: 'BUZON_NO_EXISTE', detalle: e.response?.slice(0, 300) ?? null };
-        }
-        console.error('❌ No se pudo enviar el correo de verificación:', error);
-        return { valido: true, motivo: 'NO_VERIFICADO', detalle: 'SMTP no disponible' };
-      }
-
-      // Esperar el aviso de entrega o el rebote en la casilla de la clínica
       const desde = new Date(Date.now() - 24 * 60 * 60 * 1000); // SINCE es por día
       const revisados = new Set<number>();
-      const limite = Date.now() + ESPERA_REBOTE_MS;
       while (Date.now() < limite) {
-        await new Promise((r) => setTimeout(r, INTERVALO_REVISION_MS));
+        await new Promise((r) => setTimeout(r, Math.min(INTERVALO_REVISION_MS, Math.max(0, limite - Date.now()))));
         await imap.noop(); // que el servidor informe los mensajes nuevos
         const uids = (await imap.search({ since: desde, text: codigo }, { uid: true })) || [];
         for (const uid of uids) {
@@ -191,6 +195,7 @@ async function verificarConEnvio(correo: string, nombre: string | null, config: 
     console.error('❌ Error al revisar los rebotes por IMAP:', error);
     return { valido: true, motivo: 'NO_VERIFICADO', detalle: 'Error al leer la casilla' };
   } finally {
+    await conexionImap;
     await imap.logout().catch(() => undefined);
   }
 }

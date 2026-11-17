@@ -243,8 +243,8 @@ Los tipos de base de datos viven en `src/lib/supabaseTypes.ts`. Al agregar tabla
 
 `api/validar-correo.ts` — `POST /api/validar-correo` con body `{ correo, nombre? }`. El header `x-api-key` solo se exige si `N8N_API_KEY` está configurada en Vercel (hoy no lo está: el endpoint es abierto). Responde `{ ok, correo, valido, motivo, sugerencia, mensaje, detalle, segundos }`.
 - Al instante, sin enviar nada: `FORMATO_INVALIDO`, `DOMINIO_MAL_ESCRITO` (distancia 1–2 a gmail/hotmail/outlook/live/yahoo/icloud, con `sugerencia`; atrapa `outloook.es`, que acepta correo y no rebota), `DOMINIO_NO_EXISTE`, `DOMINIO_SIN_CORREO` (MX).
-- Si pasa eso, envía un correo corto de confirmación desde `SMTP_USER` (código `ATL-…` en el Message-ID, el header `X-Atlas-Verificacion` y el texto) y revisa por IMAP (993, mismas credenciales) la bandeja de esa casilla cada 4 s, hasta 60 s. Si llega un rebote 5.x.x → `BUZON_NO_EXISTE` (Gmail y Hotmail rebotan en ~10 s); si no llega → `valido: true` (~67 s). El rebote se marca como leído. El servidor no envía el DSN de éxito, así que un correo válido siempre espera los 60 s.
-- Si falla el SMTP o el IMAP propios → `valido: true`, `motivo: 'NO_VERIFICADO'`. `maxDuration: 90`; el nodo de n8n necesita un timeout de al menos 90 s.
+- Si pasa eso, envía un correo corto de confirmación desde `SMTP_USER` (código `ATL-…` en el Message-ID, el header `X-Atlas-Verificacion` y el texto) y revisa por IMAP (993, mismas credenciales; se conecta mientras se envía) la bandeja de esa casilla cada 2 s, hasta 25 s. Si llega un rebote 5.x.x → `BUZON_NO_EXISTE`; si no llega → `valido: true` (~30 s). El rebote se marca como leído. El servidor no anuncia DSN, así que no hay aviso de éxito: un correo válido siempre espera los 25 s. Rebotes medidos: 7, 10, 10, 11, 33 y 79 s; los que pasan de 25 s se dan por válidos (se eligió así por velocidad).
+- Si falla el SMTP o el IMAP propios → `valido: true`, `motivo: 'NO_VERIFICADO'`. `maxDuration: 90`; el nodo de n8n usa un timeout de 90 s.
 - `api/_lib/smtp.ts` tiene la configuración SMTP (`getConfigCorreo`, `crearTransporteSmtp`). Variable opcional: `N8N_API_KEY`.
 
 ### Problemas de CORS en producción
