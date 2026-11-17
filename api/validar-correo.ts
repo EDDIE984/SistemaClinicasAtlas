@@ -13,9 +13,9 @@ import { crearTransporteSmtp, getConfigCorreo, type ConfigCorreo } from './_lib/
 //    no existe. Si pasan ESPERA_REBOTE_MS sin rebote se da por válido.
 // Una falla propia (SMTP/IMAP) no bloquea a la persona: valido = true con motivo NO_VERIFICADO.
 
-// Rebotes medidos: 7, 10, 10, 11, 33 y 79 s. Con 25 s se escapan los más lentos (pasan como válidos);
-// se eligió así para que la persona no espere tanto. El servidor no soporta DSN: no hay aviso de éxito.
-const ESPERA_REBOTE_MS = 25_000;
+// Rebotes medidos: 7, 10, 10, 11, 33, 43 (onewayec.com) y 79 s. Con 50 s solo se escapa el de 79 s
+// (pasa como válido). El servidor no soporta DSN: no hay aviso de éxito, un correo válido espera los 50 s.
+const ESPERA_REBOTE_MS = 50_000;
 const INTERVALO_REVISION_MS = 2_000;
 
 type Motivo =
